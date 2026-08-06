@@ -14,6 +14,17 @@ _INSTALLED = False
 _VALID_SOURCES = {"exact", "inferred", "unknown"}
 
 
+def _infer_sent_at(arrival_at: datetime | None, return_at: datetime | None) -> datetime | None:
+    """Infer send time only for a valid ordered arrival/return pair.
+
+    The value is never called exact because the formula assumes equal outbound and
+    return durations: sent = arrival - (return - arrival).
+    """
+    if arrival_at is None or return_at is None or return_at <= arrival_at:
+        return None
+    return arrival_at + (arrival_at - return_at)
+
+
 def _derive_sent_at_source(result: dict[str, Any]) -> str:
     explicit = str(result.get("sent_at_source") or "").strip().casefold()
     if explicit in _VALID_SOURCES:
@@ -68,7 +79,13 @@ def _add_history_with_provenance(
 async def _sync_all_flights_with_provenance(self: BrowserWorker):
     flights = await _ORIGINAL_SYNC_ALL_FLIGHTS(self)
     for flight in flights:
-        flight.sent_at_source = "inferred" if flight.sent_at is not None else "unknown"
+        inferred = _infer_sent_at(flight.arrival_at, flight.return_at)
+        if inferred is None:
+            flight.sent_at = None
+            flight.sent_at_source = "unknown"
+        else:
+            flight.sent_at = inferred
+            flight.sent_at_source = "inferred"
     return flights
 
 
@@ -83,10 +100,9 @@ def _sync_history_with_provenance(self: Database, flights) -> int:
             continue
         sent_at = getattr(flight, "sent_at", None)
         source = str(getattr(flight, "sent_at_source", "") or "").strip().casefold()
-        if sent_at is None and flight.arrival_at and flight.return_at:
-            # Browser rows expose arrival/return countdowns but no direct send timestamp.
-            sent_at = flight.arrival_at + (flight.arrival_at - flight.return_at)
-            source = "inferred"
+        if source == "inferred" or sent_at is None:
+            sent_at = _infer_sent_at(flight.arrival_at, flight.return_at)
+            source = "inferred" if sent_at is not None else "unknown"
         if source not in _VALID_SOURCES:
             source = "inferred" if sent_at is not None else "unknown"
         result = {
