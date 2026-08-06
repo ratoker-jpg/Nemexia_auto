@@ -4,8 +4,10 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
 
+from bound_tab_fix import install_bound_tab_fix
 from ship_retry_fix import install_ship_retry_fix
 
+install_bound_tab_fix()
 install_ship_retry_fix()
 
 from app import APP_NAME, RaidManagerApp as BaseRaidManagerApp, make_button
