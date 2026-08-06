@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from page_capture import capture_current_page
+from page_capture import application_directory, capture_current_page
 
 
 class FakeSession:
@@ -64,6 +64,22 @@ class FakeWorker:
 
 
 class CaptureCurrentPageTest(unittest.TestCase):
+    def test_application_directory_for_source_project(self):
+        with tempfile.TemporaryDirectory(prefix="nemexia_source_dir_") as temp:
+            module_file = Path(temp) / "page_capture.py"
+            self.assertEqual(
+                application_directory(frozen=False, module_file=module_file),
+                Path(temp).resolve(),
+            )
+
+    def test_application_directory_for_packaged_executable(self):
+        with tempfile.TemporaryDirectory(prefix="nemexia_exe_dir_") as temp:
+            executable = Path(temp) / "NemexiaRaidManager.exe"
+            self.assertEqual(
+                application_directory(frozen=True, executable=executable),
+                Path(temp).resolve(),
+            )
+
     def test_capture_and_limit(self):
         with tempfile.TemporaryDirectory(prefix="nemexia_snapshot_test_") as temp:
             root = Path(temp)
