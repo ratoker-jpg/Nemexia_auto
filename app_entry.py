@@ -4,6 +4,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
 
+from all_flight_slots_fix import install_all_flight_slot_fix
 from bound_tab_fix import install_bound_tab_fix
 from raid_verification_fix import install_raid_verification_fix
 from ship_retry_fix import install_ship_retry_fix
@@ -14,6 +15,8 @@ install_raid_verification_fix()
 
 from app import APP_NAME, RaidManagerApp as BaseRaidManagerApp, make_button
 from page_capture import capture_current_page, default_snapshot_root
+
+install_all_flight_slot_fix(BaseRaidManagerApp)
 
 
 SAVED_PAGES_DIR = default_snapshot_root()
