@@ -102,6 +102,7 @@ class Flight:
     sent_at: datetime | None = None
     ship_count: int | None = None
     player: str = "—"
+    sent_at_source: str = "unknown"
 
 
 @dataclass(slots=True)

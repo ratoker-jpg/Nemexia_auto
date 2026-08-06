@@ -6,6 +6,7 @@ from tkinter import messagebox
 
 from all_flight_slots_fix import install_all_flight_slot_fix
 from bound_tab_fix import install_bound_tab_fix
+from flight_time_provenance_fix import install_flight_time_provenance_fix
 from raid_verification_fix import install_raid_verification_fix
 from report_time_freshness_fix import install_report_time_freshness_fix
 from ship_retry_fix import install_ship_retry_fix
@@ -19,6 +20,7 @@ from page_capture import capture_current_page, default_snapshot_root
 
 install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
+install_flight_time_provenance_fix()
 
 
 SAVED_PAGES_DIR = default_snapshot_root()
