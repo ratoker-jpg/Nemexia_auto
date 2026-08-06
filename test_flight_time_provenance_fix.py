@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flight_time_provenance_fix import (
     _derive_sent_at_source,
+    _infer_sent_at,
     install_flight_time_provenance_fix,
 )
 from models import Flight
@@ -28,6 +29,17 @@ class FlightTimeProvenanceFixTest(unittest.TestCase):
             _derive_sent_at_source({"sent_at_source": "inferred", "one_way_seconds": 60}),
             "inferred",
         )
+
+    def test_inference_requires_ordered_arrival_and_return(self) -> None:
+        arrival = datetime(2026, 8, 6, 18, 10, tzinfo=timezone.utc)
+        returned = datetime(2026, 8, 6, 18, 20, tzinfo=timezone.utc)
+        self.assertEqual(
+            _infer_sent_at(arrival, returned),
+            datetime(2026, 8, 6, 18, 0, tzinfo=timezone.utc),
+        )
+        self.assertIsNone(_infer_sent_at(arrival, arrival))
+        self.assertIsNone(_infer_sent_at(returned, arrival))
+        self.assertIsNone(_infer_sent_at(None, returned))
 
     def test_database_migration_and_exact_send_persistence(self) -> None:
         install_flight_time_provenance_fix()
