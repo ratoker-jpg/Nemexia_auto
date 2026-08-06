@@ -4,11 +4,11 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
 
-from app import APP_NAME, DATA_DIR, RaidManagerApp as BaseRaidManagerApp, make_button
-from page_capture import capture_current_page
+from app import APP_NAME, RaidManagerApp as BaseRaidManagerApp, make_button
+from page_capture import capture_current_page, default_snapshot_root
 
 
-SAVED_PAGES_DIR = DATA_DIR / "saved_pages"
+SAVED_PAGES_DIR = default_snapshot_root()
 
 
 class RaidManagerApp(BaseRaidManagerApp):
@@ -49,7 +49,6 @@ class RaidManagerApp(BaseRaidManagerApp):
             folder = Path(result["folder"])
             self.status_var.set("Страница сохранена")
             self.logger.info("Сохранена страница %s → %s", result.get("url") or "—", folder)
-            self._open_folder(folder)
             warning = result.get("warnings") or ""
             suffix = f"\n\nЧасть форматов не сохранена:\n{warning}" if warning else ""
             messagebox.showinfo(
