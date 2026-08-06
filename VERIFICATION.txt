@@ -1,0 +1,9 @@
+#ship_1_2: OK
+#mission: OK
+#target_c1: OK
+#target_c2: OK
+#target_c3: OK
+#SendFleetButton: OK
+flight 2:2:9: OK
+arrival timer: 00:15:00
+return timer: 00:30:07
