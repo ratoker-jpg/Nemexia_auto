@@ -4,6 +4,10 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
 
+from ship_retry_fix import install_ship_retry_fix
+
+install_ship_retry_fix()
+
 from app import APP_NAME, RaidManagerApp as BaseRaidManagerApp, make_button
 from page_capture import capture_current_page, default_snapshot_root
 
