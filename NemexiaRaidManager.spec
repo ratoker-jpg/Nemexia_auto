@@ -6,7 +6,7 @@ bs4_datas, bs4_binaries, bs4_hidden = collect_all('bs4')
 pystray_datas, pystray_binaries, pystray_hidden = collect_all('pystray')
 
 analysis = Analysis(
-    ['app.py'],
+    ['app_entry.py'],
     pathex=[],
     binaries=playwright_binaries + bs4_binaries + pystray_binaries,
     datas=playwright_datas + bs4_datas + pystray_datas + [
