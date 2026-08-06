@@ -2,9 +2,28 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+def application_directory(
+    *,
+    frozen: bool | None = None,
+    executable: str | Path | None = None,
+    module_file: str | Path | None = None,
+) -> Path:
+    """Return the folder containing the source project or the built executable."""
+    is_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else bool(frozen)
+    if is_frozen:
+        return Path(executable or sys.executable).resolve().parent
+    return Path(module_file or __file__).resolve().parent
+
+
+def default_snapshot_root() -> Path:
+    """Keep manual snapshots next to the project or packaged application."""
+    return application_directory() / "saved_pages"
 
 
 async def _focused_game_page(worker: Any):
