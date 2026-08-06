@@ -16,11 +16,13 @@ install_ship_retry_fix()
 install_raid_verification_fix()
 
 from app import APP_NAME, RaidManagerApp as BaseRaidManagerApp, make_button
+from debris_asteroids_feature import install_debris_asteroid_feature
 from page_capture import capture_current_page, default_snapshot_root
 
 install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
+install_debris_asteroid_feature(BaseRaidManagerApp)
 
 
 SAVED_PAGES_DIR = default_snapshot_root()
