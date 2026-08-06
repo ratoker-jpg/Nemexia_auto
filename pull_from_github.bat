@@ -15,7 +15,7 @@ for /f "delims=" %%A in ('git status --porcelain') do (
     exit /b 1
 )
 
-git pull --ff-only origin main
+git pull --rebase origin main
 if errorlevel 1 (
     echo Download failed. Your local copy may need manual conflict resolution.
     pause

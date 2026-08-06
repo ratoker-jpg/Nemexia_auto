@@ -27,6 +27,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
+git pull --rebase origin main
+if errorlevel 1 (
+    echo Remote changes could not be combined automatically.
+    echo If Git reported conflicts, resolve them and run the script again.
+    pause
+    exit /b 1
+)
+
 git push origin main
 if errorlevel 1 (
     echo Upload failed. Check your Internet connection and GitHub access.
