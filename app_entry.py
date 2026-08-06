@@ -15,19 +15,29 @@ install_bound_tab_fix()
 install_ship_retry_fix()
 install_raid_verification_fix()
 
-from app import APP_NAME, RaidManagerApp as BaseRaidManagerApp, make_button
+from app import (
+    APP_NAME,
+    MUTED,
+    PANEL_ALT,
+    SIDEBAR,
+    TEXT,
+    RaidManagerApp as BaseRaidManagerApp,
+    make_button,
+)
+from debris_asteroids_feature import install_debris_asteroid_feature
 from page_capture import capture_current_page, default_snapshot_root
 
 install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
+install_debris_asteroid_feature(BaseRaidManagerApp)
 
 
 SAVED_PAGES_DIR = default_snapshot_root()
 
 
 class RaidManagerApp(BaseRaidManagerApp):
-    """Application shell with an explicit manual browser-page snapshot action."""
+    """Application shell with manual snapshots and the debris-asteroid page."""
 
     def _build_shell(self) -> None:
         super()._build_shell()
@@ -42,6 +52,20 @@ class RaidManagerApp(BaseRaidManagerApp):
             "secondary",
         )
         button.pack(side="right", padx=8, before=sync_button)
+
+    def show_page(self, key: str) -> None:
+        if key != "debris":
+            super().show_page(key)
+            return
+        self.current_page = key
+        self.page_title_var.set("Астероиды с обломками")
+        self.pages[key].tkraise()
+        for nav_key, button in self.nav_buttons.items():
+            button.configure(
+                bg=PANEL_ALT if nav_key == key else SIDEBAR,
+                fg=TEXT if nav_key == key else MUTED,
+            )
+        self.render_all()
 
     def _find_button(self, text: str) -> tk.Button | None:
         pending = list(self.winfo_children())
