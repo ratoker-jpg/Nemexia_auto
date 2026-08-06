@@ -26,7 +26,7 @@ async def _dismiss_no_ships_popup_and_return(self: BrowserWorker, page: Any) -> 
         return False
 
     dismissed = await page.evaluate(
-        """() => {
+        r"""() => {
             const popup = document.querySelector('#dialogMessage');
             if (!popup) return false;
 
