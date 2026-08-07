@@ -231,8 +231,9 @@ def install_authenticated_proxy_feature(app_class: type[Any]) -> None:
     original_build_shell = app_class._build_shell
     original_build_settings_page = app_class._build_settings_page
     original_save_settings = app_class.save_settings
+    original_save_settings_silent = app_class.save_settings_silent
     original_launch_browser = app_class.launch_browser
-    original_on_close = app_class.on_close
+    original_exit_app = app_class.exit_app
 
     def build_shell(self: Any) -> None:
         self.proxy_enabled_var = tk.BooleanVar(value=bool(self.settings.get("proxy_enabled", False)))
@@ -325,18 +326,26 @@ def install_authenticated_proxy_feature(app_class: type[Any]) -> None:
             return
         original_save_settings(self)
 
+    def save_settings_silent(self: Any) -> None:
+        try:
+            _persist_proxy_settings(self)
+        except Exception:
+            pass
+        original_save_settings_silent(self)
+
     def launch_browser(self: Any) -> None:
         _launch_browser_with_proxy(self, original_launch_browser)
 
-    def on_close(self: Any) -> None:
+    def exit_app(self: Any) -> None:
         _stop_proxy_bridge(self)
-        original_on_close(self)
+        original_exit_app(self)
 
     app_class._build_shell = build_shell
     app_class._build_settings_page = build_settings_page
     app_class.save_settings = save_settings
+    app_class.save_settings_silent = save_settings_silent
     app_class.launch_browser = launch_browser
     app_class.test_proxy_connection = lambda self: _test_proxy(self)
-    app_class.on_close = on_close
+    app_class.exit_app = exit_app
 
     _INSTALLED = True
