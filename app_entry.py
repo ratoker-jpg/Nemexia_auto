@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 from all_flight_slots_fix import install_all_flight_slot_fix
+from authenticated_proxy_feature import install_authenticated_proxy_feature
 from bound_tab_fix import install_bound_tab_fix
 from flight_time_provenance_fix import install_flight_time_provenance_fix
 from raid_verification_fix import install_raid_verification_fix
@@ -31,6 +32,7 @@ install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
 install_debris_asteroid_feature(BaseRaidManagerApp)
+install_authenticated_proxy_feature(BaseRaidManagerApp)
 
 
 SAVED_PAGES_DIR = default_snapshot_root()
