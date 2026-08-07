@@ -12,6 +12,7 @@ from operational_variability import install_asteroid_scope_ui, install_raid_home
 from queue_row_numbering import install_queue_row_numbering
 from raid_verification_fix import install_raid_verification_fix
 from report_time_freshness_fix import install_report_time_freshness_fix
+from resource_queue_modes import install_resource_queue_modes
 from ship_retry_fix import install_ship_retry_fix
 
 install_bound_tab_fix()
@@ -47,11 +48,11 @@ install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
 install_raid_home_selection(app_module.BrowserWorker)
 
-# Presentation layers are installed from primitives to typography, composition,
-# operational scope controls, table/DPI behavior, queue display numbering, and motion.
+# Presentation and operational UI layers are installed before the app instance is built.
 install_visual_system(app_module, BaseRaidManagerApp)
 install_typography(BaseRaidManagerApp)
 install_visual_layout(BaseRaidManagerApp)
+install_resource_queue_modes(BaseRaidManagerApp)
 install_asteroid_scope_ui(BaseRaidManagerApp)
 install_tables_dpi(BaseRaidManagerApp)
 install_queue_row_numbering(BaseRaidManagerApp)
