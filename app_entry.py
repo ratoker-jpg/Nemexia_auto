@@ -7,6 +7,7 @@ from tkinter import messagebox
 from all_flight_slots_fix import install_all_flight_slot_fix
 from background_browser_fix import install_background_browser_fix
 from bound_tab_fix import install_bound_tab_fix
+from farm_flight_classification_fix import install_farm_flight_classification_fix
 from flight_time_provenance_fix import install_flight_time_provenance_fix
 from operational_variability import install_asteroid_scope_ui, install_raid_home_selection
 from queue_row_numbering import install_queue_row_numbering
@@ -58,6 +59,7 @@ install_asteroid_scope_ui(BaseRaidManagerApp)
 install_tables_dpi(BaseRaidManagerApp)
 install_queue_row_numbering(BaseRaidManagerApp)
 install_resource_farm_auto(BaseRaidManagerApp)
+install_farm_flight_classification_fix(BaseRaidManagerApp)
 install_motion(BaseRaidManagerApp)
 # Patch only debris presentation helpers before the feature wrapper captures the shell.
 install_debris_layout(debris_module)
