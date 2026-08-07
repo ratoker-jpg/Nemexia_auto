@@ -9,6 +9,7 @@ from background_browser_fix import install_background_browser_fix
 from bound_tab_fix import install_bound_tab_fix
 from flight_time_provenance_fix import install_flight_time_provenance_fix
 from operational_variability import install_asteroid_scope_ui, install_raid_home_selection
+from queue_row_numbering import install_queue_row_numbering
 from raid_verification_fix import install_raid_verification_fix
 from report_time_freshness_fix import install_report_time_freshness_fix
 from ship_retry_fix import install_ship_retry_fix
@@ -47,12 +48,13 @@ install_flight_time_provenance_fix()
 install_raid_home_selection(app_module.BrowserWorker)
 
 # Presentation layers are installed from primitives to typography, composition,
-# operational scope controls, table/DPI behavior, and lightweight motion.
+# operational scope controls, table/DPI behavior, queue display numbering, and motion.
 install_visual_system(app_module, BaseRaidManagerApp)
 install_typography(BaseRaidManagerApp)
 install_visual_layout(BaseRaidManagerApp)
 install_asteroid_scope_ui(BaseRaidManagerApp)
 install_tables_dpi(BaseRaidManagerApp)
+install_queue_row_numbering(BaseRaidManagerApp)
 install_motion(BaseRaidManagerApp)
 # Patch only debris presentation helpers before the feature wrapper captures the shell.
 install_debris_layout(debris_module)
