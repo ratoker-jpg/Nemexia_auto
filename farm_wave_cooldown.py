@@ -192,6 +192,27 @@ def install_farm_wave_cooldown(app_class: type[Any]) -> None:
         ):
             self._farm_wave_capture = False
             self._farm_wave_returns = []
+        elif not capture and text.startswith("Автофарм · ждём возврата") and self._farm_saved_deadline() is None:
+            # A wave can already be in flight when the user updates/restarts the
+            # application. Seed the same latest-return + buffer rule from those
+            # currently visible farm attacks so the first post-update cycle also
+            # waits through the safety buffer.
+            try:
+                returns = [
+                    flight.return_at
+                    for flight in _farm_attacks(list(self.active_flights), self.home())
+                    if flight.return_at is not None
+                ]
+            except Exception:
+                returns = []
+            latest = max(returns, default=None)
+            if latest is not None:
+                buffer = self._farm_buffer_minutes()
+                deadline = self._farm_save_deadline(latest, buffer)
+                final_text = (
+                    f"{text} · следующий скан {deadline.astimezone().strftime('%H:%M:%S')} "
+                    f"(+{buffer} мин)"
+                )
 
         original_set_status(self, final_text, topbar=topbar)
 
