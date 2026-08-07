@@ -18,10 +18,16 @@ install_raid_verification_fix()
 install_background_browser_fix()
 
 import app as app_module
+from tk_layout_compat import install_tk_layout_compat
 from visual_system import install_visual_system, prepare_visual_system
 from visual_layout import install_debris_layout, install_visual_layout
 from visual_tables import install_tables_dpi
 from visual_motion import install_motion
+
+# Classic Tk Frame options accept only scalar internal padding. The visual layout
+# intentionally uses tuple-style spacing in a few places, so normalize it before
+# any UI widgets are constructed.
+install_tk_layout_compat()
 
 # Install presentation primitives before feature modules import app-level UI symbols.
 prepare_visual_system(app_module)
