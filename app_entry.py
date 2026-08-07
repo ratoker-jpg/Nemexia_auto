@@ -19,28 +19,28 @@ install_background_browser_fix()
 
 import app as app_module
 from visual_system import install_visual_system, prepare_visual_system
+from visual_layout import install_debris_layout, install_visual_layout
 
 # Install presentation primitives before feature modules import app-level UI symbols.
 prepare_visual_system(app_module)
 
 APP_NAME = app_module.APP_NAME
-MUTED = app_module.MUTED
-PANEL_ALT = app_module.PANEL_ALT
-SIDEBAR = app_module.SIDEBAR
-TEXT = app_module.TEXT
 BaseRaidManagerApp = app_module.RaidManagerApp
 make_button = app_module.make_button
 
-from debris_asteroids_feature import install_debris_asteroid_feature
+import debris_asteroids_feature as debris_module
 from page_capture import capture_current_page, default_snapshot_root
 
 install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
-install_debris_asteroid_feature(BaseRaidManagerApp)
-# Install class-level visual helpers last so they wrap the complete production shell,
-# including the debris feature, without changing any feature callbacks or data logic.
+
+# Foundation owns tokens and shared components. Layout owns only composition.
 install_visual_system(app_module, BaseRaidManagerApp)
+install_visual_layout(BaseRaidManagerApp)
+# Patch only debris presentation helpers before the feature wrapper captures the shell.
+install_debris_layout(debris_module)
+debris_module.install_debris_asteroid_feature(BaseRaidManagerApp)
 
 
 SAVED_PAGES_DIR = default_snapshot_root()
@@ -60,22 +60,12 @@ class RaidManagerApp(BaseRaidManagerApp):
             "Сохранить страницу",
             self.save_current_page,
             "secondary",
+            size="compact",
         )
         button.pack(side="right", padx=8, before=sync_button)
 
     def show_page(self, key: str) -> None:
-        if key != "debris":
-            super().show_page(key)
-            return
-        self.current_page = key
-        self.page_title_var.set("Астероиды с обломками")
-        self.pages[key].tkraise()
-        for nav_key, button in self.nav_buttons.items():
-            button.configure(
-                bg=PANEL_ALT if nav_key == key else SIDEBAR,
-                fg=TEXT if nav_key == key else MUTED,
-            )
-        self.render_all()
+        super().show_page(key)
 
     def _find_button(self, text: str) -> tk.Button | None:
         pending = list(self.winfo_children())
