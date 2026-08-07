@@ -9,6 +9,7 @@ from background_browser_fix import install_background_browser_fix
 from bound_tab_fix import install_bound_tab_fix
 from command_planet_exclusion import install_command_planet_exclusion
 from farm_flight_classification_fix import install_farm_flight_classification_fix
+from farm_wave_cooldown import install_farm_wave_cooldown
 from flight_time_provenance_fix import install_flight_time_provenance_fix
 from operational_variability import install_asteroid_scope_ui, install_raid_home_selection
 from queue_row_numbering import install_queue_row_numbering
@@ -64,6 +65,7 @@ install_tables_dpi(BaseRaidManagerApp)
 install_queue_row_numbering(BaseRaidManagerApp)
 install_resource_farm_auto(BaseRaidManagerApp)
 install_farm_flight_classification_fix(BaseRaidManagerApp)
+install_farm_wave_cooldown(BaseRaidManagerApp)
 install_motion(BaseRaidManagerApp)
 # Patch only debris presentation helpers before the feature wrapper captures the shell.
 install_debris_layout(debris_module)
