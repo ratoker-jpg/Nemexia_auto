@@ -20,6 +20,7 @@ install_background_browser_fix()
 import app as app_module
 from visual_system import install_visual_system, prepare_visual_system
 from visual_layout import install_debris_layout, install_visual_layout
+from visual_tables import install_tables_dpi
 
 # Install presentation primitives before feature modules import app-level UI symbols.
 prepare_visual_system(app_module)
@@ -35,9 +36,10 @@ install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
 
-# Foundation owns tokens and shared components. Layout owns only composition.
+# Foundation owns tokens/components; layout owns composition; tables/DPI wraps only UI helpers.
 install_visual_system(app_module, BaseRaidManagerApp)
 install_visual_layout(BaseRaidManagerApp)
+install_tables_dpi(BaseRaidManagerApp)
 # Patch only debris presentation helpers before the feature wrapper captures the shell.
 install_debris_layout(debris_module)
 debris_module.install_debris_asteroid_feature(BaseRaidManagerApp)
