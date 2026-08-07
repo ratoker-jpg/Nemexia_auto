@@ -12,6 +12,7 @@ from operational_variability import install_asteroid_scope_ui, install_raid_home
 from queue_row_numbering import install_queue_row_numbering
 from raid_verification_fix import install_raid_verification_fix
 from report_time_freshness_fix import install_report_time_freshness_fix
+from resource_farm_auto import install_resource_farm_auto
 from resource_queue_modes import install_resource_queue_modes
 from ship_retry_fix import install_ship_retry_fix
 
@@ -56,6 +57,7 @@ install_resource_queue_modes(BaseRaidManagerApp)
 install_asteroid_scope_ui(BaseRaidManagerApp)
 install_tables_dpi(BaseRaidManagerApp)
 install_queue_row_numbering(BaseRaidManagerApp)
+install_resource_farm_auto(BaseRaidManagerApp)
 install_motion(BaseRaidManagerApp)
 # Patch only debris presentation helpers before the feature wrapper captures the shell.
 install_debris_layout(debris_module)
