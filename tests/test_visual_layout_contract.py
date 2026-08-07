@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import inspect
+from pathlib import Path
 import unittest
 
-import app_entry
-import visual_layout
+
+ROOT = Path(__file__).resolve().parents[1]
+LAYOUT_SOURCE = (ROOT / "visual_layout.py").read_text(encoding="utf-8")
+ENTRY_SOURCE = (ROOT / "app_entry.py").read_text(encoding="utf-8")
 
 
 class VisualLayoutContractTests(unittest.TestCase):
     def test_layout_module_stays_presentation_only(self) -> None:
-        source = inspect.getsource(visual_layout)
         for forbidden in (
             "from browser import",
             "import browser",
@@ -20,10 +21,9 @@ class VisualLayoutContractTests(unittest.TestCase):
             "from asteroids import",
             "import asteroids",
         ):
-            self.assertNotIn(forbidden, source)
+            self.assertNotIn(forbidden, LAYOUT_SOURCE)
 
     def test_required_navigation_keys_are_preserved(self) -> None:
-        source = inspect.getsource(visual_layout)
         for key in (
             '"dashboard"',
             '"queue"',
@@ -36,15 +36,13 @@ class VisualLayoutContractTests(unittest.TestCase):
             '"settings"',
             '"logs"',
         ):
-            self.assertIn(key, source)
+            self.assertIn(key, LAYOUT_SOURCE)
 
     def test_queue_and_dashboard_bindings_are_preserved(self) -> None:
-        source = inspect.getsource(visual_layout)
-        self.assertIn('self.dashboard_tree.bind("<Double-1>"', source)
-        self.assertIn('self.queue_tree.bind("<Button-1>", self._toggle_queue_checkbox)', source)
+        self.assertIn('self.dashboard_tree.bind("<Double-1>"', LAYOUT_SOURCE)
+        self.assertIn('self.queue_tree.bind("<Button-1>", self._toggle_queue_checkbox)', LAYOUT_SOURCE)
 
     def test_existing_actions_are_still_wired(self) -> None:
-        source = inspect.getsource(visual_layout)
         for callback in (
             "self.import_from_browser",
             "self.calculate_times",
@@ -70,14 +68,13 @@ class VisualLayoutContractTests(unittest.TestCase):
             "self.open_data_dir",
             "self.show_build_info",
         ):
-            self.assertIn(callback, source)
+            self.assertIn(callback, LAYOUT_SOURCE)
 
     def test_bootstrap_installs_layout_before_debris_feature_wrapper(self) -> None:
-        source = inspect.getsource(app_entry)
-        foundation = source.index("install_visual_system(app_module, BaseRaidManagerApp)")
-        layout = source.index("install_visual_layout(BaseRaidManagerApp)")
-        debris_layout = source.index("install_debris_layout(debris_module)")
-        debris_feature = source.index("debris_module.install_debris_asteroid_feature(BaseRaidManagerApp)")
+        foundation = ENTRY_SOURCE.index("install_visual_system(app_module, BaseRaidManagerApp)")
+        layout = ENTRY_SOURCE.index("install_visual_layout(BaseRaidManagerApp)")
+        debris_layout = ENTRY_SOURCE.index("install_debris_layout(debris_module)")
+        debris_feature = ENTRY_SOURCE.index("debris_module.install_debris_asteroid_feature(BaseRaidManagerApp)")
         self.assertLess(foundation, layout)
         self.assertLess(layout, debris_layout)
         self.assertLess(debris_layout, debris_feature)
