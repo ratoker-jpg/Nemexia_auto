@@ -17,15 +17,20 @@ install_ship_retry_fix()
 install_raid_verification_fix()
 install_background_browser_fix()
 
-from app import (
-    APP_NAME,
-    MUTED,
-    PANEL_ALT,
-    SIDEBAR,
-    TEXT,
-    RaidManagerApp as BaseRaidManagerApp,
-    make_button,
-)
+import app as app_module
+from visual_system import install_visual_system, prepare_visual_system
+
+# Install presentation primitives before feature modules import app-level UI symbols.
+prepare_visual_system(app_module)
+
+APP_NAME = app_module.APP_NAME
+MUTED = app_module.MUTED
+PANEL_ALT = app_module.PANEL_ALT
+SIDEBAR = app_module.SIDEBAR
+TEXT = app_module.TEXT
+BaseRaidManagerApp = app_module.RaidManagerApp
+make_button = app_module.make_button
+
 from debris_asteroids_feature import install_debris_asteroid_feature
 from page_capture import capture_current_page, default_snapshot_root
 
@@ -33,6 +38,9 @@ install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
 install_debris_asteroid_feature(BaseRaidManagerApp)
+# Install class-level visual helpers last so they wrap the complete production shell,
+# including the debris feature, without changing any feature callbacks or data logic.
+install_visual_system(app_module, BaseRaidManagerApp)
 
 
 SAVED_PAGES_DIR = default_snapshot_root()
