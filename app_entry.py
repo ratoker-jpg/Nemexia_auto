@@ -7,6 +7,7 @@ from tkinter import messagebox
 from all_flight_slots_fix import install_all_flight_slot_fix
 from background_browser_fix import install_background_browser_fix
 from bound_tab_fix import install_bound_tab_fix
+from command_planet_exclusion import install_command_planet_exclusion
 from farm_flight_classification_fix import install_farm_flight_classification_fix
 from flight_time_provenance_fix import install_flight_time_provenance_fix
 from operational_variability import install_asteroid_scope_ui, install_raid_home_selection
@@ -46,6 +47,9 @@ import debris_asteroids_feature as debris_module
 from page_capture import capture_current_page, default_snapshot_root
 
 install_all_flight_slot_fix(BaseRaidManagerApp)
+# 2:5:6 is the alliance/command planet, not part of this account's own fleet traffic.
+# Filter every flight touching it before dashboards, slots, history, and auto modes read data.
+install_command_planet_exclusion()
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
 install_raid_home_selection(app_module.BrowserWorker)
