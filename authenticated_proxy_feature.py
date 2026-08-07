@@ -10,7 +10,6 @@ from app import APP_NAME, GREEN, MUTED, PANEL, PANEL_ALT, RED, TEXT, make_button
 from browser import BrowserAutomationError, cdp_is_available
 from proxy_auth_bridge import (
     AuthenticatedProxyBridge,
-    ProxyConnectionError,
     check_http_proxy,
     launch_yandex_via_local_proxy,
 )
@@ -59,7 +58,21 @@ def _proxy_config(self: Any, *, require_enabled: bool = True) -> dict[str, Any]:
 
 
 def _persist_proxy_settings(self: Any) -> dict[str, Any]:
-    config = _proxy_config(self, require_enabled=False)
+    enabled = bool(self.proxy_enabled_var.get())
+    if enabled:
+        config = _proxy_config(self, require_enabled=True)
+    else:
+        try:
+            port = int(self.proxy_port_var.get())
+        except Exception:
+            port = 8000
+        config = {
+            "enabled": False,
+            "host": str(self.proxy_host_var.get() or "").strip(),
+            "port": port if 1 <= port <= 65535 else 8000,
+            "username": str(self.proxy_username_var.get() or ""),
+            "password": str(self.proxy_password_var.get() or ""),
+        }
     values = {
         "proxy_enabled": bool(config["enabled"]),
         "proxy_type": "http",
@@ -133,6 +146,7 @@ def _launch_browser_with_proxy(self: Any, original_launch_browser) -> None:
         return
 
     if not bool(self.proxy_enabled_var.get()):
+        _persist_proxy_settings(self)
         _stop_proxy_bridge(self)
         original_launch_browser(self)
         return
@@ -307,9 +321,8 @@ def install_authenticated_proxy_feature(app_class: type[Any]) -> None:
         try:
             _persist_proxy_settings(self)
         except Exception as exc:
-            if self.proxy_enabled_var.get():
-                messagebox.showerror(APP_NAME, str(exc))
-                return
+            messagebox.showerror(APP_NAME, str(exc))
+            return
         original_save_settings(self)
 
     def launch_browser(self: Any) -> None:
