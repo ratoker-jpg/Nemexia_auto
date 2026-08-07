@@ -20,6 +20,7 @@ install_background_browser_fix()
 import app as app_module
 from tk_layout_compat import install_tk_layout_compat
 from visual_system import install_visual_system, prepare_visual_system
+from visual_typography import install_typography
 from visual_layout import install_debris_layout, install_visual_layout
 from visual_tables import install_tables_dpi
 from visual_motion import install_motion
@@ -43,8 +44,10 @@ install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
 
-# Presentation layers are installed from primitives to composition to lightweight motion.
+# Presentation layers are installed from primitives to typography, composition,
+# table/DPI behavior, and lightweight motion.
 install_visual_system(app_module, BaseRaidManagerApp)
+install_typography(BaseRaidManagerApp)
 install_visual_layout(BaseRaidManagerApp)
 install_tables_dpi(BaseRaidManagerApp)
 install_motion(BaseRaidManagerApp)
