@@ -21,6 +21,7 @@ import app as app_module
 from visual_system import install_visual_system, prepare_visual_system
 from visual_layout import install_debris_layout, install_visual_layout
 from visual_tables import install_tables_dpi
+from visual_motion import install_motion
 
 # Install presentation primitives before feature modules import app-level UI symbols.
 prepare_visual_system(app_module)
@@ -36,10 +37,11 @@ install_all_flight_slot_fix(BaseRaidManagerApp)
 install_report_time_freshness_fix(BaseRaidManagerApp)
 install_flight_time_provenance_fix()
 
-# Foundation owns tokens/components; layout owns composition; tables/DPI wraps only UI helpers.
+# Presentation layers are installed from primitives to composition to lightweight motion.
 install_visual_system(app_module, BaseRaidManagerApp)
 install_visual_layout(BaseRaidManagerApp)
 install_tables_dpi(BaseRaidManagerApp)
+install_motion(BaseRaidManagerApp)
 # Patch only debris presentation helpers before the feature wrapper captures the shell.
 install_debris_layout(debris_module)
 debris_module.install_debris_asteroid_feature(BaseRaidManagerApp)
