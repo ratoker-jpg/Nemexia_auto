@@ -105,6 +105,11 @@ class V2BrowserFlightSource:
             source="game DOM #FleetsCount/#MaxFleets",
         )
 
+    def refresh(self) -> None:
+        invalidator = getattr(self._backend, "invalidate", None)
+        if callable(invalidator):
+            invalidator()
+
     def close(self) -> None:
         closer = getattr(self._backend, "close", None)
         if callable(closer):
