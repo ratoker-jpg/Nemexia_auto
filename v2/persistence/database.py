@@ -71,6 +71,20 @@ class V2Database:
             raise V2DatabaseError("V2 database is closed")
         return str(self._conn.execute("PRAGMA integrity_check").fetchone()[0])
 
+    def backup_to(self, destination: Path) -> Path:
+        """Create a consistent SQLite snapshot, including committed WAL content."""
+        if self._conn is None:
+            raise V2DatabaseError("V2 database is closed")
+        target = Path(destination)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        backup_conn = sqlite3.connect(target)
+        try:
+            self._conn.backup(backup_conn)
+            backup_conn.commit()
+        finally:
+            backup_conn.close()
+        return target
+
     def table_names(self) -> frozenset[str]:
         if self._conn is None:
             raise V2DatabaseError("V2 database is closed")
