@@ -41,9 +41,11 @@ def test_verification_returns_none_for_ambiguous_evidence() -> None:
 def test_spy_backend_has_one_mutation_call_and_no_navigation_or_message_deletion() -> None:
     source = (Path(__file__).resolve().parents[1] / "v2/infrastructure/cdp_spy_backend.py").read_text(encoding="utf-8")
     assert source.count("window.processSpy(Number(fleetId))") == 1
-    assert "tr.espionageClass" in source
     assert "spy1Link-${fleetId}" in source
+    assert "link.closest('tr')" in source
+    assert "fleetType" in source
     assert "loadTabContent('TabAdministrative', 2, 0)" in source
+    assert "tr.espionageClass" not in source
     for forbidden in (
         ".goto(", "new_page(", "bring_to_front(", ".click(", ".fill(",
         "deleteSelectedMessages", "deleteAllMessages", "BrowserWorker", "processSpy(0)",
@@ -53,9 +55,10 @@ def test_spy_backend_has_one_mutation_call_and_no_navigation_or_message_deletion
 
 def test_saved_fleets_fixture_proves_exact_process_spy_fleet_contract() -> None:
     html = (Path(__file__).resolve().parents[1] / "saved_pages/2026-08-08_08-54-11-072/page.html").read_text(encoding="utf-8")
-    assert 'class="espionageClass"' in html
     assert 'id="spy1Link-152272"' in html
     assert 'onclick="processSpy(152272)"' in html
+    assert 'onclick="processSpy(\'0\', true);' in html
+    assert 'Получить все шпионские отчеты' in html
     assert '>3:39:11</a>' in html
     assert '>2:22:19</a>' in html
 
@@ -66,3 +69,4 @@ def test_recon_ui_is_manual_and_requires_confirmation() -> None:
     assert "QMessageBox.question" in source
     assert "request_id = f\"spy-" in source
     assert "process(facts.fleet_id, request_id=request_id)" in source
+    assert "QTimer" not in source
