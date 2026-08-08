@@ -62,6 +62,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "farm_return_buffer_minutes": SettingSpec(
         "farm_return_buffer_minutes", 5, _bounded_int(0, 60)
     ),
+    "actions_enabled": SettingSpec("actions_enabled", False, _bool),
 }
 
 

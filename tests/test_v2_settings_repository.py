@@ -13,15 +13,18 @@ def test_defaults_and_roundtrip_are_typed(tmp_path: Path) -> None:
         assert settings.get("ui_reduce_motion") is False
         assert settings.get("ui_scale_percent") == 100
         assert settings.get("command_planet") == "2:5:6"
+        assert settings.get("actions_enabled") is False
         assert settings.set("ui_reduce_motion", "true") is True
         assert settings.set("ui_scale_percent", "125") == 125
         assert settings.set("farm_home", " 3 : 39 : 11 ") == "3:39:11"
+        assert settings.set("actions_enabled", "true") is True
 
     with V2Database(path) as db:
         settings = V2SettingsRepository(db)
         assert settings.get("ui_reduce_motion") is True
         assert settings.get("ui_scale_percent") == 125
         assert settings.get("farm_home") == "3:39:11"
+        assert settings.get("actions_enabled") is True
 
 
 def test_invalid_or_unknown_settings_fail_before_write(tmp_path: Path) -> None:
@@ -47,6 +50,7 @@ def test_batch_validation_is_all_or_nothing(tmp_path: Path) -> None:
             "farm_home": "3:39:11",
             "command_planet": "2:5:6",
             "farm_return_buffer_minutes": 5,
+            "actions_enabled": False,
         })
         before = db.read_all_settings_raw()
         with pytest.raises(V2SettingError):
@@ -55,6 +59,7 @@ def test_batch_validation_is_all_or_nothing(tmp_path: Path) -> None:
                 "farm_home": "3:40:11",
                 "command_planet": "invalid",
                 "farm_return_buffer_minutes": 9,
+                "actions_enabled": True,
             })
         assert db.read_all_settings_raw() == before
 
@@ -69,6 +74,7 @@ def test_repository_has_small_explicit_non_secret_allowlist(tmp_path: Path) -> N
             "farm_home",
             "command_planet",
             "farm_return_buffer_minutes",
+            "actions_enabled",
         }
         assert not any(
             token in key.lower()
