@@ -47,6 +47,12 @@ def test_debris_page_calls_only_application_context_surfaces() -> None:
     assert "Прочитать открытую систему" in source
 
 
+def test_debris_page_uses_debris_specific_legacy_recycler_default() -> None:
+    source = text("v2/ui/pages/debris.py")
+    assert 'legacy_setting("debris_recyclers", "100")' in source
+    assert 'legacy_setting("asteroid_recyclers", "100")' not in source
+
+
 def test_debris_context_reuses_same_asteroid_action_service_and_journal() -> None:
     source = text("v2/application/debris_context.py")
     assert "AsteroidRequestCoordinator(self._asteroid_actions, database)" in source
