@@ -40,19 +40,28 @@ Legacy read path:
 
 The legacy reader is allowed to navigate to `options.php` and may create/select pages through `BrowserWorker`. That navigation behavior is **not** part of the V2 contract. Current V2 browser access remains attach-only and V2-42 must fail unavailable when the required already-open page is absent rather than silently navigating.
 
-## Spy request side effect
+## Spy report acquisition side effect
 
-The effective legacy mass-spy request is:
+### V2-45 correction to the original V2-41 interpretation
+
+The original V2-41 wording called `processSpy(0)` a mass "spy request" and V2-43/44 initially modeled a new request as `source + target + probe_count`. Later inspection of the preserved real `fleets.php` page proved that model was too broad and must not be carried into the first live mutation.
+
+The saved page shows two distinct controls:
+
+- each existing espionage fleet row has an exact action such as `processSpy(152272)` and a matching `spy1Link-152272`;
+- the bulk control calls `processSpy('0', true)` and is visibly labeled **"Получить все шпионские отчеты"**.
+
+Therefore `processSpy` processes/retrieves a report for an **already existing espionage fleet**. It is not evidence of a command that dispatches new probes to an arbitrary source/target pair. The exact one-shot V2 identity is consequently:
 
 ```text
-processSpy(0)
+existing espionage fleet_id + source + target observed from that exact fleets.php row
 ```
 
-The previous browser audit identified this as the game's `ajax_fleets.php` request with the semantic payload `type=processSpy`, `fleet_id=0`.
+`source` and `target` are preparation facts derived from the live row, not caller-selected routing inputs. V2-45 must call only `processSpy(exact_fleet_id)` once. It must not use the bulk `processSpy(0)` path.
 
-Current `BrowserWorker.request_all_spy_reports()` executes `processSpy(0)` from a fleets page. This is a game-changing side effect and is explicitly outside V2-41.
+The prior browser audit still correctly identified the remote endpoint family: `ajax_fleets.php`, `type=processSpy`, with the selected fleet identity carried as `fleet_id`. The exact success response contract is not sufficiently proven by saved-page evidence, so V2 must verify success from a newly observed report/message identity with the exact target and fresh timestamp rather than trusting the JavaScript call return value.
 
-The exact success response contract of `processSpy(0)` is not sufficiently proven by the saved-page evidence. Therefore later V2 acquisition must verify the result from newly observed report/message evidence rather than trusting a click/call return value alone.
+Current legacy `BrowserWorker.request_all_spy_reports()` still executes the bulk `processSpy(0)` behavior. That legacy implementation remains untouched. V2-45 deliberately uses the safer exact-fleet action instead.
 
 ## Legacy message deletion
 
@@ -166,18 +175,19 @@ V2-41 adds a pure `v2.domain.recon` contract with:
 
 A sanitized HTML fixture locks the report-ID/target/timestamp/resource parsing facts without containing account-specific data.
 
-No V2 browser backend, UI action, scheduler, SQLite schema, or game-side mutation is added in this PR.
+No V2 browser backend, UI action, scheduler, SQLite schema, or game-side mutation was added in V2-41.
 
 ## Constraints for the next stages
 
-V2-42 may add only an attach-only report source/freshness reader. It must not call `processSpy(0)`, delete messages, create tabs, or navigate to `options.php` automatically.
+V2-42 may add only an attach-only report source/freshness reader. It must not call `processSpy`, delete messages, create tabs, or navigate to `options.php` automatically.
 
-Before V2-45 performs the first real spy request, the mutation path must already have:
+Before V2-45 performs the first real spy-report acquisition, the mutation path must already have:
 
-1. typed command and validation;
-2. explicit action gate;
-3. persistent immutable request identity;
-4. idempotency/unresolved-request blocking;
-5. exactly one mutation attempt;
-6. verification from a newly observed exact report/message identity + target + fresh timestamp;
-7. conservative ambiguous handling and no automatic retry.
+1. typed exact-fleet command and validation;
+2. source/target derived from the exact live espionage row;
+3. explicit action gate;
+4. persistent immutable request identity;
+5. idempotency/unresolved-request blocking;
+6. exactly one `processSpy(exact_fleet_id)` mutation attempt;
+7. verification from a newly observed exact report/message identity + target + fresh timestamp;
+8. conservative ambiguous handling and no automatic retry.
