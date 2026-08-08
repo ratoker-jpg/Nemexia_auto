@@ -16,6 +16,7 @@ from v2.application.live_flight_semantics import (
     build_live_flight_policy,
     classify_active_flights,
 )
+from v2.application.live_overview import LiveOverviewSnapshot, build_live_overview
 from v2.application.read_store import (
     HistorySnapshot,
     OverviewSnapshot,
@@ -54,6 +55,10 @@ class V2ApplicationContext:
         self._error: str | None = None
         self._flight_source: FlightSource = flight_source or OfflineFlightSource()
         self._last_flight_status: FlightSourceStatus | None = None
+        self._live_snapshot_ready = False
+        self._last_active_flights: tuple[ActiveFlightSnapshot, ...] = ()
+        self._last_owned_planets: tuple[str, ...] = ()
+        self._last_capacity: FleetCapacitySnapshot | None = None
         try:
             self._store = ReadOnlyStore(self.source_path)
         except ReadStoreUnavailable as exc:
@@ -117,33 +122,78 @@ class V2ApplicationContext:
         return self._last_flight_status
 
     def refresh_live_source(self) -> FlightSourceStatus:
+        """Explicitly refresh and cache all read-only live facts as one UI snapshot."""
         refresher = getattr(self._flight_source, "refresh", None)
         if callable(refresher):
             refresher()
-        return self.flight_status()
+        status = self.flight_status()
+        self._live_snapshot_ready = True
+        self._last_active_flights = ()
+        self._last_owned_planets = ()
+        self._last_capacity = None
+        if not status.available:
+            return status
+        try:
+            self._last_active_flights = tuple(self._flight_source.flights())
+            owned_reader = getattr(self._flight_source, "owned_planets", None)
+            if callable(owned_reader):
+                self._last_owned_planets = tuple(str(coord) for coord in owned_reader())
+            capacity_reader = getattr(self._flight_source, "capacity", None)
+            if callable(capacity_reader):
+                self._last_capacity = capacity_reader()
+        except Exception as exc:
+            self._last_active_flights = ()
+            self._last_owned_planets = ()
+            self._last_capacity = None
+            self._last_flight_status = FlightSourceStatus(False, f"Live-read остановлен: {exc}")
+        return self._last_flight_status
 
     def active_flights(self) -> list[ActiveFlightSnapshot]:
+        if self._live_snapshot_ready:
+            return list(self._last_active_flights)
         return list(self._flight_source.flights())
 
     def owned_planets(self) -> tuple[str, ...]:
+        if self._live_snapshot_ready:
+            return self._last_owned_planets
         reader = getattr(self._flight_source, "owned_planets", None)
         if not callable(reader):
             return ()
         return tuple(reader())
 
-    def classified_active_flights(self) -> list[ClassifiedActiveFlight]:
+    def _flight_policy(self):
         settings = {
             key: self.legacy_setting(key)
             for key in ("home_g", "home_s", "home_p")
         }
-        policy = build_live_flight_policy(settings, owned_planets=self.owned_planets())
-        return list(classify_active_flights(self.active_flights(), policy))
+        return build_live_flight_policy(settings, owned_planets=self.owned_planets())
+
+    def classified_active_flights(self) -> list[ClassifiedActiveFlight]:
+        return list(classify_active_flights(self.active_flights(), self._flight_policy()))
+
+    def cached_classified_active_flights(self) -> list[ClassifiedActiveFlight]:
+        if not self._live_snapshot_ready:
+            return []
+        return list(classify_active_flights(self._last_active_flights, self._flight_policy()))
 
     def farm_blocking_flights(self) -> list[ClassifiedActiveFlight]:
         return [item for item in self.classified_active_flights() if item.facts.blocks_farm_cycle]
 
     def fleet_capacity(self) -> FleetCapacitySnapshot | None:
+        if self._live_snapshot_ready:
+            return self._last_capacity
         capacity_reader = getattr(self._flight_source, "capacity", None)
         if not callable(capacity_reader):
             return None
         return capacity_reader()
+
+    def live_overview_snapshot(self) -> LiveOverviewSnapshot:
+        """Build Overview facts strictly from the last explicit live refresh."""
+        return build_live_overview(
+            checked=self._live_snapshot_ready,
+            status=self._last_flight_status,
+            flights=self.cached_classified_active_flights(),
+            capacity=self._last_capacity,
+            return_buffer_minutes=self.legacy_setting("farm_return_buffer_minutes", "5"),
+            persisted_farm_ready_at=self.legacy_setting("farm_next_cycle_at", ""),
+        )
