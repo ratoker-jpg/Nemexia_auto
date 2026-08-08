@@ -8,29 +8,35 @@ from v2.infrastructure.cdp_asteroid_backend import (
 )
 
 
-def test_new_flight_verification_requires_new_id_exact_target_and_gas_mission() -> None:
+def test_new_flight_verification_requires_new_id_exact_source_target_and_gas_mission() -> None:
     rows = (
         {"id": "10", "target": "2:23:8", "mission": "Добыча газа", "source": "2:22:3"},
-        {"id": "11", "target": "2:23:9", "mission": "Добыча газа", "source": "2:22:3"},
-        {"id": "12", "target": "2:23:8", "mission": "Атака", "source": "2:22:3"},
-        {"id": "13", "target": "2:23:8", "mission": " Добыча газа ", "source": "2:22:3"},
+        {"id": "11", "target": "2:23:8", "mission": "Добыча газа", "source": "2:22:4"},
+        {"id": "12", "target": "2:23:9", "mission": "Добыча газа", "source": "2:22:3"},
+        {"id": "13", "target": "2:23:8", "mission": "Атака", "source": "2:22:3"},
+        {"id": "14", "target": "2:23:8", "mission": " Добыча газа ", "source": "2:22:3"},
     )
     matched = select_verified_asteroid_flight(
         rows,
         before_ids=frozenset({"10"}),
+        source="2:22:3",
         target="2:23:8",
     )
-    assert matched is not None and matched["id"] == "13"
+    assert matched is not None and matched["id"] == "14"
 
 
-def test_existing_or_wrong_target_or_wrong_mission_never_verifies() -> None:
+def test_existing_or_wrong_source_target_or_mission_never_verifies() -> None:
     rows = (
         {"id": "10", "target": "2:23:8", "mission": "Добыча газа", "source": "2:22:3"},
-        {"id": "11", "target": "2:23:9", "mission": "Добыча газа", "source": "2:22:3"},
-        {"id": "12", "target": "2:23:8", "mission": "Атака", "source": "2:22:3"},
+        {"id": "11", "target": "2:23:8", "mission": "Добыча газа", "source": "2:22:4"},
+        {"id": "12", "target": "2:23:9", "mission": "Добыча газа", "source": "2:22:3"},
+        {"id": "13", "target": "2:23:8", "mission": "Атака", "source": "2:22:3"},
     )
     assert select_verified_asteroid_flight(
-        rows, before_ids=frozenset({"10"}), target="2:23:8"
+        rows,
+        before_ids=frozenset({"10"}),
+        source="2:22:3",
+        target="2:23:8",
     ) is None
 
 
@@ -81,6 +87,20 @@ def test_preparation_pins_recycler_mission_capacity_and_iterative_timing() -> No
         "movement_margin_seconds",
     ):
         assert token in source
+
+
+def test_final_pre_click_snapshot_revalidates_target_margin_and_complete_form() -> None:
+    source = inspect.getsource(V2AsteroidCdpBackend._validated_pre_click_snapshot)
+    assert "current_arrival = sent_at + timedelta(seconds=preparation.one_way_seconds)" in source
+    assert "predict_coordinate(command.observation, current_arrival, safety_seconds=0)" in source
+    assert "movement_margin_seconds(" in source
+    assert "Asteroid target устарел перед SendFleet" in source
+    assert "Fleet composition изменена перед SendFleet" in source
+    assert "Mission изменена перед SendFleet" in source
+    assert "input.ships" in source
+    assert "ASTEROID_RECYCLER_SHIP_KEY" in source
+    assert "command.recycler_count" in source
+    assert "#FleetsCount" in source and "#MaxFleets" in source
 
 
 def test_post_attempt_failures_are_ambiguous_not_retried() -> None:
