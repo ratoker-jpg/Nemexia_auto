@@ -124,9 +124,9 @@ class JournalBackend:
         return None
 
 
-def test_schema_v7_contains_asteroid_journal_and_unresolved_unique_index(tmp_path: Path) -> None:
+def test_current_schema_contains_asteroid_journal_and_unresolved_unique_index(tmp_path: Path) -> None:
     with V2Database(tmp_path / "v2.sqlite3") as db:
-        assert db.schema_version() == V2_SCHEMA_VERSION == 7
+        assert db.schema_version() == V2_SCHEMA_VERSION == 8
         assert "asteroid_actions" in db.table_names()
         indexes = {
             str(row[1])
