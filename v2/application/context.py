@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from v2.application.farm_controller import FarmController, FarmSnapshot, FarmWaveResult
 from v2.application.flight_source import (
     ActiveFlightSnapshot, FleetCapacitySnapshot, FlightSource, FlightSourceStatus, OfflineFlightSource,
 )
@@ -212,10 +213,19 @@ class V2ApplicationContext:
                 row for row in self.plan()
                 if row.coord == item.target and row.state in {"sending", "ambiguous"}
             ]
-            # Never guess which queue row was responsible if duplicates exist.
             if len(queue_matches) == 1:
                 self._v2_queue.set_state(queue_matches[0].id, "sent")
         return resolved
+
+    def farm_snapshot(self) -> FarmSnapshot:
+        return FarmController().snapshot(self)
+
+    def run_farm_wave(self, *, ship_count: int, max_targets: int) -> FarmWaveResult:
+        return FarmController().run_one_wave(
+            self,
+            ship_count=ship_count,
+            max_targets=max_targets,
+        )
 
     def flight_status(self) -> FlightSourceStatus:
         self._last_flight_status = self._flight_source.status()
