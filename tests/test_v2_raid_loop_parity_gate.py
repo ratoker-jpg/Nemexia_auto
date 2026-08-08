@@ -84,11 +84,13 @@ def test_captcha_and_browser_navigation_remain_outside_v2_automation_contract() 
         assert forbidden not in combined
 
 
-def test_v2_storage_contains_owned_action_and_recon_state() -> None:
+def test_v2_storage_contains_owned_action_recon_and_asteroid_state() -> None:
     database = text("v2/persistence/database.py")
     asteroid_journal = text("v2/persistence/asteroid_journal.py")
-    assert "V2_SCHEMA_VERSION = 7" in database
+    asteroid_candidates = text("v2/persistence/asteroid_candidates.py")
+    assert "V2_SCHEMA_VERSION = 8" in database
     for table in ("raid_actions", "raid_queue", "spy_actions", "recon_targets", "recon_reports"):
         assert table in database
     assert "asteroid_actions" in asteroid_journal
     assert "idx_asteroid_actions_unresolved_identity" in asteroid_journal
+    assert "asteroid_observations" in asteroid_candidates
