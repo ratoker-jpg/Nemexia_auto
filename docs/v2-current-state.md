@@ -1,11 +1,11 @@
 # Nemexia Raid Manager V2 — current state
 
-Current parity-gate implementation baseline:
+Current completed raid-loop parity baseline:
 
-- `79f81e4b4776049d8ffaf0a3b6850885fb1db01f`
-- PR #81 / V2-49 — continuous raid-loop recovery/hardening
+- `4e147f7f51cae9f063fabf7ad069e0b0be48a4bc`
+- PR #82 / V2-50 — raid-loop parity gate + documentation
 
-V2-50 is the final parity/docs gate for the V2-41→V2-50 fresh-recon batch. Its exact squash SHA cannot exist before GitHub performs the squash merge; it will be pinned immediately afterward by a docs-only handoff before the next implementation batch starts.
+The V2-41→V2-50 fresh-recon batch is fully merged and its exact squash SHA is pinned above. The next implementation batch is asteroid action migration V2-51→V2-58 from `docs/plans/2026-08-08-v2-asteroid-action-batch.md`.
 
 ## Completed V2 batches
 
@@ -26,9 +26,9 @@ PR #62–#71 established:
 
 Code baseline after V2-40: `a3db5b277ecea3ef5358a9cd9b0e3f93eebb8dd9`.
 
-### Fresh reconnaissance / refill — V2-41→V2-49
+### Fresh reconnaissance / refill — V2-41→V2-50
 
-PR #73–#81 established:
+PR #73–#82 established:
 
 - effective legacy spy/report contract audit and sanitized fixtures;
 - attach-only rendered spy-report reader with typed fresh/stale/no-report/CAPTCHA/unavailable states;
@@ -40,7 +40,10 @@ PR #73–#81 established:
 - controlled exact verified recon → ingestion → queue refill;
 - persisted 25-minute successful-empty-scan cooldown separate from raid return-buffer;
 - continuous in-session recovery from `need_recon` using a user-supplied exact Spy fleet ID;
-- global safety blocking on pending/ambiguous raid **or spy** side effects.
+- global safety blocking on pending/ambiguous raid **or spy** side effects;
+- final raid-loop parity/safety gate and exact remaining-gap record.
+
+Final batch squash: `4e147f7f51cae9f063fabf7ad069e0b0be48a4bc` / PR #82.
 
 Detailed parity record: [`audits/2026-08-08-v2-raid-loop-parity-gate.md`](audits/2026-08-08-v2-raid-loop-parity-gate.md).
 
@@ -258,13 +261,20 @@ Still not enabled in V2:
 - default launcher cutover to Qt;
 - deletion of legacy Tkinter/patch modules.
 
-## Next implementation order after V2-50
+## Current implementation order
 
-After the V2-50 parity gate and its exact-SHA docs handoff are green:
+The next batch is [`plans/2026-08-08-v2-asteroid-action-batch.md`](plans/2026-08-08-v2-asteroid-action-batch.md):
 
-1. migrate asteroid actions first;
-2. then migrate debris/recycling actions;
-3. keep the same side-effect discipline: typed command → validation → explicit gate → persistent identity → idempotency → verified/ambiguous result → restart recovery before any continuous scheduler uses it.
+1. V2-51 contract audit + sanitized fixtures;
+2. attach-only observation read boundary;
+3. typed asteroid dispatch boundary;
+4. persistent asteroid journal/idempotency;
+5. exactly-one-attempt verified asteroid send;
+6. V2-owned candidate state;
+7. controlled Qt asteroid workflow;
+8. recovery/parity gate.
+
+Only after asteroid parity may a separate debris/recycling action batch start.
 
 Do not combine asteroid and debris migration into one large PR.
 
