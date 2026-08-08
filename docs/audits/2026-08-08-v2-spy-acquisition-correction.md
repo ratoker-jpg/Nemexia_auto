@@ -10,14 +10,9 @@ V2-41 correctly identified the legacy call `processSpy(0)`, but its interpretati
 
 Before enabling the first real mutation, the saved `fleets.php` evidence was re-inspected. It proves a different game contract:
 
-```html
-<tr class="espionageClass">
-  <td>3:39:11</td>
-  <td>2:22:19</td>
-  ...
-  <a id="spy1Link-152272" onclick="processSpy(152272)">Шпионаж</a>
-</tr>
-```
+- the visible row for an existing espionage fleet contains the exact action `id="spy1Link-152272"` with `onclick="processSpy(152272)"`, alongside source `3:39:11`, target `2:22:19`, and fleet type `Шпионаж`;
+- a separate following `tr.espionageClass` row is hidden detail content and must **not** be used as the action-row selector;
+- the bulk control calls `processSpy('0', true)` and is visibly labeled `Получить все шпионские отчеты`.
 
 The side-effect identity is therefore an **already-existing espionage fleet ID**. `processSpy(fleet_id)` processes that exact row. `processSpy(0)` is the legacy bulk form over existing spy rows; it is not evidence of dispatching arbitrary probe ships to a caller-supplied target.
 
@@ -33,8 +28,9 @@ SpyRequestCommand(fleet_id)
 
 Read-only preparation must prove from the already-loaded `fleets.php` DOM:
 
-- exact `tr.espionageClass` row;
 - exact `spy1Link-<fleet_id>` / `processSpy(<fleet_id>)` action;
+- the visible row containing that exact action (`link.closest('tr')`);
+- fleet type `Шпионаж` on that row;
 - source coordinates from that row;
 - target coordinates from that row;
 - no CAPTCHA;
@@ -44,7 +40,7 @@ Only after that preparation succeeds does the coordinator persist a `pending` jo
 
 ## Verification
 
-Before the mutation V2 captures the current report-ID set. After the single mutation attempt it refreshes only the already-open `TabAdministrative` content through the game's existing loader; it does not navigate, create tabs, delete messages, or solve CAPTCHA.
+Before the mutation V2 captures the currently rendered report-ID set. After the single mutation attempt it refreshes only the already-open `TabAdministrative` content through the game's existing loader; it does not navigate, create tabs, delete messages, or solve CAPTCHA.
 
 A result is `verified` only when V2 observes a report that is:
 
