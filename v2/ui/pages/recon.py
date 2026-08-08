@@ -5,6 +5,7 @@ import uuid
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QWidget
 
 from v2.application.context import V2ApplicationContext
+from v2.application.recon_refill import ReconRefillState
 from v2.ui.pages.read_tables import FilterableReadOnlyTable
 
 
@@ -32,6 +33,8 @@ class ReconPage(FilterableReadOnlyTable):
         self.fleet_id.setMaximumWidth(180)
         self.process_button = QPushButton("Проверить и обработать", action)
         self.process_button.setObjectName("ProcessSpyButton")
+        self.refill_button = QPushButton("Разведка → AutoFarm refill", action)
+        self.refill_button.setObjectName("ReconRefillButton")
         self.ingest_button = QPushButton("Принять свежие отчёты", action)
         self.ingest_button.setObjectName("IngestReconButton")
         self.status_label = QLabel(
@@ -42,12 +45,14 @@ class ReconPage(FilterableReadOnlyTable):
         row.addWidget(label)
         row.addWidget(self.fleet_id)
         row.addWidget(self.process_button)
+        row.addWidget(self.refill_button)
         row.addWidget(self.ingest_button)
         row.addWidget(self.status_label, 1)
         layout = self.layout()
         if layout is not None:
             layout.insertWidget(0, action)
         self.process_button.clicked.connect(self._process_selected_spy)
+        self.refill_button.clicked.connect(self._run_controlled_refill)
         self.ingest_button.clicked.connect(lambda: self._ingest_live())
 
     def _rows(self) -> list[tuple[object, ...]]:
@@ -96,20 +101,28 @@ class ReconPage(FilterableReadOnlyTable):
             )
         return True
 
-    def _process_selected_spy(self) -> None:
-        fleet_id = self.fleet_id.text().strip()
+    def _prepare_fleet(self, fleet_id: str):
         if not fleet_id:
             QMessageBox.warning(self, "Разведка", "Укажи fleet ID существующего шпионского полёта на fleets.php.")
-            return
+            return None
         prepare = getattr(self.context, "prepare_spy", None)
-        process = getattr(self.context, "process_spy", None)
-        if not callable(prepare) or not callable(process):
+        if not callable(prepare):
             QMessageBox.critical(self, "Разведка", "V2 spy action service недоступен.")
-            return
+            return None
         try:
-            facts = prepare(fleet_id)
+            return prepare(fleet_id)
         except Exception as exc:
             QMessageBox.warning(self, "Разведка остановлена", str(exc))
+            return None
+
+    def _process_selected_spy(self) -> None:
+        fleet_id = self.fleet_id.text().strip()
+        facts = self._prepare_fleet(fleet_id)
+        if facts is None:
+            return
+        process = getattr(self.context, "process_spy", None)
+        if not callable(process):
+            QMessageBox.critical(self, "Разведка", "V2 spy action service недоступен.")
             return
 
         answer = QMessageBox.question(
@@ -154,3 +167,65 @@ class ReconPage(FilterableReadOnlyTable):
                 "Разведка неоднозначна",
                 "Новый exact-target отчёт не подтверждён. Не повторяй действие автоматически.",
             )
+
+    def _run_controlled_refill(self) -> None:
+        fleet_id = self.fleet_id.text().strip()
+        facts = self._prepare_fleet(fleet_id)
+        if facts is None:
+            return
+        run = getattr(self.context, "run_controlled_recon_refill", None)
+        if not callable(run):
+            QMessageBox.critical(self, "Разведка", "Controlled recon/refill service недоступен.")
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Разведка → AutoFarm refill",
+            (
+                f"Выполнить один контролируемый цикл для spy fleet {facts.fleet_id}?\n\n"
+                f"Откуда: {facts.source}\nЦель: {facts.target}\n\n"
+                "Последовательность: ровно один journaled processSpy → exact fresh report → "
+                "V2 ingestion только этого отчёта → deterministic AutoFarm refill.\n\n"
+                "Если fresh отчёт подтверждён, но eligible целей нет, включится отдельный cooldown 25 минут. "
+                "CAPTCHA, отсутствие fresh evidence или ambiguity остановят цикл без повтора."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        request_id = f"recon-refill-{uuid.uuid4().hex}"
+        try:
+            result = run(facts.fleet_id, request_id=request_id)
+        except Exception as exc:
+            self.status_label.setText(f"Recon/refill остановлен: {exc}")
+            QMessageBox.warning(self, "Recon/refill остановлен", str(exc))
+            return
+
+        if result.state is ReconRefillState.REFILLED:
+            self._refresh_rows()
+            self.status_label.setText(result.detail)
+            QMessageBox.information(
+                self,
+                "AutoFarm очередь пополнена",
+                f"{result.detail}\nReport: {result.report_id}\nTarget: {result.target}",
+            )
+            return
+        if result.state is ReconRefillState.EMPTY_COOLDOWN:
+            self._refresh_rows()
+            self.status_label.setText(result.detail)
+            QMessageBox.information(
+                self,
+                "Fresh scan без целей",
+                f"{result.detail}\nСледующая разведка не раньше: {result.cooldown_until}",
+            )
+            return
+        if result.state is ReconRefillState.COOLDOWN:
+            self.status_label.setText(result.detail)
+            QMessageBox.warning(self, "Recon cooldown", result.detail)
+            return
+
+        reason = result.stop_reason.value if result.stop_reason is not None else "stopped"
+        self.status_label.setText(f"Recon/refill остановлен · {reason}: {result.detail}")
+        QMessageBox.warning(self, "Recon/refill остановлен", f"{reason}: {result.detail}")
