@@ -31,7 +31,7 @@ CREATE TABLE spy_reports (
 """
 
 
-def test_recon_reads_persisted_spy_reports_newest_first_without_mutation(tmp_path: Path) -> None:
+def test_legacy_recon_fallback_remains_read_only_for_compatibility(tmp_path: Path) -> None:
     db = tmp_path / "legacy.sqlite3"
     with sqlite3.connect(db) as conn:
         conn.executescript(BASE_SCHEMA + SPY_SCHEMA)
@@ -48,7 +48,7 @@ def test_recon_reads_persisted_spy_reports_newest_first_without_mutation(tmp_pat
     context = V2ApplicationContext(db)
     try:
         reports = context.recon()
-        assert [item.target_coord for item in reports] == ['3:1:3', '3:1:2']
+        assert [item.target_coord for item in reports] == ["3:1:3", "3:1:2"]
         assert reports[0].minerals == 900000
         assert reports[1].ships == 5
     finally:
@@ -64,11 +64,15 @@ def test_old_database_without_spy_reports_stays_readable(tmp_path: Path) -> None
         assert store.list_recon() == []
 
 
-def test_recon_ui_has_no_refresh_or_game_actions() -> None:
+def test_active_recon_ui_uses_typed_context_and_no_direct_browser_or_sql() -> None:
     root = Path(__file__).resolve().parents[1]
-    page = (root / 'v2' / 'ui' / 'pages' / 'recon.py').read_text(encoding='utf-8')
-    main = (root / 'v2' / 'ui' / 'main_window.py').read_text(encoding='utf-8')
-    assert 'context.recon()' in page
-    assert 'ReconPage(self.context' in main
-    for forbidden in ('BrowserWorker', 'request_spy', 'delete_messages', 'send_raid', 'INSERT INTO', 'UPDATE '):
+    page = (root / "v2" / "ui" / "pages" / "recon.py").read_text(encoding="utf-8")
+    main = (root / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
+    assert "context.recon()" in page
+    assert "ingest_live_recon" in page
+    assert "prepare_spy" in page and "process_spy" in page
+    assert "ReconPage(self.context" in main
+    for forbidden in (
+        "BrowserWorker", "delete_messages", "sqlite3", "INSERT INTO", "UPDATE ", "DELETE FROM"
+    ):
         assert forbidden not in page
