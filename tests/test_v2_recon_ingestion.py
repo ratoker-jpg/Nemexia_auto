@@ -33,7 +33,7 @@ def _report(
     )
 
 
-def test_ingest_rejects_partial_and_stale_and_is_idempotent(tmp_path: Path) -> None:
+def test_ingest_rejects_partial_invalid_target_and_stale_and_is_idempotent(tmp_path: Path) -> None:
     with V2Database(tmp_path / "v2.sqlite3") as db:
         repo = V2ReconRepository(db)
         result = repo.ingest_reports(
@@ -41,11 +41,12 @@ def test_ingest_rejects_partial_and_stale_and_is_idempotent(tmp_path: Path) -> N
                 _report("fresh-1", "2:22:19", NOW - timedelta(minutes=5)),
                 _report(None, "2:22:20", NOW - timedelta(minutes=1)),
                 _report("undated", "2:22:21", None),
+                _report("invalid-target", "2:0:21", NOW - timedelta(minutes=1)),
                 _report("stale", "2:22:22", NOW - timedelta(hours=25)),
             ),
             now=NOW,
         )
-        assert (result.inserted, result.duplicates, result.rejected_partial, result.rejected_stale) == (1, 0, 2, 1)
+        assert (result.inserted, result.duplicates, result.rejected_partial, result.rejected_stale) == (1, 0, 3, 1)
 
         again = repo.ingest_reports((_report("fresh-1", "2:22:19", NOW - timedelta(minutes=5)),), now=NOW)
         assert (again.inserted, again.duplicates) == (0, 1)
@@ -55,6 +56,14 @@ def test_ingest_rejects_partial_and_stale_and_is_idempotent(tmp_path: Path) -> N
         assert rows[0].report_id == "fresh-1"
         assert rows[0].target_coord == "2:22:19"
         assert rows[0].minerals == 500_000
+
+
+def test_target_coordinate_is_canonicalized_before_storage(tmp_path: Path) -> None:
+    with V2Database(tmp_path / "v2.sqlite3") as db:
+        repo = V2ReconRepository(db)
+        result = repo.ingest_reports((_report("normalized", " 02 : 022 : 019 ", NOW),), now=NOW)
+        assert result.inserted == 1
+        assert repo.list_recon()[0].target_coord == "2:22:19"
 
 
 def test_latest_target_projection_is_deterministic_by_report_time_then_id(tmp_path: Path) -> None:
