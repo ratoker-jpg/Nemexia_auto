@@ -8,6 +8,7 @@ from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
 from v2.application.raid_actions import RaidActionService
 from v2.application.read_store import ReadOnlyStore, ReadStoreUnavailable
+from v2.application.report_source import V2BrowserReportSource
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
 from v2.infrastructure.cdp_account_reader import ReadOnlyAccountCdpBackend
@@ -34,6 +35,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
         endpoint = resolve_cdp_endpoint(source_path, preferred_port=settings.get("cdp_port"))
         read_backend = ReadOnlyAccountCdpBackend(endpoint.endpoint)
         flight_source = V2BrowserFlightSource(read_backend)
+        report_source = V2BrowserReportSource(read_backend)
         raid_actions = RaidActionService(
             V2RaidCdpBackend(endpoint.endpoint),
             enabled=bool(settings.get("actions_enabled")),
@@ -41,6 +43,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
         return V2ApplicationContext(
             source_path,
             flight_source=flight_source,
+            report_source=report_source,
             v2_settings=settings,
             v2_database=database,
             v2_queue=queue,

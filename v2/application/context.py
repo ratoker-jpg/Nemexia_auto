@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Mapping
 
@@ -18,8 +19,10 @@ from v2.application.read_store import (
     HistorySnapshot, OverviewSnapshot, QueueSnapshot, ReadOnlyStore, ReadStoreUnavailable,
     ReconSnapshot, TargetSnapshot,
 )
+from v2.application.report_source import ReconReadSnapshot, V2BrowserReportSource
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
+from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
 from v2.persistence.database import V2Database
 
 
@@ -45,6 +48,7 @@ class V2ApplicationContext:
 
     def __init__(
         self, source_path: Path, *, flight_source: FlightSource | None = None,
+        report_source: V2BrowserReportSource | None = None,
         v2_settings: V2SettingsRepository | None = None,
         v2_database: V2Database | None = None,
         v2_queue: V2QueueRepository | None = None,
@@ -54,6 +58,7 @@ class V2ApplicationContext:
         self._store: ReadOnlyStore | None = None
         self._error: str | None = None
         self._flight_source: FlightSource = flight_source or OfflineFlightSource()
+        self._report_source = report_source
         self._v2_settings = v2_settings
         self._v2_database = v2_database
         self._v2_queue = v2_queue
@@ -69,10 +74,13 @@ class V2ApplicationContext:
             self._error = str(exc)
 
     @classmethod
-    def auto_detect(cls, *, flight_source: FlightSource | None = None) -> "V2ApplicationContext":
+    def auto_detect(
+        cls, *, flight_source: FlightSource | None = None,
+        report_source: V2BrowserReportSource | None = None,
+    ) -> "V2ApplicationContext":
         override = os.environ.get("NEMEXIA_V2_READ_DB", "").strip()
         source = Path(override).expanduser() if override else legacy_db_path()
-        return cls(source, flight_source=flight_source)
+        return cls(source, flight_source=flight_source, report_source=report_source)
 
     def close(self) -> None:
         if self._store is not None:
@@ -102,6 +110,20 @@ class V2ApplicationContext:
 
     def recon(self, *, limit: int = 2000) -> list[ReconSnapshot]:
         return [] if self._store is None else self._store.list_recon(limit=limit)
+
+    def live_recon(
+        self, *, now: datetime | None = None,
+        lookback_hours: int = LEGACY_SPY_REPORT_LOOKBACK_HOURS,
+    ) -> ReconReadSnapshot:
+        if self._report_source is None:
+            return ReconReadSnapshot(
+                ReportReadState.LIVE_UNAVAILABLE,
+                (),
+                (),
+                (),
+                "Attach-only report source is not configured",
+            )
+        return self._report_source.read(now=now, lookback_hours=lookback_hours)
 
     def plan(self, *, limit: int = 5000) -> list[QueueSnapshot]:
         if self._v2_queue is not None:

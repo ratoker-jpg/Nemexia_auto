@@ -85,7 +85,7 @@ def test_context_close_propagates_to_browser_source(tmp_path: Path) -> None:
     assert backend.closed is True
 
 
-def test_qt_bootstrap_wires_isolated_settings_plus_read_side_browser_adapter() -> None:
+def test_qt_bootstrap_wires_isolated_settings_plus_read_side_browser_adapters() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "app_qt.py").read_text(encoding="utf-8")
     assert "V2Database(paths.database)" in source
@@ -94,6 +94,8 @@ def test_qt_bootstrap_wires_isolated_settings_plus_read_side_browser_adapter() -
     assert 'preferred_port=settings.get("cdp_port")' in source
     assert "ReadOnlyAccountCdpBackend" in source
     assert "V2BrowserFlightSource" in source
+    assert "V2BrowserReportSource" in source
+    assert "report_source=report_source" in source
     for forbidden in (
         "BrowserWorker",
         "launch_yandex",

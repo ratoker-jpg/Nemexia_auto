@@ -15,6 +15,16 @@ LEGACY_EMPTY_SCAN_COOLDOWN_MINUTES = 25
 QueueResource = Literal["metal", "minerals"]
 
 
+class ReportReadState(str, Enum):
+    """Read-only freshness state for the already-rendered report source."""
+
+    LIVE_UNAVAILABLE = "live_unavailable"
+    CAPTCHA = "captcha"
+    NO_REPORTS = "no_reports"
+    STALE_ONLY = "stale_only"
+    FRESH = "fresh"
+
+
 class ReconCycleState(str, Enum):
     """Typed outcome of one reconnaissance-read decision.
 
