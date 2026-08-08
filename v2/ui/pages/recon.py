@@ -48,7 +48,7 @@ class ReconPage(FilterableReadOnlyTable):
         if layout is not None:
             layout.insertWidget(0, action)
         self.process_button.clicked.connect(self._process_selected_spy)
-        self.ingest_button.clicked.connect(self._ingest_live)
+        self.ingest_button.clicked.connect(lambda: self._ingest_live())
 
     def _rows(self) -> list[tuple[object, ...]]:
         return [
