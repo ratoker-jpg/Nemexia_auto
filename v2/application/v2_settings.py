@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
 from v2.persistence.database import V2Database
@@ -53,6 +54,19 @@ def _coord(value: object) -> str:
     return ":".join(str(int(part)) for part in match.groups())
 
 
+def _optional_utc_iso(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise V2SettingError(f"Expected ISO datetime or empty value, got {value!r}") from exc
+    if parsed.tzinfo is None:
+        raise V2SettingError("Cooldown datetime must be timezone-aware")
+    return parsed.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
 SETTING_SPECS: dict[str, SettingSpec] = {
     "ui_reduce_motion": SettingSpec("ui_reduce_motion", False, _bool),
     "ui_scale_percent": SettingSpec("ui_scale_percent", 100, _bounded_int(80, 160)),
@@ -61,6 +75,9 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "command_planet": SettingSpec("command_planet", "2:5:6", _coord),
     "farm_return_buffer_minutes": SettingSpec(
         "farm_return_buffer_minutes", 5, _bounded_int(0, 60)
+    ),
+    "farm_no_target_cooldown_until": SettingSpec(
+        "farm_no_target_cooldown_until", "", _optional_utc_iso
     ),
     "actions_enabled": SettingSpec("actions_enabled", False, _bool),
 }

@@ -20,7 +20,9 @@ class FarmState(str, Enum):
     BLOCKED_UNRESOLVED = "blocked_unresolved"
     WAITING_RETURN = "waiting_return"
     WAITING_CAPACITY = "waiting_capacity"
-    NO_TARGETS = "no_targets"
+    NEED_RECON = "need_recon"
+    # Compatibility alias for callers compiled against V2-40. New logic must use NEED_RECON.
+    NO_TARGETS = "need_recon"
     READY = "ready"
 
 
@@ -129,7 +131,15 @@ class FarmController:
             suffix = f" Следующая проверка после {ready_at}." if ready_at else ""
             return FarmSnapshot(FarmState.WAITING_RETURN, f"Есть farm-blocking атаки: {blocking}. Новую волну пока не запускаем.{suffix}", len(items), free_slots, blocking, 0, ready_at)
         if not items:
-            return FarmSnapshot(FarmState.NO_TARGETS, "В V2-очереди нет eligible queued целей.", 0, free_slots, 0, 0, ready_at)
+            return FarmSnapshot(
+                FarmState.NEED_RECON,
+                "V2-очередь исчерпана: нужна контролируемая свежая разведка и refill.",
+                0,
+                free_slots,
+                0,
+                0,
+                ready_at,
+            )
         if ready_deadline is not None and datetime.now(timezone.utc) < ready_deadline:
             return FarmSnapshot(FarmState.WAITING_RETURN, f"Farm-return завершён, действует return-buffer до {ready_at}.", len(items), free_slots, 0, 0, ready_at)
         if free_slots <= 0:
