@@ -22,7 +22,17 @@ def test_farm_controller_uses_typed_states_not_ui_strings() -> None:
         "NO_TARGETS", "READY",
     ):
         assert state in CONTROLLER
-    assert "startswith(" not in CONTROLLER
+    # Decisions must use FarmState / structured journal fields, never rendered status text.
+    for forbidden in (
+        "detail.startswith(",
+        "detail.casefold(",
+        "detail.lower(",
+        "status_text.startswith(",
+        "label.text().startswith(",
+    ):
+        assert forbidden not in CONTROLLER
+    # Prefixing a persisted request namespace is structured operation metadata, not UI text.
+    assert 'request_id.startswith("farm-")' in CONTROLLER
 
 
 def test_farm_page_has_no_direct_browser_sql_or_sendfleet_calls() -> None:
