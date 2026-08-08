@@ -13,6 +13,7 @@ class ActivePage(QWidget):
         super().__init__(parent)
         status = context.flight_status()
         flights = context.active_flights() if status.available else []
+        capacity = context.fleet_capacity() if status.available else None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -30,8 +31,20 @@ class ActivePage(QWidget):
         detail = QLabel(status.detail, banner)
         detail.setObjectName("Muted")
         detail.setWordWrap(True)
+        if capacity is None:
+            capacity_text = "Лимит флота: —"
+        else:
+            capacity_text = (
+                f"Полёты: {capacity.used} / {capacity.maximum} · свободно {capacity.free}"
+            )
+        capacity_label = QLabel(capacity_text, banner)
+        capacity_label.setObjectName("Muted")
+        capacity_label.setToolTip(
+            capacity.source if capacity is not None else "Лимит не вычисляется по строкам таблицы"
+        )
         banner_layout.addWidget(title)
         banner_layout.addWidget(detail)
+        banner_layout.addWidget(capacity_label)
         layout.addWidget(banner)
 
         rows = [
@@ -53,4 +66,5 @@ class ActivePage(QWidget):
             parent=self,
         )
         self.model = self.flight_table.model
+        self.capacity = capacity
         layout.addWidget(self.flight_table, 1)
