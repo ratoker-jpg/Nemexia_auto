@@ -5,23 +5,15 @@ from collections.abc import Iterable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QApplication,
-    QButtonGroup,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QPushButton,
-    QSizePolicy,
-    QStackedWidget,
-    QVBoxLayout,
-    QWidget,
+    QApplication, QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow,
+    QPushButton, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from v2.application.context import V2ApplicationContext
 from v2.runtime_paths import RuntimePaths
 from v2.ui.pages.diagnostics import DiagnosticsPage
 from v2.ui.pages.overview import OverviewPage
+from v2.ui.pages.plan import PlanPage
 from v2.ui.pages.read_tables import HistoryPage, TargetsPage
 from v2.ui.pages.recon import ReconPage
 from v2.ui.theme import ORBITAL_COMMAND_QSS
@@ -29,31 +21,22 @@ from v2.ui.theme import ORBITAL_COMMAND_QSS
 
 NAV_GROUPS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
     ("ОБЗОР", (("overview", "Обзор", "Сводка состояния и ближайшие действия"),)),
-    (
-        "ОПЕРАЦИИ",
-        (
-            ("plan", "План", "Очередь и подготовка отправок"),
-            ("active", "Активные", "Текущие полёты и возвраты"),
-            ("farm", "Автофарм", "Состояние автоматического цикла"),
-            ("asteroids", "Астероиды", "Разведка и добыча газа"),
-            ("debris", "Обломки", "Астероиды с обломками"),
-        ),
-    ),
-    (
-        "ДАННЫЕ",
-        (
-            ("recon", "Разведка", "Шпионские отчёты и свежесть данных"),
-            ("targets", "Цели", "База целей и фильтры"),
-            ("history", "История", "Отправки, результаты и ошибки"),
-        ),
-    ),
-    (
-        "СИСТЕМА",
-        (
-            ("settings", "Настройки", "Параметры приложения"),
-            ("diagnostics", "Диагностика", "Логи и техническое состояние"),
-        ),
-    ),
+    ("ОПЕРАЦИИ", (
+        ("plan", "План", "Очередь и подготовка отправок"),
+        ("active", "Активные", "Текущие полёты и возвраты"),
+        ("farm", "Автофарм", "Состояние автоматического цикла"),
+        ("asteroids", "Астероиды", "Разведка и добыча газа"),
+        ("debris", "Обломки", "Астероиды с обломками"),
+    )),
+    ("ДАННЫЕ", (
+        ("recon", "Разведка", "Шпионские отчёты и свежесть данных"),
+        ("targets", "Цели", "База целей и фильтры"),
+        ("history", "История", "Отправки, результаты и ошибки"),
+    )),
+    ("СИСТЕМА", (
+        ("settings", "Настройки", "Параметры приложения"),
+        ("diagnostics", "Диагностика", "Логи и техническое состояние"),
+    )),
 )
 
 
@@ -177,6 +160,8 @@ class MainWindow(QMainWindow):
     def _build_page(self, key: str, title: str, description: str) -> QWidget:
         if key == "overview":
             return OverviewPage(self.context, self)
+        if key == "plan":
+            return PlanPage(self.context, self)
         if key == "recon":
             return ReconPage(self.context, self)
         if key == "targets":
@@ -192,7 +177,6 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
         card = QFrame(page)
         card.setObjectName("PlaceholderCard")
         card_layout = QVBoxLayout(card)

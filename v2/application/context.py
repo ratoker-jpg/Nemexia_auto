@@ -7,6 +7,7 @@ from pathlib import Path
 from v2.application.read_store import (
     HistorySnapshot,
     OverviewSnapshot,
+    QueueSnapshot,
     ReadOnlyStore,
     ReadStoreUnavailable,
     ReconSnapshot,
@@ -82,3 +83,6 @@ class V2ApplicationContext:
 
     def recon(self, *, limit: int = 2000) -> list[ReconSnapshot]:
         return [] if self._store is None else self._store.list_recon(limit=limit)
+
+    def plan(self, *, limit: int = 5000) -> list[QueueSnapshot]:
+        return [] if self._store is None else self._store.list_plan(limit=limit)
