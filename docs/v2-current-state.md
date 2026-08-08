@@ -1,116 +1,210 @@
 # Nemexia Raid Manager V2 — current state
 
-Documentation handoff after the completed #62–#71 V2 action-migration batch.
+Current parity-gate implementation baseline:
 
-## Current implementation baseline
+- `79f81e4b4776049d8ffaf0a3b6850885fb1db01f`
+- PR #81 / V2-49 — continuous raid-loop recovery/hardening
 
-The code baseline completed by PR #71 is:
+V2-50 is the final parity/docs gate for the V2-41→V2-50 fresh-recon batch. Its exact squash SHA cannot exist before GitHub performs the squash merge; it will be pinned immediately afterward by a docs-only handoff before the next implementation batch starts.
 
-- `a3db5b277ecea3ef5358a9cd9b0e3f93eebb8dd9`
-- PR #71: `V2-40: add explicitly armed controlled AutoFarm scheduler`
+## Completed V2 batches
 
-This SHA is the implementation baseline before the docs-only handoff PR. After this documentation PR is merged, new work must start from the then-current `main`, while `a3db5b2...` remains the exact code baseline of the completed action batch.
+### Raid action migration — V2-31→V2-40
 
-## Completed V2 action batch: PR #62–#71
+PR #62–#71 established:
 
-The full mutation path was migrated in small gated PRs:
+- typed raid commands;
+- attach-only raid preparation;
+- explicit `actions_enabled` gate;
+- exactly-one-attempt SendFleet;
+- persistent raid journal/idempotency;
+- V2-owned raid queue;
+- manual Plan dispatch;
+- live reconciliation of pending/ambiguous raids;
+- typed AutoFarm state machine;
+- explicitly armed in-session scheduler.
 
-- #62 / V2-31 — typed raid action boundary;
-- #63 / V2-32 — attach-only raid preparation backend;
-- #64 / V2-33 — explicit runtime `actions_enabled` gate;
-- #65 / V2-34 — exactly-one-attempt verified raid dispatch;
-- #66 / V2-35 — persistent action journal + idempotency;
-- #67 / V2-36 — V2-owned raid queue in isolated SQLite;
-- #68 / V2-37 — confirmed manual dispatch from Plan;
-- #69 / V2-38 — reconciliation of pending/ambiguous sends from live flights;
-- #70 / V2-39 — typed AutoFarm state machine + one-wave execution;
-- #71 / V2-40 — explicitly armed controlled continuous AutoFarm scheduler.
+Code baseline after V2-40: `a3db5b277ecea3ef5358a9cd9b0e3f93eebb8dd9`.
 
-PR #71 was verified both before merge and again on the exact squash SHA in `main` with:
+### Fresh reconnaissance / refill — V2-41→V2-49
 
-- Windows Python 3.10: compileall + pytest + legacy self-test;
-- Windows Python 3.11: compileall + pytest + legacy self-test;
-- Python 3.11 + PySide6: real offscreen `QApplication` / `MainWindow` smoke.
+PR #73–#81 established:
+
+- effective legacy spy/report contract audit and sanitized fixtures;
+- attach-only rendered spy-report reader with typed fresh/stale/no-report/CAPTCHA/unavailable states;
+- exact-fleet typed `processSpy(fleet_id)` boundary;
+- persistent V2 spy journal and idempotency;
+- exactly-one-attempt verified fresh report acquisition;
+- V2-owned recon targets and immutable report snapshots;
+- deterministic manual-metal/manual-mineral/AutoFarm queue policy;
+- controlled exact verified recon → ingestion → queue refill;
+- persisted 25-minute successful-empty-scan cooldown separate from raid return-buffer;
+- continuous in-session recovery from `need_recon` using a user-supplied exact Spy fleet ID;
+- global safety blocking on pending/ambiguous raid **or spy** side effects.
+
+Detailed parity record: [`audits/2026-08-08-v2-raid-loop-parity-gate.md`](audits/2026-08-08-v2-raid-loop-parity-gate.md).
 
 ## Safety baseline
 
-The pre-PySide6 working version remains recoverable at:
+Rollback refs remain untouched:
 
 - `stable/tkinter-v1`
 - `archive/pre-pyside6-4e01bfda`
-- source SHA `4e01bfda752c6383e48c0f6eb8be64d68676da67`
+- original stable Tkinter SHA `4e01bfda752c6383e48c0f6eb8be64d68676da67`
 
-The default launcher is still `run_app.bat -> app_entry.py` (Tkinter). V2 remains a separate `app_qt.py` entrypoint.
+Default launcher is still:
 
-Do not repoint, rewrite, or reuse the stable/archive refs for V2 work.
+```text
+run_app.bat -> app_entry.py
+```
+
+PySide6 remains a separate opt-in entrypoint:
+
+```text
+app_qt.py
+```
+
+No final Tkinter → Qt cutover has occurred.
 
 ## Storage boundary
 
 Legacy SQLite remains read-only:
 
-- SQLite `mode=ro`;
+- URI `mode=ro`;
 - `PRAGMA query_only=ON`;
-- legacy targets/history/recon and migration inputs are reads only.
+- no V2 mutation of legacy targets/history/queue/recon/settings.
 
-V2-owned storage lives under `%LOCALAPPDATA%/NemexiaRaidManagerV2/` and now uses schema version 3:
+V2-owned runtime storage remains under `%LOCALAPPDATA%/NemexiaRaidManagerV2/`.
 
-- typed allow-listed settings;
-- `raid_actions` action journal;
-- `raid_queue` mutable V2-owned queue;
-- atomic settings writes;
-- SQLite-native consistent backups with retention.
+Current V2 SQLite schema version: **6**.
 
-The legacy Plan is imported into `raid_queue` only when the V2 queue is empty. Once V2 owns the queue, later legacy reads never overwrite its states.
+V2-owned tables/state now include:
 
-## Live browser boundary
+- allow-listed typed settings;
+- `raid_actions`;
+- `raid_queue`;
+- `spy_actions`;
+- `recon_targets`;
+- immutable `recon_reports`.
 
-V2 attaches to an existing Chromium/Yandex CDP session and requires an already-open `fleets.php` page. It does not launch the browser, create tabs, or navigate the account.
+Legacy targets/queue may seed missing V2-owned state, but later legacy reads do not overwrite mutable V2 queue/recon state.
 
-Read facts include:
+## Browser boundary
 
-- active fleet rows and fleet IDs;
-- `#FleetsCount` / `#MaxFleets`;
-- own planet coordinates.
+V2 is attach-only. It uses an existing Chromium/Yandex CDP session and does not launch the browser, create tabs, or navigate the account automatically.
 
-CAPTCHA remains fail-closed. V2 does not solve, click, or bypass CAPTCHA.
+Current live prerequisites:
 
-## Raid action boundary
+- an already-open `fleets.php` page for fleet/capacity/raid/spy fleet facts;
+- an already-rendered System messages area on `options.php` for spy-report verification.
 
-Mutating raid actions are disabled by default. `actions_enabled` must be explicitly enabled in V2 Settings.
+CAPTCHA remains strict stop/fail-closed. V2 never solves, clicks, or bypasses CAPTCHA.
 
-The raid path is now:
+## Raid mutation boundary
 
-1. typed `RaidCommand` validation;
-2. attach-only preparation of the existing fleet form;
-3. exact source/target/ship-count checks;
-4. persistent `request_id` journal entry before SendFleet;
+Raid actions are disabled by default and require `actions_enabled=true`.
+
+Every raid mutation follows:
+
+1. typed validation;
+2. read-only preparation;
+3. exact source/target/ship facts;
+4. persistent immutable `request_id` before SendFleet;
 5. exactly one SendFleet attempt;
-6. server-response handling;
-7. verification against a new exact target + mission `Атака` + fleet ID;
-8. `verified` or `ambiguous` journal state;
-9. no automatic retry after an ambiguous side effect.
+6. exact new fleet ID + target + mission `Атака` verification;
+7. verified or ambiguous result;
+8. no automatic retry after ambiguity.
 
-The Plan page provides explicit manual Prepare and Send actions. Send requires a modal confirmation with source, target, player, and ship count.
+Queue rows become non-retryable before the remote side effect, closing the crash/restart duplicate-send gap.
 
-Disabled and blacklisted targets cannot reach the dispatch backend. A queue row moves to non-retryable `sending` before SendFleet, closing the crash gap where a successful send could otherwise be repeated after restart.
+Pending/ambiguous raids may be reconciled only from live fleet evidence; ambiguous evidence never creates an automatic resend window.
 
-## Reconciliation
+## Spy / fresh-report mutation boundary
 
-Pending/ambiguous raid actions may be reconciled only from an explicit live fleet refresh.
+V2 does **not** use bulk `processSpy(0)`.
 
-A request becomes verified only when there is one unique matching live attack with:
+The supported mutation is one exact already-existing espionage row:
 
-- exact source;
-- exact target;
-- mission `Атака`;
-- non-empty fleet ID;
-- flight time not older than the journal request.
+```text
+processSpy(fleet_id)
+```
 
-Multiple possible matches remain unresolved. Reconciliation never sends or clicks anything.
+The path is:
+
+1. caller supplies exact `fleet_id`;
+2. V2 proves the exact DOM row and derives source/target from it;
+3. rendered report source must already be available;
+4. persistent immutable spy request ID is written before mutation;
+5. exactly one `processSpy(fleet_id)` attempt;
+6. success requires a new report ID + exact target + fresh timestamp;
+7. ambiguous/unreadable/CAPTCHA results stop without automatic retry.
+
+V2 does not invent a target route and does not yet create a brand-new espionage flight when no processable spy row exists.
+
+## Recon / freshness contracts
+
+Nemexia report wall-clock is interpreted as server UTC+04 and normalized to UTC.
+
+Default freshness window: **24 hours**.
+
+Missing timestamp is never replaced by current time.
+
+V2-owned recon preserves provenance:
+
+- report ID;
+- target;
+- report timestamp;
+- energy;
+- metal;
+- minerals;
+- gas;
+- source/ingestion time.
+
+Stale or partial evidence is rejected rather than silently promoted to fresh data.
+
+## Queue policy
+
+Policies remain intentionally distinct.
+
+### Manual metal
+
+```text
+metal >= 480,000
+```
+
+after enabled/not-blacklisted/not-active/fresh-report filters.
+
+### Manual minerals
+
+A reported mineral value is enough; no 500k threshold.
+
+### AutoFarm
+
+```text
+minerals >= 500,000
+```
+
+Ranking remains minerals desc → metal desc → coordinate.
+
+Refill is deterministic over V2-owned facts and preserves protected/non-retryable queue rows.
+
+## Recon-cycle outcomes
+
+The following remain separate typed outcomes:
+
+- fresh reports + eligible targets → safe refill;
+- fresh reports + zero eligible targets → successful empty scan + **25-minute** cooldown;
+- no reports / stale-only → stop, not cooldown;
+- CAPTCHA → stop;
+- live/browser unavailable → stop;
+- exact-report identity mismatch → stop;
+- ambiguous spy side effect → stop and unresolved journal.
+
+The 25-minute no-target cooldown is persisted in V2 settings and is separate from attack return-buffer state. Restart during the cooldown does not permit a new spy attempt.
 
 ## AutoFarm V2
 
-AutoFarm is built on typed states rather than status-text parsing:
+Current typed states:
 
 - `actions_disabled`;
 - `live_not_checked`;
@@ -118,95 +212,68 @@ AutoFarm is built on typed states rather than status-text parsing:
 - `blocked_unresolved`;
 - `waiting_return`;
 - `waiting_capacity`;
-- `no_targets`;
+- `need_recon`;
 - `ready`.
 
-Eligible targets are only V2 queue rows that are:
+A wave is capped by live free fleet slots, eligible V2 queue size, and user max-target limit. It stops at the first error or ambiguity.
 
-- `queued`;
-- enabled;
-- not blacklisted.
+Continuous mode:
 
-A wave is capped by current live free fleet slots, eligible queue size, and the user max-target limit. Every target uses the same persistent journal/idempotency boundary as manual sending. The wave stops at the first error or ambiguous result.
+- starts disarmed on every new process;
+- requires explicit manual Start confirmation;
+- runs live checks every 30 seconds;
+- waits for farm-blocking attacks and configured return buffer;
+- blocks globally on unresolved raid or spy journal;
+- when queue is exhausted, may recover only through a user-supplied exact Spy fleet ID for that **current session**;
+- the scheduler arm and Spy fleet ID are never persisted;
+- successful empty scans wait through the persisted 25-minute cooldown without a new spy attempt;
+- ambiguity, CAPTCHA, stale/no fresh evidence, live failure or wave failure disarms the cycle.
 
-The AutoFarm page supports:
+## Qt surfaces
 
-- explicit one-wave execution;
-- an explicitly armed continuous in-session cycle;
-- 30-second live refresh/capacity checks;
-- waiting for farm-blocking attacks;
-- configured return buffer;
-- return-buffer recovery from verified `farm-*` V2 action-journal timestamps after restart;
-- automatic safety-disarm on unresolved action, live failure, or wave error.
-
-Continuous AutoFarm is never persisted as armed. Every new `app_qt.py` process starts with the scheduler off and requires a fresh manual Start confirmation.
-
-V2-40 does **not** automatically request new spy reports or rebuild/refill the queue. When eligible queue targets are exhausted, the scheduler stops.
-
-## Real Qt pages
-
-Backed by real application services/data:
+Real PySide6 application surfaces include:
 
 - Overview;
-- Plan — V2-owned queue + explicit manual raid actions;
-- Active — live flights, typed classification, capacity, journal reconciliation;
-- AutoFarm — typed state, one-wave action, controlled in-session cycle;
-- Recon — read-only saved spy reports;
+- Plan;
+- Active;
+- AutoFarm;
+- Recon;
 - Targets;
 - History;
-- Settings — V2-owned settings;
+- Settings;
 - Diagnostics.
 
-Still not migrated as V2 action surfaces:
+Asteroids and Debris are not yet migrated as V2 action surfaces.
 
-- Asteroids;
-- Debris.
+## Explicitly deferred
 
-## Explicitly not enabled yet
+Still not enabled in V2:
 
-V2 still has no automatic action API for:
-
-- spy requests / fresh-report acquisition;
-- message deletion;
-- automatic queue generation/refill from newly scanned reports;
-- automatic browser navigation;
-- asteroid execution;
+- automatic message deletion;
+- automatic CAPTCHA interaction;
+- unattended browser launch/navigation;
+- creation of a new espionage route when no exact processable spy fleet row exists;
+- asteroid execution / auto-repeat;
 - debris/recycling execution;
-- CAPTCHA solving.
+- default launcher cutover to Qt;
+- deletion of legacy Tkinter/patch modules.
 
-Because automatic spying/refill is not migrated, the current V2 continuous farm cycle operates only on its existing V2 queue.
+## Next implementation order after V2-50
 
-## Next implementation batch
+After the V2-50 parity gate and its exact-SHA docs handoff are green:
 
-The next implementation block is defined in:
+1. migrate asteroid actions first;
+2. then migrate debris/recycling actions;
+3. keep the same side-effect discipline: typed command → validation → explicit gate → persistent identity → idempotency → verified/ambiguous result → restart recovery before any continuous scheduler uses it.
 
-- [`plans/2026-08-08-v2-next-action-batch.md`](plans/2026-08-08-v2-next-action-batch.md)
-
-Use logical sequence `V2-41` through `V2-50`; do not pre-assign GitHub PR numbers because this docs-only handoff itself consumes a PR number. The critical order is:
-
-1. inspect and type the legacy spy/report acquisition contracts before browser mutation;
-2. add attach-only spy/report read + preparation boundaries;
-3. add persisted request journal/idempotency for any new side effect;
-4. acquire fresh spy reports without deleting messages;
-5. normalize fresh report facts into V2-owned target data;
-6. rebuild/refill the V2 queue through explicit typed policy, never by UI text;
-7. connect queue exhaustion to controlled fresh-recon/refill behavior;
-8. harden CAPTCHA/live-unavailable/ambiguous recovery;
-9. run parity and restart/crash-gap tests;
-10. only then consider asteroid/debris action migration.
-
-Do not combine automatic spying, queue refill, asteroid execution, and debris execution in one large PR.
+Do not combine asteroid and debris migration into one large PR.
 
 ## Verification gate
 
-Every implementation PR must use the existing Windows CI gate:
+Every implementation/docs gate remains:
 
-- Python 3.10: compileall + pytest + legacy self-test;
-- Python 3.11: compileall + pytest + legacy self-test;
+- Windows Python 3.10: compileall + pytest + legacy self-test;
+- Windows Python 3.11: compileall + pytest + legacy self-test;
 - Python 3.11 + PySide6: real offscreen `QApplication` / `MainWindow` smoke.
 
-CI uses per-ref concurrency so stale superseded branch runs are cancelled instead of delaying the newest head.
-
-Before merge, inspect review findings and fix real P1/P2 issues instead of suppressing tests. After squash merge, verify the push-CI on the exact new `main` SHA.
-
-The local legacy working installation should not be replaced until final parity/cutover is explicitly completed.
+After every squash merge, push-CI must be verified on the exact new `main` SHA before the next branch starts.

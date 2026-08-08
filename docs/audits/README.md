@@ -1,6 +1,12 @@
 # Аудиты проекта
 
-## Актуальный полный аудит — 2026-08-06
+## Актуальный V2 raid-loop parity gate — 2026-08-08
+
+[`2026-08-08-v2-raid-loop-parity-gate.md`](2026-08-08-v2-raid-loop-parity-gate.md) фиксирует фактическое состояние V2 после V2-41→V2-49: exact-fleet fresh spy acquisition, V2-owned recon, deterministic refill, persisted no-target cooldown и continuous recovery без legacy mutation code.
+
+Ключевые ограничения сохранены: attach-only browser, legacy SQLite read-only, CAPTCHA fail-closed, отсутствие automatic retry после ambiguity, без message deletion и без `processSpy(0)`.
+
+## Базовый полный аудит — 2026-08-06
 
 Baseline: `a33632bc092ede70f7d6e6c4a819dd65b055bf1d`.
 
