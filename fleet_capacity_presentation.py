@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from farm_flight_classification_fix import _farm_attacks
 from models import utc_now
 from ui_utils import remaining
 
@@ -10,16 +11,13 @@ from ui_utils import remaining
 _INSTALLED_CLASSES: set[type[Any]] = set()
 
 
-def _normal_attack(flight: Any) -> bool:
-    return str(getattr(flight, "mission", "") or "").strip().casefold() == "атака"
-
-
 def install_fleet_capacity_presentation(app_class: type[Any]) -> None:
-    """Keep capacity and attack timing as two separate concepts in the UI.
+    """Keep capacity and auto-farm attack timing as separate concepts in the UI.
 
     Capacity comes from Nemexia's #FleetsCount/#MaxFleets counters. Return timing
-    remains attack-only, so recycling/transport/gas missions consume capacity but
-    never become the dashboard's raid-return timer.
+    uses only normal attacks originating from the configured main/farm planet, so
+    recycling/transport/gas and incoming attacks may consume/show elsewhere but
+    never become the dashboard's farm-return timer.
     """
     if app_class in _INSTALLED_CLASSES:
         return
@@ -68,16 +66,17 @@ def install_fleet_capacity_presentation(app_class: type[Any]) -> None:
         if used is not None and maximum is not None:
             self.card_slots_var.set(f"{int(used)} / {int(maximum)}")
 
-        attacks = [flight for flight in self.active_flights if _normal_attack(flight)]
+        attacks = _farm_attacks(list(self.active_flights), self.home())
+        now = utc_now()
         next_return = min(
             (flight.return_at for flight in attacks if flight.return_at),
             default=None,
         )
-        self.card_return_var.set(remaining(next_return, utc_now()))
+        self.card_return_var.set(remaining(next_return, now))
 
         # The dashboard section is explicitly titled "Активные атаки". Re-render
-        # that compact list from attacks only while leaving the dedicated Active
-        # page free to show the broader mission list.
+        # it from our outbound attacks from the configured main planet only.
+        # The dedicated Active page can still show the broader own mission list.
         tree = getattr(self, "dashboard_active_tree", None)
         if tree is not None:
             for item_id in tree.get_children(""):
@@ -91,8 +90,8 @@ def install_fleet_capacity_presentation(app_class: type[Any]) -> None:
                     "end",
                     values=(
                         flight.target,
-                        remaining(flight.arrival_at, utc_now()),
-                        remaining(flight.return_at, utc_now()),
+                        remaining(flight.arrival_at, now),
+                        remaining(flight.return_at, now),
                     ),
                 )
 
