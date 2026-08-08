@@ -26,6 +26,8 @@ from v2.application.read_store import (
     ReconSnapshot,
     TargetSnapshot,
 )
+from v2.application.v2_settings import V2SettingsRepository
+from v2.persistence.database import V2Database
 
 
 @dataclass(frozen=True)
@@ -47,13 +49,22 @@ def legacy_db_path(*, environ: dict[str, str] | None = None, home: Path | None =
 
 
 class V2ApplicationContext:
-    """UI-facing migration context with read-only data/live-source boundaries."""
+    """UI-facing migration context with isolated V2 writes and read-only legacy data."""
 
-    def __init__(self, source_path: Path, *, flight_source: FlightSource | None = None) -> None:
+    def __init__(
+        self,
+        source_path: Path,
+        *,
+        flight_source: FlightSource | None = None,
+        v2_settings: V2SettingsRepository | None = None,
+        v2_database: V2Database | None = None,
+    ) -> None:
         self.source_path = Path(source_path)
         self._store: ReadOnlyStore | None = None
         self._error: str | None = None
         self._flight_source: FlightSource = flight_source or OfflineFlightSource()
+        self._v2_settings = v2_settings
+        self._v2_database = v2_database
         self._last_flight_status: FlightSourceStatus | None = None
         self._live_snapshot_ready = False
         self._last_active_flights: tuple[ActiveFlightSnapshot, ...] = ()
@@ -77,6 +88,9 @@ class V2ApplicationContext:
         closer = getattr(self._flight_source, "close", None)
         if callable(closer):
             closer()
+        if self._v2_database is not None:
+            self._v2_database.close()
+            self._v2_database = None
 
     def status(self) -> DataSourceStatus:
         if self._store is None:
@@ -113,6 +127,22 @@ class V2ApplicationContext:
         if self._store is None:
             return default
         return self._store.get_setting(key, default)
+
+    def v2_settings_available(self) -> bool:
+        return self._v2_settings is not None
+
+    def v2_setting(self, key: str, default: object = None) -> object:
+        if self._v2_settings is None:
+            return default
+        return self._v2_settings.get(key)
+
+    def set_v2_setting(self, key: str, value: object) -> object:
+        if self._v2_settings is None:
+            raise RuntimeError("V2 settings storage is unavailable")
+        return self._v2_settings.set(key, value)
+
+    def v2_settings_snapshot(self) -> dict[str, object]:
+        return {} if self._v2_settings is None else self._v2_settings.snapshot()
 
     def flight_status(self) -> FlightSourceStatus:
         self._last_flight_status = self._flight_source.status()
@@ -162,11 +192,24 @@ class V2ApplicationContext:
         return tuple(reader())
 
     def _flight_policy(self):
-        settings = {
-            key: self.legacy_setting(key)
-            for key in ("home_g", "home_s", "home_p")
-        }
-        return build_live_flight_policy(settings, owned_planets=self.owned_planets())
+        if self._v2_settings is not None:
+            farm_home = str(self._v2_settings.get("farm_home"))
+            parts = farm_home.split(":")
+            settings = {
+                "home_g": parts[0], "home_s": parts[1], "home_p": parts[2]
+            } if len(parts) == 3 else {}
+            command_planets = (str(self._v2_settings.get("command_planet")),)
+        else:
+            settings = {
+                key: self.legacy_setting(key)
+                for key in ("home_g", "home_s", "home_p")
+            }
+            command_planets = ("2:5:6",)
+        return build_live_flight_policy(
+            settings,
+            owned_planets=self.owned_planets(),
+            command_planets=command_planets,
+        )
 
     def classified_active_flights(self) -> list[ClassifiedActiveFlight]:
         return list(classify_active_flights(self.active_flights(), self._flight_policy()))
@@ -189,11 +232,16 @@ class V2ApplicationContext:
 
     def live_overview_snapshot(self) -> LiveOverviewSnapshot:
         """Build Overview facts strictly from the last explicit live refresh."""
+        buffer = (
+            self._v2_settings.get("farm_return_buffer_minutes")
+            if self._v2_settings is not None
+            else self.legacy_setting("farm_return_buffer_minutes", "5")
+        )
         return build_live_overview(
             checked=self._live_snapshot_ready,
             status=self._last_flight_status,
             flights=self.cached_classified_active_flights(),
             capacity=self._last_capacity,
-            return_buffer_minutes=self.legacy_setting("farm_return_buffer_minutes", "5"),
+            return_buffer_minutes=buffer,
             persisted_farm_ready_at=self.legacy_setting("farm_next_cycle_at", ""),
         )
