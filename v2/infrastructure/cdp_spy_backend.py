@@ -25,9 +25,7 @@ def select_verified_report(
     reports: tuple[SpyReportFact, ...], *, before_ids: frozenset[str], target: str,
     requested_at: datetime, clock_tolerance_seconds: int = 30,
 ) -> SpyReportFact | None:
-    threshold = requested_at.astimezone(timezone.utc) - timedelta(
-        seconds=max(0, int(clock_tolerance_seconds))
-    )
+    threshold = requested_at.astimezone(timezone.utc) - timedelta(seconds=max(0, int(clock_tolerance_seconds)))
     matches = [
         report for report in reports
         if report.report_id and report.report_id not in before_ids
@@ -42,12 +40,7 @@ class V2SpyCdpBackend(ReadOnlyAccountCdpBackend):
     """Attach-only one-shot `processSpy(fleet_id)` backend."""
 
     def __init__(self, endpoint: str, *, game_host: str = "game.ares.nemexia.com", timeout_seconds: float = 30.0) -> None:
-        super().__init__(
-            endpoint,
-            game_host=game_host,
-            timeout_seconds=timeout_seconds,
-            cache_seconds=0.0,
-        )
+        super().__init__(endpoint, game_host=game_host, timeout_seconds=timeout_seconds, cache_seconds=0.0)
 
     async def _captcha_present(self, page) -> bool:
         return bool(await page.evaluate(r"""() => {
@@ -76,12 +69,10 @@ class V2SpyCdpBackend(ReadOnlyAccountCdpBackend):
                 const tr=link.closest('tr');
                 if (!tr) return null;
                 const cells=Array.from(tr.children).filter(el => el.tagName === 'TD');
-                const typeText=(tr.querySelector('.fleetType')?.textContent||'').replace(/\s+/g,' ').trim();
                 return {
                     source:cells[0]?.textContent?.trim()||'',
                     target:cells[1]?.textContent?.trim()||'',
-                    onclick:link.getAttribute('onclick')||'',
-                    fleetType:typeText
+                    onclick:link.getAttribute('onclick')||''
                 };
             }""", fleet_id)
         except Exception as exc:
@@ -92,8 +83,6 @@ class V2SpyCdpBackend(ReadOnlyAccountCdpBackend):
         match = _PROCESS_ONCLICK_RE.fullmatch(onclick)
         if match is None or match.group(1) != fleet_id:
             raise SpyActionError("DOM action не совпадает с exact processSpy(fleet_id)")
-        if str(row.get("fleetType") or "").strip().casefold() != "шпионаж":
-            raise SpyActionError("Exact fleet row не подтверждён как Шпионаж")
         source = extract_coord(str(row.get("source") or ""))
         target = extract_coord(str(row.get("target") or ""))
         if source.count(":") != 2 or target.count(":") != 2:
@@ -114,7 +103,7 @@ class V2SpyCdpBackend(ReadOnlyAccountCdpBackend):
         await self._reports_ready()
         return SpyRequestPreparation(
             fleet_id=command.fleet_id, source=str(row["source"]), target=str(row["target"]),
-            detail="Exact espionage row + already-rendered report source verified",
+            detail="Exact processSpy fleet row + already-rendered report source verified",
         )
 
     async def _request_spy(self, command: SpyRequestCommand, preparation: SpyRequestPreparation) -> SpyRequestResult:
