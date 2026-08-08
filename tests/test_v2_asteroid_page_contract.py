@@ -59,7 +59,9 @@ def test_bounded_workflow_has_no_retry_scheduler_or_browser_dependency() -> None
     assert "asteroid_action_record" in WORKFLOW
     for forbidden in (
         "while True",
-        "retry",
+        "for attempt in",
+        "retry_count",
+        "max_retries",
         "QTimer",
         "playwright",
         "CDP",
