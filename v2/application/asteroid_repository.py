@@ -62,7 +62,7 @@ class V2AsteroidRepository:
             "source": identity[7],
         }
 
-    def observations(self, *, limit: int = 5000) -> tuple[AsteroidObservationFact, ...]:
+    def observations(self, *, limit: int | None = None) -> tuple[AsteroidObservationFact, ...]:
         return tuple(self._fact_from_row(row) for row in self.storage.list(limit=limit))
 
     def preview(
