@@ -3,7 +3,7 @@ from pathlib import Path
 
 from v2.application.v2_settings import V2SettingsRepository
 from v2.persistence.backup import create_v2_backup
-from v2.persistence.database import V2Database
+from v2.persistence.database import V2Database, V2_SCHEMA_VERSION
 
 
 def test_backup_contains_committed_settings_and_is_restoreable(tmp_path: Path) -> None:
@@ -22,7 +22,8 @@ def test_backup_contains_committed_settings_and_is_restoreable(tmp_path: Path) -
     with V2Database(backup) as restored:
         settings = V2SettingsRepository(restored)
         assert restored.integrity_check() == "ok"
-        assert restored.schema_version() == 1
+        assert restored.schema_version() == V2_SCHEMA_VERSION
+        assert "raid_actions" in restored.table_names()
         assert settings.get("cdp_port") == 9444
         assert settings.get("farm_return_buffer_minutes") == 9
 
