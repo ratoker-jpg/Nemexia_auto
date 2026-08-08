@@ -12,18 +12,38 @@ class V2DatabaseError(RuntimeError):
     pass
 
 
+def _readonly_uri(path: Path) -> str:
+    return f"{path.resolve().as_uri()}?mode=ro"
+
+
+def _preflight_existing_schema(path: Path) -> None:
+    """Reject unsupported existing files before any writable SQLite pragma runs."""
+    if not path.exists():
+        return
+    try:
+        with sqlite3.connect(_readonly_uri(path), uri=True) as conn:
+            current = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    except sqlite3.Error as exc:
+        raise V2DatabaseError(f"Cannot open existing V2 database read-only: {path}") from exc
+    if current > V2_SCHEMA_VERSION:
+        raise V2DatabaseError(
+            f"V2 database schema {current} is newer than supported {V2_SCHEMA_VERSION}"
+        )
+
+
 class V2Database:
     """Own the isolated V2 SQLite database and its schema migrations."""
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
+        _preflight_existing_schema(self.path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys=ON")
-        self._conn.execute("PRAGMA journal_mode=WAL")
         try:
             self._migrate()
+            self._conn.execute("PRAGMA journal_mode=WAL")
         except Exception:
             self._conn.close()
             raise
