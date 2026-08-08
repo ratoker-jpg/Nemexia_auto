@@ -4,7 +4,7 @@ from datetime import datetime
 
 from v2.application.recon_repository import ReconIngestResult, V2ReconRecord, V2ReconRepository, V2TargetRecord
 from v2.application.spy_context import SpyEnabledApplicationContext
-from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS
+from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
 
 
 class ReconOwnedApplicationContext(SpyEnabledApplicationContext):
@@ -27,4 +27,6 @@ class ReconOwnedApplicationContext(SpyEnabledApplicationContext):
         lookback_hours: int = LEGACY_SPY_REPORT_LOOKBACK_HOURS,
     ) -> ReconIngestResult:
         snapshot = self.live_recon(now=now, lookback_hours=lookback_hours)
+        if snapshot.state is not ReportReadState.FRESH:
+            raise RuntimeError(f"{snapshot.state.value}: {snapshot.detail}")
         return self._v2_recon.ingest_snapshot(snapshot, now=now, lookback_hours=lookback_hours)
