@@ -16,6 +16,14 @@ class RaidActionsDisabled(RaidActionError):
     """Raised when a mutating raid action is requested while V2 actions are disabled."""
 
 
+class RaidDispatchAmbiguous(RaidActionError):
+    """The request may have reached the game; automatic retry is forbidden."""
+
+
+class RaidDispatchRejected(RaidActionError):
+    """The game explicitly rejected the SendFleet request."""
+
+
 @dataclass(frozen=True)
 class RaidCommand:
     target: str
@@ -51,9 +59,7 @@ class RaidDispatchResult:
 
 class RaidActionBackend(Protocol):
     def prepare(self, command: RaidCommand) -> RaidPreparation: ...
-
     def dispatch(self, command: RaidCommand) -> RaidDispatchResult: ...
-
     def close(self) -> None: ...
 
 
@@ -99,7 +105,7 @@ def validate_command(command: RaidCommand) -> RaidCommand:
 
 
 class RaidActionService:
-    """Single application boundary for every future V2 raid mutation."""
+    """Single application boundary for every V2 raid mutation."""
 
     def __init__(self, backend: RaidActionBackend, *, enabled: bool = False) -> None:
         self.backend = backend
