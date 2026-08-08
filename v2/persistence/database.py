@@ -77,8 +77,12 @@ class V2Database:
             raise V2DatabaseError("V2 database is closed")
         target = Path(destination)
         target.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(target) as backup_conn:
+        backup_conn = sqlite3.connect(target)
+        try:
             self._conn.backup(backup_conn)
+            backup_conn.commit()
+        finally:
+            backup_conn.close()
         return target
 
     def table_names(self) -> frozenset[str]:
