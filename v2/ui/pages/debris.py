@@ -67,7 +67,7 @@ class DebrisPage(FilterableReadOnlyTable):
         self.recycler_count.setRange(1, 100000)
         try:
             legacy_recyclers = int(
-                str(context.legacy_setting("asteroid_recyclers", "100") or "100")
+                str(context.legacy_setting("debris_recyclers", "100") or "100")
             )
         except ValueError:
             legacy_recyclers = 100
