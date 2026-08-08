@@ -13,7 +13,9 @@ def test_new_v2_database_is_versioned_and_idempotent(tmp_path: Path) -> None:
     assert not path.exists()
     with V2Database(path) as db:
         assert db.schema_version() == V2_SCHEMA_VERSION
-        assert {"settings", "schema_migrations", "raid_actions"}.issubset(db.table_names())
+        assert {"settings", "schema_migrations", "raid_actions", "raid_queue", "spy_actions"}.issubset(
+            db.table_names()
+        )
         assert db.integrity_check() == "ok"
     assert path.is_file()
 
@@ -46,8 +48,12 @@ def test_schema_v1_is_migrated_without_losing_settings(tmp_path: Path) -> None:
     with V2Database(path) as db:
         assert db.schema_version() == V2_SCHEMA_VERSION
         assert db.read_setting_raw("cdp_port") == "9333"
-        assert "raid_actions" in db.table_names()
+        assert {"raid_actions", "raid_queue", "spy_actions"}.issubset(db.table_names())
         assert db.integrity_check() == "ok"
+        migrations = db._require_conn().execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+        assert [int(row[0]) for row in migrations] == [1, 2, 3, 4]
 
 
 def test_future_schema_is_rejected_instead_of_downgraded(tmp_path: Path) -> None:

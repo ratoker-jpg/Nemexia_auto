@@ -21,6 +21,10 @@ class SpyCaptchaBlocked(SpyActionError):
     """CAPTCHA/bot verification is present; V2 must stop for manual handling."""
 
 
+class SpyRequestRejected(SpyActionError):
+    """Backend proved that no remote spy-request side effect was accepted."""
+
+
 @dataclass(frozen=True)
 class SpyRequestCommand:
     source: str
@@ -52,7 +56,7 @@ class SpyRequestResult:
 
 
 class SpyActionBackend(Protocol):
-    """Backend contract only; V2-43 intentionally has no browser implementation."""
+    """Backend contract only; browser mutation is intentionally implemented later."""
 
     def prepare(self, command: SpyRequestCommand) -> SpyRequestPreparation: ...
 
@@ -126,6 +130,21 @@ def validate_preparation(
     )
 
 
+def validate_result(command: SpyRequestCommand, result: SpyRequestResult) -> SpyRequestResult:
+    if result.source != command.source or result.target != command.target:
+        raise SpyActionError("Backend result does not match requested source/target")
+    if int(result.probe_count) != command.probe_count:
+        raise SpyActionError("Backend result does not match requested probe count")
+    if result.requested_at.tzinfo is None:
+        raise SpyActionError("Backend result requested_at must be timezone-aware")
+    if result.verified:
+        if not str(result.report_id or "").strip() or result.report_at is None:
+            raise SpyActionError("Verified spy result requires exact report identity and timestamp")
+        if result.report_at.tzinfo is None:
+            raise SpyActionError("Verified report_at must be timezone-aware")
+    return result
+
+
 class SpyActionService:
     """Single application boundary for future V2 spy-request mutations."""
 
@@ -137,27 +156,30 @@ class SpyActionService:
         self.enabled = bool(enabled)
 
     def prepare(self, command: SpyRequestCommand) -> SpyRequestPreparation:
+        """Perform validation and read-only preparation; never issue the request."""
         clean = validate_command(command)
         self._assert_enabled()
         return validate_preparation(clean, self.backend.prepare(clean))
 
-    def request(self, command: SpyRequestCommand) -> SpyRequestResult:
+    def request_prepared(
+        self,
+        command: SpyRequestCommand,
+        preparation: SpyRequestPreparation,
+    ) -> SpyRequestResult:
+        """Issue one backend request from an already validated preparation.
+
+        Coordinators use this after persisting an immutable pending request so a
+        crash cannot silently open a retry window.
+        """
         clean = validate_command(command)
         self._assert_enabled()
-        preparation = validate_preparation(clean, self.backend.prepare(clean))
-        result = self.backend.request(clean, preparation)
-        if result.source != clean.source or result.target != clean.target:
-            raise SpyActionError("Backend result does not match requested source/target")
-        if int(result.probe_count) != clean.probe_count:
-            raise SpyActionError("Backend result does not match requested probe count")
-        if result.requested_at.tzinfo is None:
-            raise SpyActionError("Backend result requested_at must be timezone-aware")
-        if result.verified:
-            if not str(result.report_id or "").strip() or result.report_at is None:
-                raise SpyActionError("Verified spy result requires exact report identity and timestamp")
-            if result.report_at.tzinfo is None:
-                raise SpyActionError("Verified report_at must be timezone-aware")
-        return result
+        prepared = validate_preparation(clean, preparation)
+        return validate_result(clean, self.backend.request(clean, prepared))
+
+    def request(self, command: SpyRequestCommand) -> SpyRequestResult:
+        clean = validate_command(command)
+        preparation = self.prepare(clean)
+        return self.request_prepared(clean, preparation)
 
     def close(self) -> None:
         self.backend.close()

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 
-V2_SCHEMA_VERSION = 3
+V2_SCHEMA_VERSION = 4
 
 
 class V2DatabaseError(RuntimeError):
@@ -200,6 +200,118 @@ class V2Database:
         ).fetchone()
         return dict(row) if row is not None else None
 
+    def begin_spy_action(
+        self,
+        *,
+        request_id: str,
+        source: str,
+        target: str,
+        probe_count: int,
+        probe_ship_key: str,
+        available_probes: int,
+    ) -> None:
+        """Persist immutable intent before a future remote spy-request attempt."""
+        conn = self._require_conn()
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO spy_actions(
+                        request_id, source, target, probe_count, probe_ship_key,
+                        available_probes, status, created_at, updated_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                    """,
+                    (
+                        str(request_id), str(source), str(target), int(probe_count),
+                        str(probe_ship_key), int(available_probes), now, now,
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise V2DatabaseError(
+                f"Spy request conflicts with an existing request or unresolved target: {request_id}"
+            ) from exc
+
+    def finish_spy_action(
+        self,
+        request_id: str,
+        *,
+        status: str,
+        report_id: str | None = None,
+        requested_at: str | None = None,
+        report_at: str | None = None,
+        detail: str = "",
+    ) -> None:
+        allowed = {"verified", "ambiguous", "failed_safe"}
+        if status not in allowed:
+            raise V2DatabaseError(f"Invalid spy action status: {status}")
+        if status == "verified" and (not str(report_id or "").strip() or not str(report_at or "").strip()):
+            raise V2DatabaseError("Verified spy action requires report_id and report_at")
+        conn = self._require_conn()
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        with conn:
+            cursor = conn.execute(
+                """
+                UPDATE spy_actions
+                   SET status=?, report_id=?, requested_at=?, report_at=?, detail=?, updated_at=?
+                 WHERE request_id=? AND status='pending'
+                """,
+                (
+                    str(status), report_id, requested_at, report_at,
+                    str(detail or ""), now, str(request_id),
+                ),
+            )
+        if cursor.rowcount != 1:
+            raise V2DatabaseError(f"Pending spy request not found: {request_id}")
+
+    def resolve_spy_action(
+        self,
+        request_id: str,
+        *,
+        report_id: str,
+        report_at: str,
+        detail: str = "fresh-report reconciliation",
+    ) -> None:
+        """Resolve pending/ambiguous intent only from an exact fresh report identity."""
+        if not str(report_id or "").strip() or not str(report_at or "").strip():
+            raise V2DatabaseError("report_id and report_at are required to resolve a spy action")
+        conn = self._require_conn()
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        with conn:
+            cursor = conn.execute(
+                """
+                UPDATE spy_actions
+                   SET status='verified', report_id=?, report_at=?, detail=?, updated_at=?
+                 WHERE request_id=? AND status IN ('pending','ambiguous')
+                """,
+                (str(report_id), str(report_at), str(detail or ""), now, str(request_id)),
+            )
+        if cursor.rowcount != 1:
+            raise V2DatabaseError(f"Unresolved spy request not found: {request_id}")
+
+    def read_spy_action(self, request_id: str) -> dict[str, object] | None:
+        row = self._require_conn().execute(
+            "SELECT * FROM spy_actions WHERE request_id=?", (str(request_id),)
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def list_spy_actions(self, *, limit: int = 200) -> list[dict[str, object]]:
+        rows = self._require_conn().execute(
+            "SELECT * FROM spy_actions ORDER BY id DESC LIMIT ?", (max(1, int(limit)),)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def unresolved_spy_action(self, *, source: str, target: str) -> dict[str, object] | None:
+        row = self._require_conn().execute(
+            """
+            SELECT * FROM spy_actions
+             WHERE source=? AND target=? AND status IN ('pending','ambiguous')
+             ORDER BY id DESC LIMIT 1
+            """,
+            (str(source), str(target)),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
     def raid_queue_count(self) -> int:
         return int(self._require_conn().execute("SELECT COUNT(*) FROM raid_queue").fetchone()[0])
 
@@ -314,3 +426,29 @@ class V2Database:
                 ON raid_queue(state, position, id);"""
         )
         self._record_migration(3)
+
+    def _migrate_to_4(self) -> None:
+        self._require_conn().executescript(
+            """CREATE TABLE IF NOT EXISTS spy_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL UNIQUE,
+                source TEXT NOT NULL,
+                target TEXT NOT NULL,
+                probe_count INTEGER NOT NULL CHECK(probe_count > 0),
+                probe_ship_key TEXT NOT NULL,
+                available_probes INTEGER NOT NULL CHECK(available_probes >= 0),
+                status TEXT NOT NULL CHECK(status IN ('pending','verified','ambiguous','failed_safe')),
+                report_id TEXT,
+                requested_at TEXT,
+                report_at TEXT,
+                detail TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_spy_actions_target_status
+                ON spy_actions(source, target, status);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_spy_actions_unresolved_target
+                ON spy_actions(source, target)
+                WHERE status IN ('pending','ambiguous');"""
+        )
+        self._record_migration(4)
