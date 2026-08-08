@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from v2.application.context import V2ApplicationContext
 
@@ -30,10 +30,11 @@ class MetricCard(QFrame):
 
 
 class OverviewPage(QWidget):
-    """Dashboard made only from facts already persisted in SQLite."""
+    """Dashboard from persisted facts plus the last explicit read-only live refresh."""
 
     def __init__(self, context: V2ApplicationContext, parent=None) -> None:
         super().__init__(parent)
+        self.context = context
         status = context.status()
         snapshot = context.overview()
 
@@ -77,6 +78,50 @@ class OverviewPage(QWidget):
             grid.setColumnStretch(column, 1)
         layout.addLayout(grid)
 
+        live = QFrame(self)
+        live.setObjectName("InfoCard")
+        live_layout = QGridLayout(live)
+        live_layout.setContentsMargins(18, 16, 18, 16)
+        live_layout.setHorizontalSpacing(24)
+        live_layout.setVerticalSpacing(8)
+        heading = QHBoxLayout()
+        live_title = QLabel("Live-состояние", live)
+        live_title.setObjectName("SectionTitle")
+        heading.addWidget(live_title, 1)
+        self.live_refresh_button = QPushButton("Обновить live", live)
+        self.live_refresh_button.setObjectName("SecondaryButton")
+        self.live_refresh_button.clicked.connect(self.refresh_live)
+        heading.addWidget(self.live_refresh_button)
+        live_layout.addLayout(heading, 0, 0, 1, 4)
+
+        self.live_status = QLabel("Live-данные ещё не проверены", live)
+        self.live_status.setObjectName("Muted")
+        self.live_status.setWordWrap(True)
+        live_layout.addWidget(self.live_status, 1, 0, 1, 4)
+
+        labels = (
+            ("Слоты", "live_capacity"),
+            ("Активные", "live_active"),
+            ("Свои исходящие", "live_personal"),
+            ("Таймер фарма", "live_farm"),
+            ("Исключено", "live_excluded"),
+            ("Последний возврат", "live_return"),
+            ("Буфер", "live_buffer"),
+            ("Можно снова", "live_ready"),
+        )
+        for index, (label, attr) in enumerate(labels):
+            row = 2 + index // 4 * 2
+            column = index % 4
+            key = QLabel(label, live)
+            key.setObjectName("Muted")
+            val = QLabel("—", live)
+            setattr(self, attr, val)
+            live_layout.addWidget(key, row, column)
+            live_layout.addWidget(val, row + 1, column)
+            live_layout.setColumnStretch(column, 1)
+        layout.addWidget(live)
+        self.render_live()
+
         freshness = QFrame(self)
         freshness.setObjectName("InfoCard")
         freshness_layout = QGridLayout(freshness)
@@ -95,3 +140,38 @@ class OverviewPage(QWidget):
         freshness_layout.addWidget(QLabel(snapshot.latest_raid_at or "—", freshness), 2, 1)
         layout.addWidget(freshness)
         layout.addStretch(1)
+
+    def refresh_live(self) -> None:
+        """User-triggered attach-only refresh; Overview never probes at construction."""
+        self.live_refresh_button.setEnabled(False)
+        self.live_status.setText("Проверяем live-состояние…")
+        try:
+            self.context.refresh_live_source()
+        finally:
+            self.render_live()
+            self.live_refresh_button.setEnabled(True)
+
+    def render_live(self) -> None:
+        snapshot = self.context.live_overview_snapshot()
+        self.live_status.setText(snapshot.detail)
+        if not snapshot.available:
+            for attr in (
+                "live_capacity", "live_active", "live_personal", "live_farm",
+                "live_excluded", "live_return", "live_ready",
+            ):
+                getattr(self, attr).setText("—")
+            self.live_buffer.setText(f"{snapshot.return_buffer_minutes} мин")
+            return
+
+        capacity = snapshot.capacity
+        self.live_capacity.setText(
+            f"{capacity.used} / {capacity.maximum} · свободно {capacity.free}"
+            if capacity is not None else "—"
+        )
+        self.live_active.setText(str(snapshot.active_count))
+        self.live_personal.setText(str(snapshot.personal_outgoing_count))
+        self.live_farm.setText(str(snapshot.farm_blocking_count))
+        self.live_excluded.setText(str(snapshot.excluded_count))
+        self.live_return.setText(snapshot.latest_farm_return_at or "—")
+        self.live_buffer.setText(f"{snapshot.return_buffer_minutes} мин")
+        self.live_ready.setText(snapshot.effective_farm_ready_at or "—")
