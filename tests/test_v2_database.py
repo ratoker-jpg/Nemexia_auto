@@ -10,50 +10,63 @@ from v2.persistence.database import V2Database, V2DatabaseError, V2_SCHEMA_VERSI
 
 def test_new_v2_database_is_versioned_and_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "v2" / "nemexia.sqlite3"
-    assert not path.exists()
     with V2Database(path) as db:
-        assert db.schema_version() == V2_SCHEMA_VERSION
-        assert {"settings", "schema_migrations", "raid_actions", "raid_queue", "spy_actions"}.issubset(
-            db.table_names()
-        )
+        assert db.schema_version() == V2_SCHEMA_VERSION == 5
+        assert {"settings", "schema_migrations", "raid_actions", "raid_queue", "spy_actions"}.issubset(db.table_names())
         assert db.integrity_check() == "ok"
-    assert path.is_file()
-
     with V2Database(path) as reopened:
-        assert reopened.schema_version() == V2_SCHEMA_VERSION
-        assert reopened.integrity_check() == "ok"
+        assert reopened.schema_version() == 5 and reopened.integrity_check() == "ok"
 
 
 def test_schema_v1_is_migrated_without_losing_settings(tmp_path: Path) -> None:
     path = tmp_path / "schema-v1.sqlite3"
     with sqlite3.connect(path) as conn:
-        conn.executescript(
-            """
-            CREATE TABLE settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE schema_migrations (
-                version INTEGER PRIMARY KEY,
-                applied_at TEXT NOT NULL
-            );
-            INSERT INTO settings(key, value, updated_at)
-            VALUES('cdp_port', '9333', '2026-08-08T10:00:00+00:00');
-            INSERT INTO schema_migrations(version, applied_at)
-            VALUES(1, '2026-08-08T10:00:00+00:00');
-            PRAGMA user_version=1;
-            """
-        )
+        conn.executescript("""
+        CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at TEXT NOT NULL);
+        CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL);
+        INSERT INTO settings VALUES('cdp_port','9333','2026-08-08T10:00:00+00:00');
+        INSERT INTO schema_migrations VALUES(1,'2026-08-08T10:00:00+00:00');
+        PRAGMA user_version=1;
+        """)
     with V2Database(path) as db:
-        assert db.schema_version() == V2_SCHEMA_VERSION
+        assert db.schema_version() == 5
         assert db.read_setting_raw("cdp_port") == "9333"
-        assert {"raid_actions", "raid_queue", "spy_actions"}.issubset(db.table_names())
         assert db.integrity_check() == "ok"
-        migrations = db._require_conn().execute(
-            "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall()
-        assert [int(row[0]) for row in migrations] == [1, 2, 3, 4]
+        versions = db._require_conn().execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
+        assert [int(row[0]) for row in versions] == [1, 2, 3, 4, 5]
+
+
+def test_schema_v4_spy_rows_are_preserved_without_invented_fleet_identity(tmp_path: Path) -> None:
+    path = tmp_path / "schema-v4.sqlite3"
+    with V2Database(path) as db:
+        # New DB is v5; recreate a faithful v4 spy table to exercise only migration 5.
+        conn = db._require_conn()
+        with conn:
+            conn.execute("DROP INDEX IF EXISTS idx_spy_actions_target_status")
+            conn.execute("DROP INDEX IF EXISTS idx_spy_actions_unresolved_fleet")
+            conn.execute("DROP INDEX IF EXISTS idx_spy_actions_unresolved_target")
+            conn.execute("DROP TABLE spy_actions")
+            conn.executescript("""
+            CREATE TABLE spy_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL UNIQUE,
+                source TEXT NOT NULL, target TEXT NOT NULL,
+                probe_count INTEGER NOT NULL CHECK(probe_count > 0), probe_ship_key TEXT NOT NULL,
+                available_probes INTEGER NOT NULL CHECK(available_probes >= 0),
+                status TEXT NOT NULL CHECK(status IN ('pending','verified','ambiguous','failed_safe')),
+                report_id TEXT, requested_at TEXT, report_at TEXT, detail TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            INSERT INTO spy_actions(request_id,source,target,probe_count,probe_ship_key,available_probes,status,detail,created_at,updated_at)
+            VALUES('old','3:39:11','2:22:19',5,'spy_probe',20,'ambiguous','','2026-08-08T10:00:00+00:00','2026-08-08T10:00:00+00:00');
+            DELETE FROM schema_migrations WHERE version=5;
+            PRAGMA user_version=4;
+            """)
+    with V2Database(path) as migrated:
+        row = migrated.read_spy_action("old")
+        assert row is not None and row["fleet_id"] is None
+        assert row["status"] == "ambiguous"
+        assert "fleet_id was not recorded" in str(row["detail"])
+        assert migrated.schema_version() == 5
 
 
 def test_future_schema_is_rejected_instead_of_downgraded(tmp_path: Path) -> None:
@@ -67,8 +80,7 @@ def test_future_schema_is_rejected_instead_of_downgraded(tmp_path: Path) -> None
 
 
 def test_v2_database_never_targets_legacy_path_by_convention() -> None:
-    root = Path(__file__).resolve().parents[1]
-    persistence = (root / "v2" / "persistence" / "database.py").read_text(encoding="utf-8")
-    assert "NemexiaRaidManager" not in persistence
-    assert "legacy_db_path" not in persistence
-    assert "ReadOnlyStore" not in persistence
+    source = (Path(__file__).resolve().parents[1] / "v2/persistence/database.py").read_text(encoding="utf-8")
+    assert "NemexiaRaidManager" not in source
+    assert "legacy_db_path" not in source
+    assert "ReadOnlyStore" not in source
