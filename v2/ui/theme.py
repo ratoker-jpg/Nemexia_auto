@@ -80,7 +80,7 @@ QLabel#StatusBadge {{
     border-radius: 8px;
     padding: 6px 10px;
 }}
-QFrame#PlaceholderCard {{
+QFrame#PlaceholderCard, QFrame#DataCard {{
     background: {COLORS['surface_1']};
     border: 1px solid {COLORS['border_subtle']};
     border-radius: 12px;
@@ -91,5 +91,37 @@ QLabel#PlaceholderTitle {{
 }}
 QLabel#Muted {{
     color: {COLORS['text_muted']};
+}}
+QLineEdit#TableSearch {{
+    min-height: 22px;
+    padding: 9px 12px;
+    background: {COLORS['surface_1']};
+    border: 1px solid {COLORS['border_subtle']};
+    border-radius: 8px;
+    selection-background-color: {COLORS['accent_blue']};
+}}
+QLineEdit#TableSearch:focus {{
+    border: 1px solid {COLORS['accent_blue']};
+}}
+QTableView#DataTable {{
+    background: {COLORS['surface_1']};
+    alternate-background-color: {COLORS['surface_1']};
+    border: 0;
+    gridline-color: {COLORS['border_subtle']};
+    selection-background-color: {COLORS['surface_3']};
+    selection-color: {COLORS['text_primary']};
+}}
+QTableView#DataTable::item {{
+    padding: 8px;
+    border-bottom: 1px solid {COLORS['border_subtle']};
+}}
+QHeaderView::section {{
+    background: {COLORS['surface_2']};
+    color: {COLORS['text_secondary']};
+    border: 0;
+    border-right: 1px solid {COLORS['border_subtle']};
+    border-bottom: 1px solid {COLORS['border_strong']};
+    padding: 9px 8px;
+    font-weight: 600;
 }}
 """
