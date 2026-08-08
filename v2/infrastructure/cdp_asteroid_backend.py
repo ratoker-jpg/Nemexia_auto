@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Coroutine
 
 from v2.application.asteroid_actions import (
     AsteroidActionError,
@@ -29,10 +28,7 @@ from v2.domain.asteroids import (
     server_wall_clock_to_utc,
 )
 from v2.infrastructure.cdp_asteroid_reader import ReadOnlyAsteroidCdpBackend
-from v2.infrastructure.cdp_read_backend import CdpReadError, extract_coord, parse_counter
-
-
-_FLEET_DETAILS_RE = re.compile(r"fleetDetails\((\d+)\)")
+from v2.infrastructure.cdp_read_backend import extract_coord, parse_counter
 
 
 def select_verified_asteroid_flight(
@@ -53,12 +49,7 @@ def select_verified_asteroid_flight(
 
 
 class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
-    """Attach-only exactly-one-attempt asteroid SendFleet backend.
-
-    Preparation may mutate only the already-open fleets.php form. The first remote
-    game mutation is one SendFleet click. After that point every unproven outcome
-    is ambiguous and this backend never retries SendFleet.
-    """
+    """Attach-only exactly-one-attempt asteroid SendFleet backend."""
 
     def __init__(
         self,
@@ -75,14 +66,24 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
         )
         self.timeout_seconds = max(5.0, float(timeout_seconds))
 
+    def _action_submit(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
+        """Preserve typed action outcomes instead of flattening them into read errors."""
+        if self._closed or self._loop is None:
+            raise AsteroidActionError("CDP asteroid backend is closed")
+        future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+        try:
+            return future.result(timeout=self.timeout_seconds + 1.0)
+        except AsteroidActionError:
+            raise
+        except Exception as exc:
+            future.cancel()
+            raise AsteroidActionError(str(exc) or exc.__class__.__name__) from exc
+
     async def _existing_fleets_page(self):
         browser = await self._ensure_browser()
         pages = [page for context in browser.contexts for page in context.pages if not page.is_closed()]
         page = next(
-            (
-                item for item in pages
-                if self.game_host in item.url and "fleets.php" in item.url
-            ),
+            (item for item in pages if self.game_host in item.url and "fleets.php" in item.url),
             None,
         )
         if page is None:
@@ -173,11 +174,13 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
             raise AsteroidPreparationRejected(f"squareInfo вернул HTTP {response.get('status')}")
         return text, server_now
 
-    async def _recheck_observation(self, observation: AsteroidObservationFact) -> AsteroidObservationFact:
-        # Predict the asteroid's current coordinate from the immutable trajectory.
-        # The user must already have that exact galaxy/system open; V2 never changes it.
-        probe_page = await self._matching_galaxy_page(observation.galaxy, observation.system)
-        current_server = await self._server_now_utc(probe_page)
+    async def _recheck_observation(
+        self,
+        observation: AsteroidObservationFact,
+        *,
+        reference_page,
+    ) -> AsteroidObservationFact:
+        current_server = await self._server_now_utc(reference_page)
         try:
             current_coord, _ = predict_coordinate(observation, current_server, safety_seconds=0)
         except ValueError as exc:
@@ -226,9 +229,9 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
             await page.evaluate("() => { if (typeof showTab === 'function') showTab('TabChooseShips'); }")
             await page.locator("#TabChooseShips").wait_for(state="visible", timeout=7_000)
             await page.locator(f"#{ASTEROID_RECYCLER_SHIP_KEY}").wait_for(state="attached", timeout=7_000)
-            await page.evaluate("""() => document.querySelectorAll('input.ships').forEach(el => {
-                el.value='0'; el.dispatchEvent(new Event('change', {bubbles:true}));
-            })""")
+            await page.evaluate(
+                "() => document.querySelectorAll('input.ships').forEach(el => { el.value='0'; el.dispatchEvent(new Event('change', {bubbles:true})); })"
+            )
             await page.locator("select#mission").select_option(ASTEROID_MISSION_CODE)
             await page.evaluate(
                 "mission => { if (typeof selectMissionImg === 'function') selectMissionImg(Number(mission)); }",
@@ -237,7 +240,9 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
             recycler = page.locator(f"#{ASTEROID_RECYCLER_SHIP_KEY}")
             await recycler.fill(str(command.recycler_count))
             await recycler.dispatch_event("change")
-            await page.evaluate("() => { if (typeof shipsCheck !== 'function') throw new Error('shipsCheck missing'); shipsCheck(); }")
+            await page.evaluate(
+                "() => { if (typeof shipsCheck !== 'function') throw new Error('shipsCheck missing'); shipsCheck(); }"
+            )
             await page.locator("#TabSendFleets").wait_for(state="visible", timeout=12_000)
         except AsteroidActionError:
             raise
@@ -269,7 +274,9 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
                 await locator.fill(str(value))
                 await locator.dispatch_event("change")
             try:
-                await page.evaluate("() => { if (typeof FlyCheck !== 'function') throw new Error('FlyCheck missing'); FlyCheck(); }")
+                await page.evaluate(
+                    "() => { if (typeof FlyCheck !== 'function') throw new Error('FlyCheck missing'); FlyCheck(); }"
+                )
                 await asyncio.sleep(0.2)
                 timing = await page.evaluate(r"""() => {
                     const digits=value => {
@@ -330,7 +337,7 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
     async def _prepare_asteroid(self, command: AsteroidDispatchCommand) -> AsteroidDispatchPreparation:
         page = await self._existing_fleets_page()
         await self._assert_source(page, command.source)
-        await self._recheck_observation(command.observation)
+        await self._recheck_observation(command.observation, reference_page=page)
         await self._prepare_form(page, command)
         prepared = await self._calculate_plan(page, command)
         await self._assert_source(page, command.source)
@@ -387,8 +394,7 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
     ) -> AsteroidDispatchResult:
         page = await self._existing_fleets_page()
         await self._assert_source(page, command.source)
-        # Re-check live asteroid trajectory immediately before the only remote mutation.
-        await self._recheck_observation(command.observation)
+        await self._recheck_observation(command.observation, reference_page=page)
         available, free_slots = await self._capacity_and_recyclers(page)
         if available < command.recycler_count:
             raise AsteroidDispatchRejected("Недостаточно переработчиков перед SendFleet")
@@ -405,10 +411,16 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
         before_rows = await self._read_flight_rows(page)
         before_ids = frozenset(str(row["id"]) for row in before_rows if row.get("id"))
         button = page.locator("#SendFleetButton")
-        if await button.is_disabled():
-            raise AsteroidDispatchRejected(
-                "Игра не разрешает SendFleet: проверь корабли, газ, координаты и fleet slots"
-            )
+        try:
+            await button.wait_for(state="visible", timeout=5_000)
+            if await button.is_disabled():
+                raise AsteroidDispatchRejected(
+                    "Игра не разрешает SendFleet: проверь корабли, газ, координаты и fleet slots"
+                )
+        except AsteroidDispatchRejected:
+            raise
+        except Exception as exc:
+            raise AsteroidDispatchRejected("SendFleetButton недоступна до remote attempt") from exc
         sent_at = await self._server_now_utc(page)
 
         # Exactly one remote mutation attempt. Never click SendFleet again in this method.
@@ -492,17 +504,11 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
         )
 
     def prepare(self, command: AsteroidDispatchCommand) -> AsteroidDispatchPreparation:
-        try:
-            return self._submit(self._prepare_asteroid(command))
-        except CdpReadError as exc:
-            raise AsteroidActionError(str(exc)) from exc
+        return self._action_submit(self._prepare_asteroid(command))
 
     def dispatch(
         self,
         command: AsteroidDispatchCommand,
         preparation: AsteroidDispatchPreparation,
     ) -> AsteroidDispatchResult:
-        try:
-            return self._submit(self._dispatch_asteroid(command, preparation))
-        except CdpReadError as exc:
-            raise AsteroidActionError(str(exc)) from exc
+        return self._action_submit(self._dispatch_asteroid(command, preparation))
