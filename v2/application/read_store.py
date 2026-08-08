@@ -137,6 +137,13 @@ class ReadOnlyStore:
         query_only = bool(self._conn.execute("PRAGMA query_only").fetchone()[0])
         return StoreStatus(self.path, query_only, self._table_names())
 
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        """Read one persisted legacy setting without creating the settings table."""
+        if "settings" not in self._table_names():
+            return default
+        row = self._conn.execute("SELECT value FROM settings WHERE key=?", (str(key),)).fetchone()
+        return str(row[0]) if row is not None else default
+
     def overview(self) -> OverviewSnapshot:
         target_row = self._conn.execute(
             """
