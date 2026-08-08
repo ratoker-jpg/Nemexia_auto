@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 
-V2_SCHEMA_VERSION = 6
+V2_SCHEMA_VERSION = 7
 
 
 class V2DatabaseError(RuntimeError):
@@ -597,3 +597,12 @@ class V2Database:
                 ON recon_reports(report_at DESC, report_id DESC);"""
         )
         self._record_migration(6)
+
+    def _migrate_to_7(self) -> None:
+        """Add V2-owned persistent asteroid dispatch identity/recovery journal."""
+        # Local import avoids a module cycle at import time: asteroid_journal uses
+        # V2Database only for its repository type, while this hook owns migration.
+        from v2.persistence.asteroid_journal import install_asteroid_journal_schema
+
+        install_asteroid_journal_schema(self._require_conn())
+        self._record_migration(7)

@@ -125,6 +125,13 @@ def normalize_coord(value: object) -> str:
     return ":".join(str(part) for part in parts)
 
 
+def validate_fleet_id(value: object) -> str:
+    fleet_id = str(value or "").strip()
+    if _FLEET_ID_RE.fullmatch(fleet_id) is None:
+        raise AsteroidActionError("fleet_id must be a positive integer identity")
+    return fleet_id
+
+
 def _aware(value: datetime, field: str) -> datetime:
     if value.tzinfo is None:
         raise AsteroidActionError(f"{field} must be timezone-aware")
@@ -244,9 +251,7 @@ def validate_result(
             "Asteroid dispatch may have reached the game but exact new-flight verification is missing",
             result,
         )
-    fleet_id = str(result.fleet_id or "").strip()
-    if _FLEET_ID_RE.fullmatch(fleet_id) is None:
-        raise AsteroidActionError("Verified asteroid result requires a positive fleet_id")
+    fleet_id = validate_fleet_id(result.fleet_id)
     return AsteroidDispatchResult(
         source=preparation.source,
         observation_coord=preparation.observation.coord,
