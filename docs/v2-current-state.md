@@ -182,7 +182,7 @@ The next implementation block is defined in:
 
 - [`plans/2026-08-08-v2-next-action-batch.md`](plans/2026-08-08-v2-next-action-batch.md)
 
-Target sequence is PR #72–#81. The critical order is:
+Use logical sequence `V2-41` through `V2-50`; do not pre-assign GitHub PR numbers because this docs-only handoff itself consumes a PR number. The critical order is:
 
 1. inspect and type the legacy spy/report acquisition contracts before browser mutation;
 2. add attach-only spy/report read + preparation boundaries;
