@@ -1,4 +1,5 @@
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -34,6 +35,7 @@ class Runtime:
         self.blocking = []
         self.queue = [queue_item(1, "3:1:2"), queue_item(2, "3:1:3"), queue_item(3, "3:1:4")]
         self.journal = []
+        self.spy_journal = []
         self.calls = []
         self.unverified_target = None
         self.live_ready_at = None
@@ -45,6 +47,7 @@ class Runtime:
     def farm_blocking_flights(self): return self.blocking
     def plan(self, *, limit=5000): return self.queue[:limit]
     def recent_raid_actions(self, *, limit=200): return self.journal[:limit]
+    def recent_spy_actions(self, *, limit=200): return self.spy_journal[:limit]
     def v2_setting(self, key, default=None):
         return self.return_buffer if key == "farm_return_buffer_minutes" else default
     def live_overview_snapshot(self):
@@ -100,8 +103,17 @@ def test_snapshot_gates_in_safety_order() -> None:
     runtime.status = FlightSourceStatus(True, "ok")
 
     runtime.journal = [action_record()]
-    assert controller.snapshot(runtime).state is FarmState.BLOCKED_UNRESOLVED
+    raid_blocked = controller.snapshot(runtime)
+    assert raid_blocked.state is FarmState.BLOCKED_UNRESOLVED
+    assert raid_blocked.unresolved_actions == 1
     runtime.journal = []
+
+    runtime.spy_journal = [SimpleNamespace(status="pending")]
+    spy_blocked = controller.snapshot(runtime)
+    assert spy_blocked.state is FarmState.BLOCKED_UNRESOLVED
+    assert spy_blocked.unresolved_actions == 1
+    assert "spy=1" in spy_blocked.detail
+    runtime.spy_journal = []
 
     runtime.blocking = [object()]
     runtime.live_ready_at = "2099-08-08T10:15:00+00:00"
@@ -116,7 +128,17 @@ def test_snapshot_gates_in_safety_order() -> None:
     runtime.capacity = FleetCapacitySnapshot(used=20, maximum=22, free=2, source="fixture")
 
     runtime.queue = [replace(queue_item(1, "3:1:2"), enabled=False), queue_item(2, "3:1:3", blacklisted=True)]
-    assert controller.snapshot(runtime).state is FarmState.NO_TARGETS
+    assert controller.snapshot(runtime).state is FarmState.NEED_RECON
+
+
+def test_unreadable_spy_journal_fails_closed() -> None:
+    runtime = Runtime()
+    def fail(*, limit=200):
+        raise RuntimeError("db unavailable")
+    runtime.recent_spy_actions = fail
+    snapshot = FarmController().snapshot(runtime)
+    assert snapshot.state is FarmState.BLOCKED_UNRESOLVED
+    assert snapshot.unresolved_actions == 1
 
 
 def test_verified_farm_journal_preserves_return_buffer_across_restart() -> None:
