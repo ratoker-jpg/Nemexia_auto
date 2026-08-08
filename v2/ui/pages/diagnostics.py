@@ -16,8 +16,8 @@ class DiagnosticsPage(QWidget):
 
     def __init__(self, context: V2ApplicationContext, runtime_paths: RuntimePaths, parent=None) -> None:
         super().__init__(parent)
+        self.context = context
         status = context.status()
-        flight_status = context.flight_status()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -37,8 +37,6 @@ class DiagnosticsPage(QWidget):
             ("SQLite режим", status.mode),
             ("SQLite", str(status.path)),
             ("SQLite проверка", status.detail),
-            ("Live-полёты", "Доступны" if flight_status.available else "Недоступны"),
-            ("Live источник", flight_status.detail),
         )
         for row, (label, value) in enumerate(rows, start=1):
             key = QLabel(label, source)
@@ -48,6 +46,21 @@ class DiagnosticsPage(QWidget):
             val.setWordWrap(True)
             source_layout.addWidget(key, row, 0)
             source_layout.addWidget(val, row, 1)
+
+        live_key = QLabel("Live-полёты", source)
+        live_key.setObjectName("Muted")
+        self.live_status_value = QLabel("Не проверены", source)
+        self.live_status_value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        source_layout.addWidget(live_key, 5, 0)
+        source_layout.addWidget(self.live_status_value, 5, 1)
+
+        live_detail_key = QLabel("Live источник", source)
+        live_detail_key.setObjectName("Muted")
+        self.live_detail_value = QLabel("Открой экран «Активные» для read-only проверки CDP.", source)
+        self.live_detail_value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.live_detail_value.setWordWrap(True)
+        source_layout.addWidget(live_detail_key, 6, 0)
+        source_layout.addWidget(self.live_detail_value, 6, 1)
         source_layout.setColumnStretch(1, 1)
         layout.addWidget(source)
 
@@ -102,3 +115,14 @@ class DiagnosticsPage(QWidget):
         runtime_layout.setColumnStretch(1, 1)
         layout.addWidget(runtime)
         layout.addStretch(1)
+        self.reload_view()
+
+    def reload_view(self) -> None:
+        """Reflect the last explicit live probe; never initiate one from Diagnostics."""
+        flight_status = self.context.cached_flight_status()
+        if flight_status is None:
+            self.live_status_value.setText("Не проверены")
+            self.live_detail_value.setText("Открой экран «Активные» для read-only проверки CDP.")
+            return
+        self.live_status_value.setText("Доступны" if flight_status.available else "Недоступны")
+        self.live_detail_value.setText(flight_status.detail)
