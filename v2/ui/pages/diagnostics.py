@@ -17,6 +17,7 @@ class DiagnosticsPage(QWidget):
     def __init__(self, context: V2ApplicationContext, runtime_paths: RuntimePaths, parent=None) -> None:
         super().__init__(parent)
         status = context.status()
+        flight_status = context.flight_status()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -28,14 +29,16 @@ class DiagnosticsPage(QWidget):
         source_layout.setContentsMargins(18, 16, 18, 16)
         source_layout.setHorizontalSpacing(20)
         source_layout.setVerticalSpacing(10)
-        title = QLabel("Источник рабочих данных", source)
+        title = QLabel("Источники данных", source)
         title.setObjectName("SectionTitle")
         source_layout.addWidget(title, 0, 0, 1, 2)
         rows = (
-            ("Доступен", "Да" if status.available else "Нет"),
-            ("Режим", status.mode),
+            ("SQLite доступна", "Да" if status.available else "Нет"),
+            ("SQLite режим", status.mode),
             ("SQLite", str(status.path)),
-            ("Проверка", status.detail),
+            ("SQLite проверка", status.detail),
+            ("Live-полёты", "Доступны" if flight_status.available else "Недоступны"),
+            ("Live источник", flight_status.detail),
         )
         for row, (label, value) in enumerate(rows, start=1):
             key = QLabel(label, source)
