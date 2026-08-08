@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Sequence
 
 from v2.application.read_store import ReadOnlyStore
+from v2.application.report_source import ReconReadSnapshot
 from v2.domain.recon import (
     LEGACY_SPY_REPORT_LOOKBACK_HOURS,
     ReportReadState,
@@ -12,8 +14,20 @@ from v2.domain.recon import (
     as_utc,
     report_is_fresh,
 )
-from v2.application.report_source import ReconReadSnapshot
 from v2.persistence.database import V2Database
+
+
+_COORD_RE = re.compile(r"^(\d+)\s*:\s*(\d+)\s*:\s*(\d+)$")
+
+
+def _normalized_target(value: object) -> str | None:
+    match = _COORD_RE.fullmatch(str(value or "").strip())
+    if match is None:
+        return None
+    parts = tuple(int(part) for part in match.groups())
+    if any(part <= 0 for part in parts):
+        return None
+    return ":".join(str(part) for part in parts)
 
 
 @dataclass(frozen=True)
@@ -100,7 +114,9 @@ class V2ReconRepository:
         rejected_partial = 0
         rejected_stale = 0
         for report in reports:
-            if not report.has_verifiable_identity:
+            report_id = str(report.report_id or "").strip()
+            target = _normalized_target(report.target)
+            if not report.has_verifiable_identity or not report_id or target is None:
                 rejected_partial += 1
                 continue
             if not report_is_fresh(report, now=current, lookback_hours=lookback_hours):
@@ -108,14 +124,14 @@ class V2ReconRepository:
                 continue
             payload.append(
                 {
-                    "report_id": str(report.report_id),
-                    "target": str(report.target),
+                    "report_id": report_id,
+                    "target": target,
                     "report_at": as_utc(report.reported_at).replace(microsecond=0).isoformat(),
                     "energy": report.energy,
                     "metal": report.metal,
                     "minerals": report.minerals,
                     "gas": report.gas,
-                    "source": str(report.source or "messages"),
+                    "source": str(report.source or "messages").strip() or "messages",
                 }
             )
         inserted = self.database.insert_recon_report_rows(payload)
