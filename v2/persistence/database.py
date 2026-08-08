@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+V2_SCHEMA_VERSION = 1
+
+
+class V2DatabaseError(RuntimeError):
+    pass
+
+
+class V2Database:
+    """Own the isolated V2 SQLite database and its schema migrations."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(self.path)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA foreign_keys=ON")
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            self._migrate()
+        except Exception:
+            self._conn.close()
+            raise
+
+    def __enter__(self) -> "V2Database":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def close(self) -> None:
+        conn = getattr(self, "_conn", None)
+        if conn is not None:
+            conn.close()
+            self._conn = None
+
+    def schema_version(self) -> int:
+        if self._conn is None:
+            raise V2DatabaseError("V2 database is closed")
+        return int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+
+    def integrity_check(self) -> str:
+        if self._conn is None:
+            raise V2DatabaseError("V2 database is closed")
+        return str(self._conn.execute("PRAGMA integrity_check").fetchone()[0])
+
+    def table_names(self) -> frozenset[str]:
+        if self._conn is None:
+            raise V2DatabaseError("V2 database is closed")
+        rows = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        return frozenset(str(row[0]) for row in rows)
+
+    def _migrate(self) -> None:
+        current = self.schema_version()
+        if current > V2_SCHEMA_VERSION:
+            raise V2DatabaseError(
+                f"V2 database schema {current} is newer than supported {V2_SCHEMA_VERSION}"
+            )
+        while current < V2_SCHEMA_VERSION:
+            next_version = current + 1
+            migration = getattr(self, f"_migrate_to_{next_version}", None)
+            if not callable(migration):
+                raise V2DatabaseError(f"Missing V2 migration {current} -> {next_version}")
+            with self._conn:
+                migration()
+                self._conn.execute(f"PRAGMA user_version={next_version}")
+            current = next_version
+
+    def _migrate_to_1(self) -> None:
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            );
+            """
+        )
+        self._conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+            (1, datetime.now(timezone.utc).replace(microsecond=0).isoformat()),
+        )
