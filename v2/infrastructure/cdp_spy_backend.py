@@ -67,30 +67,33 @@ class V2SpyCdpBackend(ReadOnlyAccountCdpBackend):
             raise SpyCaptchaBlocked("CAPTCHA обнаружена на fleets.php — действие остановлено")
         try:
             row = await page.evaluate(r"""fleetId => {
-                const rows=Array.from(document.querySelectorAll('tr.espionageClass'));
-                for (const tr of rows) {
-                    const link=document.getElementById(`spy1Link-${fleetId}`)
-                        || Array.from(tr.querySelectorAll('a[onclick]')).find(a => {
-                            const value=(a.getAttribute('onclick')||'').trim();
-                            return value === `processSpy(${fleetId})` || value === `processSpy(${fleetId});`;
-                        });
-                    if (!link || !tr.contains(link)) continue;
-                    const cells=Array.from(tr.children).filter(el => el.tagName === 'TD');
-                    return {
-                        source:cells[0]?.textContent?.trim()||'', target:cells[1]?.textContent?.trim()||'',
-                        onclick:link.getAttribute('onclick')||''
-                    };
-                }
-                return null;
+                const exact=document.getElementById(`spy1Link-${fleetId}`);
+                const link=exact || Array.from(document.querySelectorAll('a[onclick]')).find(a => {
+                    const value=(a.getAttribute('onclick')||'').trim();
+                    return value === `processSpy(${fleetId})` || value === `processSpy(${fleetId});`;
+                });
+                if (!link) return null;
+                const tr=link.closest('tr');
+                if (!tr) return null;
+                const cells=Array.from(tr.children).filter(el => el.tagName === 'TD');
+                const typeText=(tr.querySelector('.fleetType')?.textContent||'').replace(/\s+/g,' ').trim();
+                return {
+                    source:cells[0]?.textContent?.trim()||'',
+                    target:cells[1]?.textContent?.trim()||'',
+                    onclick:link.getAttribute('onclick')||'',
+                    fleetType:typeText
+                };
             }""", fleet_id)
         except Exception as exc:
             raise SpyActionError("Не удалось проверить строку шпионского флота") from exc
         if not row:
-            raise SpyActionError(f"Spy fleet {fleet_id} не найден среди уже загруженных espionage rows")
+            raise SpyActionError(f"Spy fleet {fleet_id} не найден среди уже загруженных строк fleets.php")
         onclick = str(row.get("onclick") or "")
         match = _PROCESS_ONCLICK_RE.fullmatch(onclick)
         if match is None or match.group(1) != fleet_id:
             raise SpyActionError("DOM action не совпадает с exact processSpy(fleet_id)")
+        if str(row.get("fleetType") or "").strip().casefold() != "шпионаж":
+            raise SpyActionError("Exact fleet row не подтверждён как Шпионаж")
         source = extract_coord(str(row.get("source") or ""))
         target = extract_coord(str(row.get("target") or ""))
         if source.count(":") != 2 or target.count(":") != 2:
@@ -155,6 +158,8 @@ class V2SpyCdpBackend(ReadOnlyAccountCdpBackend):
             raw = await self._read_spy_report_dom()
             if bool(raw.get("captcha_present")):
                 raise SpyCaptchaBlocked("CAPTCHA появилась при проверке spy report; повтор запрещён")
+            if not bool(raw.get("ready")):
+                raise SpyActionError("Report DOM стал недоступен после processSpy; повтор запрещён")
             reports = parse_rendered_spy_reports(str(raw.get("html") or ""))
             verified = select_verified_report(
                 reports, before_ids=before_ids, target=preparation.target, requested_at=requested_at,
