@@ -72,7 +72,7 @@ def test_context_close_propagates_to_browser_source(tmp_path: Path) -> None:
 def test_qt_bootstrap_wires_only_read_side_browser_adapter() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "app_qt.py").read_text(encoding="utf-8")
-    assert "ReadOnlyCdpBackend" in source
+    assert "ReadOnlyAccountCdpBackend" in source
     assert "V2BrowserFlightSource" in source
     assert "resolve_cdp_endpoint" in source
     for forbidden in (

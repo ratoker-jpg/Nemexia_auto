@@ -10,7 +10,7 @@ TABLES = (ROOT / "v2" / "ui" / "pages" / "read_tables.py").read_text(encoding="u
 def test_qt_preview_bootstraps_through_read_only_application_context() -> None:
     assert "build_context()" in APP_QT
     assert "V2ApplicationContext(source_path, flight_source=flight_source)" in APP_QT
-    assert "ReadOnlyCdpBackend" in APP_QT
+    assert "ReadOnlyAccountCdpBackend" in APP_QT
     assert "V2BrowserFlightSource" in APP_QT
     assert "context.close()" in APP_QT
     assert "run_qt_app(paths, context)" in APP_QT

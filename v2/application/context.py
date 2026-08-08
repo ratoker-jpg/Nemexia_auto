@@ -11,6 +11,11 @@ from v2.application.flight_source import (
     FlightSourceStatus,
     OfflineFlightSource,
 )
+from v2.application.live_flight_semantics import (
+    ClassifiedActiveFlight,
+    build_live_flight_policy,
+    classify_active_flights,
+)
 from v2.application.read_store import (
     HistorySnapshot,
     OverviewSnapshot,
@@ -99,6 +104,11 @@ class V2ApplicationContext:
     def plan(self, *, limit: int = 5000) -> list[QueueSnapshot]:
         return [] if self._store is None else self._store.list_plan(limit=limit)
 
+    def legacy_setting(self, key: str, default: str | None = None) -> str | None:
+        if self._store is None:
+            return default
+        return self._store.get_setting(key, default)
+
     def flight_status(self) -> FlightSourceStatus:
         self._last_flight_status = self._flight_source.status()
         return self._last_flight_status
@@ -114,6 +124,23 @@ class V2ApplicationContext:
 
     def active_flights(self) -> list[ActiveFlightSnapshot]:
         return list(self._flight_source.flights())
+
+    def owned_planets(self) -> tuple[str, ...]:
+        reader = getattr(self._flight_source, "owned_planets", None)
+        if not callable(reader):
+            return ()
+        return tuple(reader())
+
+    def classified_active_flights(self) -> list[ClassifiedActiveFlight]:
+        settings = {
+            key: self.legacy_setting(key)
+            for key in ("home_g", "home_s", "home_p")
+        }
+        policy = build_live_flight_policy(settings, owned_planets=self.owned_planets())
+        return list(classify_active_flights(self.active_flights(), policy))
+
+    def farm_blocking_flights(self) -> list[ClassifiedActiveFlight]:
+        return [item for item in self.classified_active_flights() if item.facts.blocks_farm_cycle]
 
     def fleet_capacity(self) -> FleetCapacitySnapshot | None:
         capacity_reader = getattr(self._flight_source, "capacity", None)
