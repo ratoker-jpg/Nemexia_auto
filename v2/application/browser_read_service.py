@@ -88,6 +88,12 @@ class V2BrowserFlightSource:
             for item in self._backend.flights()
         )
 
+    def owned_planets(self) -> tuple[str, ...]:
+        reader = getattr(self._backend, "owned_planets", None)
+        if not callable(reader):
+            return ()
+        return tuple(str(coord) for coord in reader())
+
     def capacity(self) -> FleetCapacitySnapshot | None:
         if not self.status().available:
             return None
