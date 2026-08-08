@@ -88,7 +88,10 @@ def classify_flight(flight: FlightFacts, context: AccountContext) -> ClassifiedF
         direction = FlightDirection.FOREIGN
         owner_scope = FlightOwnerScope.UNKNOWN
 
-    if command_related:
+    # Command-planet involvement is an exclusion rule, not an ownership override
+    # for an otherwise clearly personal flight. Pure command/foreign traffic is
+    # still labelled COMMAND so the UI can explain why it is ignored.
+    if command_related and owner_scope is FlightOwnerScope.UNKNOWN:
         owner_scope = FlightOwnerScope.COMMAND
 
     is_normal_attack = mission == "атака"
