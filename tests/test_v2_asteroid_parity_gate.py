@@ -126,8 +126,8 @@ def test_live_pre_click_gate_covers_movement_capacity_recyclers_and_exact_verifi
         "#MaxFleets",
         "Fleet composition изменена перед SendFleet",
         "select_verified_asteroid_flight(",
-        'mission != ASTEROID_MISSION_NAME.casefold()',
-        "row_id in before_ids",
+        'str(row["id"]) not in before_ids',
+        'str(row.get("mission") or "").strip().casefold() == ASTEROID_MISSION_NAME.casefold()',
     ):
         assert required in backend
 
