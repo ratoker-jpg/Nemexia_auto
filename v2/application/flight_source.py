@@ -11,6 +11,16 @@ class FlightSourceStatus:
 
 
 @dataclass(frozen=True)
+class FleetCapacitySnapshot:
+    """Authoritative fleet-slot facts reported by the game itself."""
+
+    used: int
+    maximum: int
+    free: int
+    source: str = "game"
+
+
+@dataclass(frozen=True)
 class ActiveFlightSnapshot:
     source: str
     target: str
@@ -28,6 +38,8 @@ class FlightSource(Protocol):
 
     def flights(self) -> Sequence[ActiveFlightSnapshot]: ...
 
+    def capacity(self) -> FleetCapacitySnapshot | None: ...
+
 
 class OfflineFlightSource:
     """Default V2 source until an explicit browser read service is connected."""
@@ -37,3 +49,6 @@ class OfflineFlightSource:
 
     def flights(self) -> Sequence[ActiveFlightSnapshot]:
         return ()
+
+    def capacity(self) -> FleetCapacitySnapshot | None:
+        return None
