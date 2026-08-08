@@ -4,10 +4,16 @@ from datetime import datetime
 from typing import Sequence
 
 from v2.application.queue_refill import QueueRefillService
+from v2.application.recon_refill import ControlledReconRefill, ReconRefillResult
 from v2.application.recon_repository import ReconIngestResult, V2ReconRecord, V2ReconRepository, V2TargetRecord
 from v2.application.spy_context import SpyEnabledApplicationContext
 from v2.domain.queue_policy import QueueMode, QueueRefillPreview
-from v2.domain.recon import LEGACY_METAL_QUEUE_MINIMUM, LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
+from v2.domain.recon import (
+    LEGACY_METAL_QUEUE_MINIMUM,
+    LEGACY_SPY_REPORT_LOOKBACK_HOURS,
+    ReportReadState,
+    SpyReportFact,
+)
 from v2.persistence.queue_refill import QueueApplySummary
 
 
@@ -34,6 +40,20 @@ class ReconOwnedApplicationContext(SpyEnabledApplicationContext):
         if snapshot.state is not ReportReadState.FRESH:
             raise RuntimeError(f"{snapshot.state.value}: {snapshot.detail}")
         return self._v2_recon.ingest_snapshot(snapshot, now=now, lookback_hours=lookback_hours)
+
+    def ingest_verified_recon_report(
+        self,
+        report: SpyReportFact,
+        *,
+        now: datetime | None = None,
+        lookback_hours: int = LEGACY_SPY_REPORT_LOOKBACK_HOURS,
+    ) -> ReconIngestResult:
+        """Ingest exactly one report already verified by the journaled spy boundary."""
+        return self._v2_recon.ingest_reports(
+            (report,),
+            now=now,
+            lookback_hours=lookback_hours,
+        )
 
     def preview_queue_refill(
         self,
@@ -64,3 +84,20 @@ class ReconOwnedApplicationContext(SpyEnabledApplicationContext):
         if self._v2_queue is None:
             raise RuntimeError("V2 queue repository is unavailable")
         return QueueRefillService(self._v2_queue).apply(preview)
+
+    def run_controlled_recon_refill(
+        self,
+        fleet_id: str,
+        *,
+        request_id: str,
+        now: datetime | None = None,
+        queue_size: int = 45,
+    ) -> ReconRefillResult:
+        """Run one explicit exact-fleet recon → verified ingest → AutoFarm refill cycle."""
+        return ControlledReconRefill().run(
+            self,
+            fleet_id=str(fleet_id),
+            request_id=str(request_id),
+            now=now,
+            queue_size=queue_size,
+        )
