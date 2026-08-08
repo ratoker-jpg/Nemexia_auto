@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from v2.persistence.database import V2Database
 
@@ -90,11 +90,22 @@ class V2SettingsRepository:
         except V2SettingError:
             return spec.default
 
-    def set(self, key: str, value: object) -> object:
-        spec = self._spec(key)
-        parsed = spec.parser(value)
-        self.database.write_setting_raw(spec.key, _encode(parsed))
+    def validate_many(self, values: Mapping[str, object]) -> dict[str, object]:
+        """Validate a complete batch without writing anything."""
+        parsed: dict[str, object] = {}
+        for key, value in values.items():
+            spec = self._spec(key)
+            parsed[spec.key] = spec.parser(value)
         return parsed
+
+    def set_many(self, values: Mapping[str, object]) -> dict[str, object]:
+        """Validate the full batch first, then persist it in one transaction."""
+        parsed = self.validate_many(values)
+        self.database.write_settings_raw({key: _encode(value) for key, value in parsed.items()})
+        return parsed
+
+    def set(self, key: str, value: object) -> object:
+        return self.set_many({key: value})[str(key)]
 
     def snapshot(self) -> dict[str, object]:
         return {key: self.get(key) for key in SETTING_SPECS}

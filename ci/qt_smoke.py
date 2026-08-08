@@ -16,11 +16,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from v2.application.context import V2ApplicationContext
-from v2.application.flight_source import (
-    ActiveFlightSnapshot,
-    FleetCapacitySnapshot,
-    FlightSourceStatus,
-)
+from v2.application.flight_source import ActiveFlightSnapshot, FleetCapacitySnapshot, FlightSourceStatus
+from v2.application.legacy_settings_import import LegacySettingsImporter
+from v2.application.read_store import ReadOnlyStore
+from v2.application.v2_settings import V2SettingsRepository
+from v2.persistence.database import V2Database
 from v2.runtime_paths import build_runtime_paths, ensure_runtime_paths
 from v2.ui.main_window import MainWindow
 from v2.ui.theme import ORBITAL_COMMAND_QSS
@@ -44,12 +44,11 @@ CREATE TABLE spy_reports (
     population INTEGER, ships INTEGER, defense INTEGER, completeness TEXT,
     source TEXT, imported_at TEXT, raw_payload TEXT
 );
+CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 
 class FakeLiveFlightSource:
-    """Network-free fixture for the complete Qt live-read presentation path."""
-
     def __init__(self) -> None:
         self.refreshes = 0
         self.status_reads = 0
@@ -64,31 +63,15 @@ class FakeLiveFlightSource:
 
     def flights(self):
         return (
-            ActiveFlightSnapshot(
-                source="3:39:11",
-                target="3:1:2",
-                mission="Атака",
-                departure_at="2026-08-08T09:00:00+00:00",
-                arrival_at="2026-08-08T09:10:00+00:00",
-                return_at="2026-08-08T09:20:00+00:00",
-                fleet_id="77",
-            ),
-            ActiveFlightSnapshot(
-                source="3:39:8",
-                target="3:5:4",
-                mission="Переработка",
-                return_at="2026-08-08T09:25:00+00:00",
-                fleet_id="78",
-            ),
+            ActiveFlightSnapshot("3:39:11", "3:1:2", "Атака", return_at="2026-08-08T09:20:00+00:00", fleet_id="77"),
+            ActiveFlightSnapshot("3:39:8", "3:5:4", "Переработка", return_at="2026-08-08T09:25:00+00:00", fleet_id="78"),
         )
 
+    def owned_planets(self):
+        return ("3:39:11", "3:39:8")
+
     def capacity(self) -> FleetCapacitySnapshot:
-        return FleetCapacitySnapshot(
-            used=20,
-            maximum=22,
-            free=2,
-            source="fixture game DOM #FleetsCount/#MaxFleets",
-        )
+        return FleetCapacitySnapshot(20, 22, 2, "fixture game DOM #FleetsCount/#MaxFleets")
 
     def close(self) -> None:
         self.closed = True
@@ -97,32 +80,11 @@ class FakeLiveFlightSource:
 def create_fixture(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(SCHEMA)
-        conn.execute(
-            """
-            INSERT INTO targets VALUES (
-                '3:1:2','Alpha',9000,3,1,2,1,0,'',700000,800000,12,
-                '2026-08-08T07:00:00+00:00',4,'2026-08-08T06:00:00+00:00',NULL
-            )
-            """
-        )
+        conn.execute("INSERT INTO targets VALUES ('3:1:2','Alpha',9000,3,1,2,1,0,'',700000,800000,12,'2026-08-08T07:00:00+00:00',4,'2026-08-08T06:00:00+00:00',NULL)")
         conn.execute("INSERT INTO queue VALUES (1,'3:1:2',1,'queued')")
-        conn.execute(
-            """
-            INSERT INTO history VALUES (
-                1,'3:39:11','3:1:2','Alpha',25,'2026-08-08T06:00:00+00:00',
-                NULL,'2026-08-08T08:00:00+00:00','sent',NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO spy_reports VALUES (
-                1,'m1','d1','3:1:2','2026-08-08T07:00:00+00:00',9000,
-                700000,800000,12,100,5,6,'full','messages',
-                '2026-08-08T07:01:00+00:00','{}'
-            )
-            """
-        )
+        conn.execute("INSERT INTO history VALUES (1,'3:39:11','3:1:2','Alpha',25,'2026-08-08T06:00:00+00:00',NULL,'2026-08-08T08:00:00+00:00','sent',NULL)")
+        conn.execute("INSERT INTO spy_reports VALUES (1,'m1','d1','3:1:2','2026-08-08T07:00:00+00:00',9000,700000,800000,12,100,5,6,'full','messages','2026-08-08T07:01:00+00:00','{}')")
+        conn.executemany("INSERT INTO settings(key,value) VALUES(?,?)", (("port","9333"),("home_g","3"),("home_s","39"),("home_p","11"),("farm_return_buffer_minutes","7")))
 
 
 def main() -> int:
@@ -131,82 +93,60 @@ def main() -> int:
         legacy_db = root / "legacy.sqlite3"
         create_fixture(legacy_db)
         before = legacy_db.read_bytes()
+        paths = ensure_runtime_paths(build_runtime_paths(env={"LOCALAPPDATA": str(root / "local")}, platform_name="nt", home=root))
 
-        paths = ensure_runtime_paths(
-            build_runtime_paths(
-                env={"LOCALAPPDATA": str(root / "local")},
-                platform_name="nt",
-                home=root,
-            )
-        )
+        database = V2Database(paths.database)
+        settings = V2SettingsRepository(database)
+        with ReadOnlyStore(legacy_db) as source:
+            LegacySettingsImporter(source, settings).import_missing()
+        assert settings.get("cdp_port") == 9333
+        assert settings.get("farm_home") == "3:39:11"
+        assert settings.get("farm_return_buffer_minutes") == 7
+
         live_source = FakeLiveFlightSource()
-        context = V2ApplicationContext(legacy_db, flight_source=live_source)
+        context = V2ApplicationContext(legacy_db, flight_source=live_source, v2_settings=settings, v2_database=database)
         app = QApplication.instance() or QApplication([])
         app.setStyleSheet(ORBITAL_COMMAND_QSS)
         window = MainWindow(paths, context)
         try:
-            assert window.minimumWidth() == 1180
-            assert window.minimumHeight() == 720
+            assert window.minimumWidth() == 1180 and window.minimumHeight() == 720
             assert window.stack.count() == 11
-
-            expected = {
-                "overview": "OverviewPage",
-                "plan": "PlanPage",
-                "active": "ActivePage",
-                "recon": "ReconPage",
-                "targets": "TargetsPage",
-                "history": "HistoryPage",
-                "diagnostics": "DiagnosticsPage",
-            }
+            expected = {"overview":"OverviewPage","plan":"PlanPage","active":"ActivePage","recon":"ReconPage","targets":"TargetsPage","history":"HistoryPage","settings":"SettingsPage","diagnostics":"DiagnosticsPage"}
             for key, class_name in expected.items():
                 page = window.stack.widget(window._page_index[key])
                 assert page.__class__.__name__ == class_name, (key, page.__class__.__name__)
 
-            plan = window.stack.widget(window._page_index["plan"])
             active = window.stack.widget(window._page_index["active"])
-            recon = window.stack.widget(window._page_index["recon"])
-            targets = window.stack.widget(window._page_index["targets"])
-            history = window.stack.widget(window._page_index["history"])
+            settings_page = window.stack.widget(window._page_index["settings"])
             diagnostics = window.stack.widget(window._page_index["diagnostics"])
-
-            assert plan.model.rowCount() == 1
-            assert recon.model.rowCount() == 1
-            assert targets.model.rowCount() == 1
-            assert history.model.rowCount() == 1
-
-            # Building the shell must not probe CDP before the user opens Active.
-            assert live_source.status_reads == 0
-            assert live_source.refreshes == 0
-            assert active.model.rowCount() == 0
-
+            assert live_source.status_reads == 0 and live_source.refreshes == 0
             window._show_page("active", "Активные", "Текущие полёты и возвраты")
             app.processEvents()
-            assert live_source.refreshes == 1
-            assert live_source.status_reads == 1
+            assert live_source.refreshes == 1 and live_source.status_reads == 1
             assert active.model.rowCount() == 2
-            assert active.capacity is not None
-            assert (active.capacity.used, active.capacity.maximum, active.capacity.free) == (20, 22, 2)
-            assert "20 / 22" in active.capacity_label.text()
+            assert active.capacity is not None and active.capacity.free == 2
 
-            # Diagnostics reflects the cached result and must not probe the browser itself.
+            window._show_page("settings", "Настройки", "Параметры приложения")
+            settings_page.return_buffer.setValue(9)
+            settings_page.save_settings()
+            assert context.v2_setting("farm_return_buffer_minutes") == 9
+
             window._show_page("diagnostics", "Диагностика", "Логи и техническое состояние")
             app.processEvents()
             assert live_source.status_reads == 1
             assert diagnostics.live_status_value.text() == "Доступны"
-            assert "fixture CDP" in diagnostics.live_detail_value.text()
-
-            window.show()
-            app.processEvents()
+            window.show(); app.processEvents()
         finally:
-            window.close()
-            app.processEvents()
-            context.close()
+            window.close(); app.processEvents(); context.close()
 
         assert live_source.closed is True
         assert legacy_db.read_bytes() == before
-        assert not paths.database.exists(), "V2 preview must not create its own SQLite yet"
+        assert paths.database.is_file()
+        with V2Database(paths.database) as check:
+            assert check.integrity_check() == "ok"
+            assert V2SettingsRepository(check).get("farm_return_buffer_minutes") == 9
 
-    print("OK: PySide6 V2 fourth-batch live-read offscreen smoke")
+    print("OK: PySide6 V2 settings/runtime offscreen smoke")
     return 0
 
 

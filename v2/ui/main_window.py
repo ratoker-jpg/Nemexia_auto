@@ -17,6 +17,7 @@ from v2.ui.pages.overview import OverviewPage
 from v2.ui.pages.plan import PlanPage
 from v2.ui.pages.read_tables import HistoryPage, TargetsPage
 from v2.ui.pages.recon import ReconPage
+from v2.ui.pages.settings import SettingsPage
 from v2.ui.theme import ORBITAL_COMMAND_QSS
 
 
@@ -47,7 +48,7 @@ def _iter_pages() -> Iterable[tuple[str, str, str]]:
 
 
 class MainWindow(QMainWindow):
-    """Side-by-side V2 shell with explicit read-only service boundaries."""
+    """Side-by-side V2 shell with explicit service boundaries."""
 
     def __init__(self, runtime_paths: RuntimePaths, context: V2ApplicationContext) -> None:
         super().__init__()
@@ -171,6 +172,8 @@ class MainWindow(QMainWindow):
             return TargetsPage(self.context, self)
         if key == "history":
             return HistoryPage(self.context, self)
+        if key == "settings":
+            return SettingsPage(self.context, self)
         if key == "diagnostics":
             return DiagnosticsPage(self.context, self.runtime_paths, self)
         return self._placeholder_page(title, description)

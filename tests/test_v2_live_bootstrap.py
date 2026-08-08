@@ -32,6 +32,22 @@ def test_endpoint_uses_legacy_port_without_mutating_sqlite(tmp_path: Path) -> No
     assert db.read_bytes() == before
 
 
+def test_v2_preferred_port_wins_after_environment_overrides(tmp_path: Path) -> None:
+    db = tmp_path / "legacy.sqlite3"
+    create_settings_fixture(db, port=9333)
+    before = db.read_bytes()
+    preferred = resolve_cdp_endpoint(db, environ={}, preferred_port=9444)
+    assert preferred.endpoint == "http://127.0.0.1:9444"
+    assert preferred.source == "V2 settings: cdp_port"
+    env = resolve_cdp_endpoint(
+        db,
+        environ={"NEMEXIA_V2_CDP_PORT": "9555"},
+        preferred_port=9444,
+    )
+    assert env.endpoint == "http://127.0.0.1:9555"
+    assert db.read_bytes() == before
+
+
 def test_endpoint_override_wins_and_missing_db_falls_back(tmp_path: Path) -> None:
     missing = tmp_path / "missing.sqlite3"
     override = resolve_cdp_endpoint(
@@ -69,12 +85,15 @@ def test_context_close_propagates_to_browser_source(tmp_path: Path) -> None:
     assert backend.closed is True
 
 
-def test_qt_bootstrap_wires_only_read_side_browser_adapter() -> None:
+def test_qt_bootstrap_wires_isolated_settings_plus_read_side_browser_adapter() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "app_qt.py").read_text(encoding="utf-8")
+    assert "V2Database(paths.database)" in source
+    assert "V2SettingsRepository(database)" in source
+    assert "LegacySettingsImporter" in source
+    assert 'preferred_port=settings.get("cdp_port")' in source
     assert "ReadOnlyAccountCdpBackend" in source
     assert "V2BrowserFlightSource" in source
-    assert "resolve_cdp_endpoint" in source
     for forbidden in (
         "BrowserWorker",
         "launch_yandex",

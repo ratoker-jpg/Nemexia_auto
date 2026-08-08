@@ -38,8 +38,9 @@ def resolve_cdp_endpoint(
     source_path: Path,
     *,
     environ: Mapping[str, str] | None = None,
+    preferred_port: str | int | None = None,
 ) -> CdpEndpointConfig:
-    """Resolve V2's attach-only CDP endpoint without mutating legacy storage."""
+    """Resolve attach-only CDP endpoint; environment overrides remain highest priority."""
     env = os.environ if environ is None else environ
     endpoint_override = str(env.get("NEMEXIA_V2_CDP_ENDPOINT", "")).strip()
     if endpoint_override:
@@ -51,6 +52,10 @@ def resolve_cdp_endpoint(
             f"http://127.0.0.1:{port_override}",
             "environment port override",
         )
+
+    preferred = _valid_port(preferred_port)
+    if preferred is not None:
+        return CdpEndpointConfig(f"http://127.0.0.1:{preferred}", "V2 settings: cdp_port")
 
     port = DEFAULT_CDP_PORT
     source = "default port"
