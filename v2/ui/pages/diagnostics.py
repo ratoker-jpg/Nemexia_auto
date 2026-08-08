@@ -4,6 +4,7 @@ import platform
 import sys
 
 from PySide6 import __version__ as pyside_version
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from v2.application.context import V2ApplicationContext
@@ -40,7 +41,7 @@ class DiagnosticsPage(QWidget):
             key = QLabel(label, source)
             key.setObjectName("Muted")
             val = QLabel(value, source)
-            val.setTextInteractionFlags(val.textInteractionFlags() | val.textInteractionFlags().TextSelectableByMouse)
+            val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             val.setWordWrap(True)
             source_layout.addWidget(key, row, 0)
             source_layout.addWidget(val, row, 1)
@@ -68,6 +69,7 @@ class DiagnosticsPage(QWidget):
             key = QLabel(label, isolation)
             key.setObjectName("Muted")
             val = QLabel(str(value), isolation)
+            val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             val.setWordWrap(True)
             isolation_layout.addWidget(key, row, 0)
             isolation_layout.addWidget(val, row, 1)
