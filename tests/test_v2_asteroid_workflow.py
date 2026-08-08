@@ -139,6 +139,38 @@ def test_dispatch_series_is_exactly_once_per_selected_candidate() -> None:
     assert len(port.dispatch_calls) == 3
 
 
+def test_manual_stop_blocks_next_side_effect_without_cancelling_completed_attempt() -> None:
+    items = (candidate(system=23), candidate(system=22), candidate(system=21))
+    port = Port()
+    polls = 0
+    allocated: list[int] = []
+
+    def should_stop() -> bool:
+        nonlocal polls
+        polls += 1
+        return polls >= 2
+
+    def request_id(index: int, _item: AsteroidCandidate) -> str:
+        allocated.append(index)
+        return f"req-{index}"
+
+    result = dispatch_selected_asteroids(
+        port,
+        items,
+        source="2:22:3",
+        recycler_count=5,
+        safety_seconds=10,
+        request_id_factory=request_id,
+        should_stop=should_stop,
+    )
+    assert result.state is AsteroidWorkflowState.STOPPED_MANUAL
+    assert result.verified_count == 1
+    assert result.stopped_candidate == items[1]
+    assert result.stopped_request_id is None
+    assert len(port.dispatch_calls) == 1
+    assert allocated == [0]
+
+
 def test_ambiguous_dispatch_stops_series_without_retry_or_third_attempt() -> None:
     items = (candidate(system=23), candidate(system=22), candidate(system=21))
     port = Port(dispatch_mode="ambiguous")
