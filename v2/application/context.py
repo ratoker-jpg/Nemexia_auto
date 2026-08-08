@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 from v2.application.flight_source import (
     ActiveFlightSnapshot,
@@ -94,19 +95,9 @@ class V2ApplicationContext:
 
     def status(self) -> DataSourceStatus:
         if self._store is None:
-            return DataSourceStatus(
-                available=False,
-                path=self.source_path,
-                mode="read-only",
-                detail=self._error or "Read-only source is closed",
-            )
+            return DataSourceStatus(False, self.source_path, "read-only", self._error or "Read-only source is closed")
         store_status = self._store.status()
-        return DataSourceStatus(
-            available=True,
-            path=store_status.path,
-            mode="read-only",
-            detail=f"SQLite query_only={int(store_status.query_only)}",
-        )
+        return DataSourceStatus(True, store_status.path, "read-only", f"SQLite query_only={int(store_status.query_only)}")
 
     def overview(self) -> OverviewSnapshot:
         return OverviewSnapshot() if self._store is None else self._store.overview()
@@ -124,22 +115,23 @@ class V2ApplicationContext:
         return [] if self._store is None else self._store.list_plan(limit=limit)
 
     def legacy_setting(self, key: str, default: str | None = None) -> str | None:
-        if self._store is None:
-            return default
-        return self._store.get_setting(key, default)
+        return default if self._store is None else self._store.get_setting(key, default)
 
     def v2_settings_available(self) -> bool:
         return self._v2_settings is not None
 
     def v2_setting(self, key: str, default: object = None) -> object:
-        if self._v2_settings is None:
-            return default
-        return self._v2_settings.get(key)
+        return default if self._v2_settings is None else self._v2_settings.get(key)
 
     def set_v2_setting(self, key: str, value: object) -> object:
         if self._v2_settings is None:
             raise RuntimeError("V2 settings storage is unavailable")
         return self._v2_settings.set(key, value)
+
+    def set_v2_settings(self, values: Mapping[str, object]) -> dict[str, object]:
+        if self._v2_settings is None:
+            raise RuntimeError("V2 settings storage is unavailable")
+        return self._v2_settings.set_many(values)
 
     def v2_settings_snapshot(self) -> dict[str, object]:
         return {} if self._v2_settings is None else self._v2_settings.snapshot()
@@ -152,7 +144,6 @@ class V2ApplicationContext:
         return self._last_flight_status
 
     def refresh_live_source(self) -> FlightSourceStatus:
-        """Explicitly refresh and cache all read-only live facts as one UI snapshot."""
         refresher = getattr(self._flight_source, "refresh", None)
         if callable(refresher):
             refresher()
@@ -179,37 +170,24 @@ class V2ApplicationContext:
         return self._last_flight_status
 
     def active_flights(self) -> list[ActiveFlightSnapshot]:
-        if self._live_snapshot_ready:
-            return list(self._last_active_flights)
-        return list(self._flight_source.flights())
+        return list(self._last_active_flights) if self._live_snapshot_ready else list(self._flight_source.flights())
 
     def owned_planets(self) -> tuple[str, ...]:
         if self._live_snapshot_ready:
             return self._last_owned_planets
         reader = getattr(self._flight_source, "owned_planets", None)
-        if not callable(reader):
-            return ()
-        return tuple(reader())
+        return tuple(reader()) if callable(reader) else ()
 
     def _flight_policy(self):
         if self._v2_settings is not None:
             farm_home = str(self._v2_settings.get("farm_home"))
             parts = farm_home.split(":")
-            settings = {
-                "home_g": parts[0], "home_s": parts[1], "home_p": parts[2]
-            } if len(parts) == 3 else {}
+            settings = {"home_g": parts[0], "home_s": parts[1], "home_p": parts[2]} if len(parts) == 3 else {}
             command_planets = (str(self._v2_settings.get("command_planet")),)
         else:
-            settings = {
-                key: self.legacy_setting(key)
-                for key in ("home_g", "home_s", "home_p")
-            }
+            settings = {key: self.legacy_setting(key) for key in ("home_g", "home_s", "home_p")}
             command_planets = ("2:5:6",)
-        return build_live_flight_policy(
-            settings,
-            owned_planets=self.owned_planets(),
-            command_planets=command_planets,
-        )
+        return build_live_flight_policy(settings, owned_planets=self.owned_planets(), command_planets=command_planets)
 
     def classified_active_flights(self) -> list[ClassifiedActiveFlight]:
         return list(classify_active_flights(self.active_flights(), self._flight_policy()))
@@ -225,18 +203,11 @@ class V2ApplicationContext:
     def fleet_capacity(self) -> FleetCapacitySnapshot | None:
         if self._live_snapshot_ready:
             return self._last_capacity
-        capacity_reader = getattr(self._flight_source, "capacity", None)
-        if not callable(capacity_reader):
-            return None
-        return capacity_reader()
+        reader = getattr(self._flight_source, "capacity", None)
+        return reader() if callable(reader) else None
 
     def live_overview_snapshot(self) -> LiveOverviewSnapshot:
-        """Build Overview facts strictly from the last explicit live refresh."""
-        buffer = (
-            self._v2_settings.get("farm_return_buffer_minutes")
-            if self._v2_settings is not None
-            else self.legacy_setting("farm_return_buffer_minutes", "5")
-        )
+        buffer = self._v2_settings.get("farm_return_buffer_minutes") if self._v2_settings is not None else self.legacy_setting("farm_return_buffer_minutes", "5")
         return build_live_overview(
             checked=self._live_snapshot_ready,
             status=self._last_flight_status,
