@@ -55,6 +55,7 @@ class FarmRuntime(Protocol):
     def v2_setting(self, key: str, default: object = None) -> object: ...
     def plan(self, *, limit: int = 5000) -> list[QueueSnapshot]: ...
     def recent_raid_actions(self, *, limit: int = 200) -> list[RaidActionRecord]: ...
+    def recent_spy_actions(self, *, limit: int = 200) -> list[object]: ...
     def dispatch_plan_raid(
         self, *, queue_id: int, target: str, player: str, ship_count: int, request_id: str,
     ) -> RaidDispatchResult: ...
@@ -100,6 +101,21 @@ def _journal_ready_at(actions: Sequence[RaidActionRecord], *, buffer_minutes: in
     return max(deadlines, default=None)
 
 
+def _recent_spy_actions(runtime: FarmRuntime, *, limit: int = 500) -> list[object]:
+    reader = getattr(runtime, "recent_spy_actions", None)
+    if not callable(reader):
+        return []
+    try:
+        return list(reader(limit=limit))
+    except Exception:
+        # Losing access to the persisted spy journal must not create a new send window.
+        return [_UnreadableSpyJournal()]
+
+
+class _UnreadableSpyJournal:
+    status = "pending"
+
+
 class FarmController:
     """Typed V2 farm policy; UI text never drives farm decisions."""
 
@@ -111,7 +127,13 @@ class FarmController:
         blocking = len(runtime.farm_blocking_flights()) if status is not None and status.available else 0
         overview = runtime.live_overview_snapshot() if status is not None and status.available else None
         actions = runtime.recent_raid_actions(limit=500)
-        unresolved = [item for item in actions if item.status in {"pending", "ambiguous"}]
+        unresolved_raid = [item for item in actions if item.status in {"pending", "ambiguous"}]
+        spy_actions = _recent_spy_actions(runtime, limit=500)
+        unresolved_spy = [
+            item for item in spy_actions
+            if str(getattr(item, "status", "")) in {"pending", "ambiguous"}
+        ]
+        unresolved_count = len(unresolved_raid) + len(unresolved_spy)
 
         live_ready = _parse_dt(overview.inferred_farm_ready_at) if overview is not None else None
         journal_ready = _journal_ready_at(actions, buffer_minutes=_return_buffer_minutes(runtime))
@@ -120,13 +142,17 @@ class FarmController:
         ready_at = _iso(ready_deadline)
 
         if not runtime.raid_actions_enabled():
-            return FarmSnapshot(FarmState.ACTIONS_DISABLED, "Действия V2 выключены в Настройках.", len(items), free_slots, blocking, len(unresolved), ready_at)
+            return FarmSnapshot(FarmState.ACTIONS_DISABLED, "Действия V2 выключены в Настройках.", len(items), free_slots, blocking, unresolved_count, ready_at)
         if status is None:
-            return FarmSnapshot(FarmState.LIVE_NOT_CHECKED, "Сначала обнови live-полёты.", len(items), 0, 0, len(unresolved), ready_at)
+            return FarmSnapshot(FarmState.LIVE_NOT_CHECKED, "Сначала обнови live-полёты.", len(items), 0, 0, unresolved_count, ready_at)
         if not status.available or capacity is None:
-            return FarmSnapshot(FarmState.LIVE_UNAVAILABLE, status.detail or "Live-полёты или capacity недоступны.", len(items), 0, 0, len(unresolved), ready_at)
-        if unresolved:
-            return FarmSnapshot(FarmState.BLOCKED_UNRESOLVED, f"Есть unresolved отправки: {len(unresolved)}. Сначала сверка через «Активные».", len(items), free_slots, blocking, len(unresolved), ready_at)
+            return FarmSnapshot(FarmState.LIVE_UNAVAILABLE, status.detail or "Live-полёты или capacity недоступны.", len(items), 0, 0, unresolved_count, ready_at)
+        if unresolved_count:
+            detail = (
+                f"Есть unresolved side effects: raid={len(unresolved_raid)}, spy={len(unresolved_spy)}. "
+                "Новый raid/recon цикл заблокирован до ручной сверки."
+            )
+            return FarmSnapshot(FarmState.BLOCKED_UNRESOLVED, detail, len(items), free_slots, blocking, unresolved_count, ready_at)
         if blocking:
             suffix = f" Следующая проверка после {ready_at}." if ready_at else ""
             return FarmSnapshot(FarmState.WAITING_RETURN, f"Есть farm-blocking атаки: {blocking}. Новую волну пока не запускаем.{suffix}", len(items), free_slots, blocking, 0, ready_at)
