@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from v2.application.read_store import QueueSnapshot, ReadOnlyStore
+from v2.domain.queue_policy import QueueRefillPreview
 from v2.persistence.database import V2Database
+from v2.persistence.queue_refill import QueueApplySummary, V2QueueRefillStore
 
 
 class V2QueueRepository:
@@ -50,3 +52,7 @@ class V2QueueRepository:
 
     def set_state(self, queue_id: int, state: str) -> None:
         self.database.update_raid_queue_state(queue_id, state)
+
+    def apply_refill(self, preview: QueueRefillPreview) -> QueueApplySummary:
+        """Apply only the exact pure-policy desired rows; protected states stay untouched."""
+        return V2QueueRefillStore(self.database).apply(preview.desired)

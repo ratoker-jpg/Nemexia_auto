@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -17,7 +18,7 @@ from v2.ui.pages.read_tables import FilterableReadOnlyTable
 
 
 class PlanPage(FilterableReadOnlyTable):
-    """V2-owned raid queue with explicit, user-confirmed manual actions."""
+    """V2-owned raid queue with deterministic local refill and explicit raid actions."""
 
     HEADERS = (
         "#", "Координаты", "Игрок", "Металл", "Минералы", "Газ",
@@ -33,6 +34,46 @@ class PlanPage(FilterableReadOnlyTable):
             placeholder="Поиск по очереди V2…",
             parent=parent,
         )
+
+        builder = QFrame(self)
+        builder.setObjectName("InfoCard")
+        builder_layout = QHBoxLayout(builder)
+        builder_layout.setContentsMargins(12, 10, 12, 10)
+        builder_layout.setSpacing(10)
+        builder_layout.addWidget(QLabel("Сборка очереди", builder))
+
+        self.queue_mode = QComboBox(builder)
+        self.queue_mode.addItem("Металл", "metal")
+        self.queue_mode.addItem("Минералы", "minerals")
+        self.queue_mode.addItem("AutoFarm ≥500k", "autofarm")
+        builder_layout.addWidget(self.queue_mode)
+
+        builder_layout.addWidget(QLabel("Целей", builder))
+        self.queue_size = QSpinBox(builder)
+        self.queue_size.setRange(1, 5000)
+        self.queue_size.setValue(45)
+        builder_layout.addWidget(self.queue_size)
+
+        builder_layout.addWidget(QLabel("Мин. металл", builder))
+        self.minimum_metal = QSpinBox(builder)
+        self.minimum_metal.setRange(0, 2_000_000_000)
+        self.minimum_metal.setSingleStep(10_000)
+        self.minimum_metal.setValue(480_000)
+        builder_layout.addWidget(self.minimum_metal)
+
+        self.preview_refill_button = QPushButton("Предпросмотр", builder)
+        self.preview_refill_button.clicked.connect(self.preview_refill)
+        builder_layout.addWidget(self.preview_refill_button)
+
+        self.apply_refill_button = QPushButton("Пересобрать V2-очередь", builder)
+        self.apply_refill_button.clicked.connect(self.apply_refill)
+        builder_layout.addWidget(self.apply_refill_button)
+
+        self.refill_status = QLabel("Pure policy: browser не вызывается.", builder)
+        self.refill_status.setObjectName("Muted")
+        self.refill_status.setWordWrap(True)
+        builder_layout.addWidget(self.refill_status, 1)
+        self.layout().insertWidget(1, builder)
 
         controls = QFrame(self)
         controls.setObjectName("InfoCard")
@@ -59,7 +100,7 @@ class PlanPage(FilterableReadOnlyTable):
         self.action_status.setObjectName("Muted")
         self.action_status.setWordWrap(True)
         controls_layout.addWidget(self.action_status, 1)
-        self.layout().insertWidget(1, controls)
+        self.layout().insertWidget(2, controls)
         self._update_action_gate()
 
     @staticmethod
@@ -90,6 +131,74 @@ class PlanPage(FilterableReadOnlyTable):
         self.send_button.setEnabled(enabled)
         if not enabled:
             self.action_status.setText("Действия V2 выключены в Настройках.")
+
+    def _refill_preview(self):
+        previewer = getattr(self.context, "preview_queue_refill", None)
+        if not callable(previewer):
+            raise RuntimeError("V2 queue refill policy недоступен")
+        mode = str(self.queue_mode.currentData())
+        return previewer(
+            mode=mode,
+            queue_size=self.queue_size.value(),
+            minimum_metal=self.minimum_metal.value(),
+        )
+
+    @staticmethod
+    def _preview_text(preview) -> str:
+        skipped_preview = ", ".join(
+            f"{item.coord}:{item.reason.value}" for item in preview.skipped[:8]
+        ) or "—"
+        return (
+            f"Режим: {preview.mode}\n"
+            f"Итоговая queued: {len(preview.desired)}\n"
+            f"Добавить: {len(preview.added)} · оставить: {len(preview.kept)} · убрать replaceable: {len(preview.removed)}\n"
+            f"Protected sending/sent/ambiguous: {len(preview.protected)}\n"
+            f"Пропущено: {len(preview.skipped)}\n\n"
+            f"Первые skip: {skipped_preview}"
+        )
+
+    def preview_refill(self) -> None:
+        try:
+            preview = self._refill_preview()
+        except Exception as exc:
+            self.refill_status.setText(f"Предпросмотр остановлен: {exc}")
+            return
+        self.refill_status.setText(
+            f"add {len(preview.added)} · keep {len(preview.kept)} · remove {len(preview.removed)} · "
+            f"protected {len(preview.protected)} · skip {len(preview.skipped)}"
+        )
+        QMessageBox.information(self, "Предпросмотр V2-очереди", self._preview_text(preview))
+
+    def apply_refill(self) -> None:
+        applier = getattr(self.context, "apply_queue_refill", None)
+        if not callable(applier):
+            self.refill_status.setText("V2 queue refill persistence недоступен.")
+            return
+        try:
+            # Recalculate immediately before apply so a stale UI preview is never trusted.
+            preview = self._refill_preview()
+        except Exception as exc:
+            self.refill_status.setText(f"Пересборка остановлена: {exc}")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Пересобрать V2-очередь",
+            self._preview_text(preview) + "\n\nProtected строки не изменяются. Продолжить?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            result = applier(preview)
+        except Exception as exc:
+            self.refill_status.setText(f"Пересборка остановлена: {exc}")
+            return
+        self.reload_view()
+        self.refill_status.setText(
+            f"V2-очередь: created {result.created} · updated {result.updated} · removed {result.removed}; "
+            f"protected {len(preview.protected)}"
+        )
 
     def _selected_item(self) -> QueueSnapshot | None:
         selection = self.table.selectionModel().selectedRows()
