@@ -19,9 +19,11 @@ def test_farm_controller_uses_typed_states_not_ui_strings() -> None:
     for state in (
         "ACTIONS_DISABLED", "LIVE_NOT_CHECKED", "LIVE_UNAVAILABLE",
         "BLOCKED_UNRESOLVED", "WAITING_RETURN", "WAITING_CAPACITY",
-        "NO_TARGETS", "READY",
+        "NEED_RECON", "READY",
     ):
         assert state in CONTROLLER
+    # Queue exhaustion is a typed continuation requirement, not a generic terminal string state.
+    assert 'NEED_RECON = "need_recon"' in CONTROLLER
     # Decisions must use FarmState / structured journal fields, never rendered status text.
     for forbidden in (
         "detail.startswith(",
