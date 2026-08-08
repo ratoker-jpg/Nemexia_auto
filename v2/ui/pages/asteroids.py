@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,6 +26,8 @@ class AsteroidsPage(FilterableReadOnlyTable):
     def __init__(self, context: V2ApplicationContext, parent=None) -> None:
         self.context = context
         self._candidates: tuple[AsteroidCandidate, ...] = ()
+        self._series_running = False
+        self._stop_requested = False
         super().__init__(
             (
                 "Текущая цель",
@@ -85,9 +88,13 @@ class AsteroidsPage(FilterableReadOnlyTable):
         self.prepare_button.setObjectName("PrepareAsteroidsButton")
         self.send_button = QPushButton("Отправить выбранные", controls)
         self.send_button.setObjectName("DispatchAsteroidsButton")
+        self.stop_button = QPushButton("Остановить серию", controls)
+        self.stop_button.setObjectName("StopAsteroidsButton")
+        self.stop_button.setEnabled(False)
         action_row.addWidget(self.read_button)
         action_row.addWidget(self.prepare_button)
         action_row.addWidget(self.send_button)
+        action_row.addWidget(self.stop_button)
         action_row.addStretch(1)
         controls_layout.addLayout(action_row)
 
@@ -106,6 +113,7 @@ class AsteroidsPage(FilterableReadOnlyTable):
         self.read_button.clicked.connect(self._read_current_system)
         self.prepare_button.clicked.connect(self._prepare_selected)
         self.send_button.clicked.connect(self._dispatch_selected)
+        self.stop_button.clicked.connect(self._request_manual_stop)
         self.reload_view()
 
     def _rows(self) -> list[tuple[object, ...]]:
@@ -254,6 +262,35 @@ class AsteroidsPage(FilterableReadOnlyTable):
             f"Без game mutation проверено: {len(batch.prepared)}.\nTargets: {targets}{suffix}",
         )
 
+    def _set_series_controls(self, running: bool) -> None:
+        self._series_running = bool(running)
+        for widget in (
+            self.read_button,
+            self.prepare_button,
+            self.send_button,
+            self.source_coord,
+            self.recycler_count,
+            self.safety_seconds,
+            self.table,
+        ):
+            widget.setEnabled(not running)
+        self.stop_button.setEnabled(running)
+
+    def _request_manual_stop(self) -> None:
+        if not self._series_running:
+            return
+        self._stop_requested = True
+        self.stop_button.setEnabled(False)
+        self.status_label.setText(
+            "Остановка запрошена · текущая SendFleet-попытка не прерывается; следующая цель не начнётся"
+        )
+
+    def _poll_manual_stop(self) -> bool:
+        # The remote attempt itself stays synchronous and atomic. Event delivery is
+        # permitted only between completed attempts so Stop can block the next one.
+        QApplication.processEvents()
+        return bool(self._stop_requested)
+
     def _dispatch_selected(self) -> None:
         selected = self._selected_candidates()
         batch = self._prepare_batch(selected)
@@ -280,7 +317,8 @@ class AsteroidsPage(FilterableReadOnlyTable):
                 f"Отправить выбранные цели: {len(selected)}?\n\n"
                 f"Источник: {source}\nПереработчиков на цель: {recyclers}\nSafety: {safety} сек\n\n"
                 "Каждая цель снова проходит live re-check и persistent journal перед SendFleet. "
-                "Серия остановится на первой CAPTCHA, ambiguity или ошибке. Автоматических повторов нет."
+                "Серия остановится на первой CAPTCHA, ambiguity, ошибке или ручном Stop. "
+                "Уже начатая попытка не отменяется и автоматических повторов нет."
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -292,17 +330,26 @@ class AsteroidsPage(FilterableReadOnlyTable):
         if not callable(dispatch):
             QMessageBox.critical(self, "Астероиды", "V2 asteroid dispatch workflow недоступен.")
             return
+
+        self._stop_requested = False
+        self._set_series_controls(True)
+        self.status_label.setText(
+            f"Asteroid series запущена вручную · выбрано {len(selected)} · Stop действует перед следующей целью"
+        )
         try:
             result = dispatch(
                 selected,
                 source=source,
                 recycler_count=recyclers,
                 safety_seconds=safety,
+                should_stop=self._poll_manual_stop,
             )
         except Exception as exc:
             self.status_label.setText(f"Asteroid series остановлена: {exc}")
             QMessageBox.warning(self, "Asteroid series остановлена", str(exc))
             return
+        finally:
+            self._set_series_controls(False)
 
         if result.state is AsteroidWorkflowState.COMPLETED:
             fleet_ids = ", ".join(step.result.fleet_id or "—" for step in result.completed)
@@ -320,6 +367,13 @@ class AsteroidsPage(FilterableReadOnlyTable):
         self.status_label.setText(
             f"Asteroid series {result.state.value} на {coord} после {result.verified_count} verified: {result.detail}"
         )
+        if result.state is AsteroidWorkflowState.STOPPED_MANUAL:
+            QMessageBox.information(
+                self,
+                "Asteroid series остановлена вручную",
+                f"Verified до остановки: {result.verified_count}.\nСледующая цель не запускалась: {coord}",
+            )
+            return
         QMessageBox.warning(
             self,
             "Asteroid series остановлена",
