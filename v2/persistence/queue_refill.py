@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Sequence
 
 from v2.domain.queue_policy import (
@@ -71,7 +72,7 @@ class V2QueueRefillStore:
                 conn.execute(f"DELETE FROM raid_queue WHERE id IN ({placeholders})", tuple(removable_ids))
                 removed += len(removable_ids)
 
-            now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).replace(microsecond=0).isoformat()
+            now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
             for item in rows:
                 reusable = replaceable_by_coord.get(item.coord, [])
                 values = (
