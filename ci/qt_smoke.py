@@ -16,6 +16,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from v2.application.context import V2ApplicationContext
+from v2.application.flight_source import (
+    ActiveFlightSnapshot,
+    FleetCapacitySnapshot,
+    FlightSourceStatus,
+)
 from v2.runtime_paths import build_runtime_paths, ensure_runtime_paths
 from v2.ui.main_window import MainWindow
 from v2.ui.theme import ORBITAL_COMMAND_QSS
@@ -40,6 +45,53 @@ CREATE TABLE spy_reports (
     source TEXT, imported_at TEXT, raw_payload TEXT
 );
 """
+
+
+class FakeLiveFlightSource:
+    """Network-free fixture for the complete Qt live-read presentation path."""
+
+    def __init__(self) -> None:
+        self.refreshes = 0
+        self.status_reads = 0
+        self.closed = False
+
+    def refresh(self) -> None:
+        self.refreshes += 1
+
+    def status(self) -> FlightSourceStatus:
+        self.status_reads += 1
+        return FlightSourceStatus(True, "fixture CDP read-only · fleets.php")
+
+    def flights(self):
+        return (
+            ActiveFlightSnapshot(
+                source="3:39:11",
+                target="3:1:2",
+                mission="Атака",
+                departure_at="2026-08-08T09:00:00+00:00",
+                arrival_at="2026-08-08T09:10:00+00:00",
+                return_at="2026-08-08T09:20:00+00:00",
+                fleet_id="77",
+            ),
+            ActiveFlightSnapshot(
+                source="3:39:8",
+                target="3:5:4",
+                mission="Переработка",
+                return_at="2026-08-08T09:25:00+00:00",
+                fleet_id="78",
+            ),
+        )
+
+    def capacity(self) -> FleetCapacitySnapshot:
+        return FleetCapacitySnapshot(
+            used=20,
+            maximum=22,
+            free=2,
+            source="fixture game DOM #FleetsCount/#MaxFleets",
+        )
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def create_fixture(path: Path) -> None:
@@ -87,7 +139,8 @@ def main() -> int:
                 home=root,
             )
         )
-        context = V2ApplicationContext(legacy_db)
+        live_source = FakeLiveFlightSource()
+        context = V2ApplicationContext(legacy_db, flight_source=live_source)
         app = QApplication.instance() or QApplication([])
         app.setStyleSheet(ORBITAL_COMMAND_QSS)
         window = MainWindow(paths, context)
@@ -114,16 +167,33 @@ def main() -> int:
             recon = window.stack.widget(window._page_index["recon"])
             targets = window.stack.widget(window._page_index["targets"])
             history = window.stack.widget(window._page_index["history"])
+            diagnostics = window.stack.widget(window._page_index["diagnostics"])
 
             assert plan.model.rowCount() == 1
             assert recon.model.rowCount() == 1
             assert targets.model.rowCount() == 1
             assert history.model.rowCount() == 1
 
-            # No live backend is injected in preview mode. This is explicitly
-            # unavailable data, not a factual claim that the account has zero flights.
-            assert context.flight_status().available is False
+            # Building the shell must not probe CDP before the user opens Active.
+            assert live_source.status_reads == 0
+            assert live_source.refreshes == 0
             assert active.model.rowCount() == 0
+
+            window._show_page("active", "Активные", "Текущие полёты и возвраты")
+            app.processEvents()
+            assert live_source.refreshes == 1
+            assert live_source.status_reads == 1
+            assert active.model.rowCount() == 2
+            assert active.capacity is not None
+            assert (active.capacity.used, active.capacity.maximum, active.capacity.free) == (20, 22, 2)
+            assert "20 / 22" in active.capacity_label.text()
+
+            # Diagnostics reflects the cached result and must not probe the browser itself.
+            window._show_page("diagnostics", "Диагностика", "Логи и техническое состояние")
+            app.processEvents()
+            assert live_source.status_reads == 1
+            assert diagnostics.live_status_value.text() == "Доступны"
+            assert "fixture CDP" in diagnostics.live_detail_value.text()
 
             window.show()
             app.processEvents()
@@ -132,10 +202,11 @@ def main() -> int:
             app.processEvents()
             context.close()
 
+        assert live_source.closed is True
         assert legacy_db.read_bytes() == before
         assert not paths.database.exists(), "V2 preview must not create its own SQLite yet"
 
-    print("OK: PySide6 V2 third-batch offscreen smoke")
+    print("OK: PySide6 V2 fourth-batch live-read offscreen smoke")
     return 0
 
 
