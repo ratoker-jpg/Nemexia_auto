@@ -67,6 +67,21 @@ class ReconSnapshot:
 
 
 @dataclass(frozen=True)
+class QueueSnapshot:
+    id: int
+    position: int
+    state: str
+    coord: str
+    player: str
+    metal: int | None
+    minerals: int | None
+    gas: int | None
+    last_spy_at: str | None
+    enabled: bool
+    blacklisted: bool
+
+
+@dataclass(frozen=True)
 class StoreStatus:
     path: Path
     query_only: bool
@@ -210,6 +225,31 @@ class ReadOnlyStore:
                 minerals=row["minerals"], gas=row["gas"], population=row["population"],
                 ships=row["ships"], defense=row["defense"], completeness=row["completeness"],
                 source=str(row["source"] or "messages"),
+            )
+            for row in rows
+        ]
+
+    def list_plan(self, *, limit: int = 5000) -> list[QueueSnapshot]:
+        """Return the persisted queue exactly as it exists, without regenerating it."""
+        rows = self._conn.execute(
+            """
+            SELECT q.id, q.position, q.state, q.coord,
+                   t.player, t.metal, t.minerals, t.resource_gas, t.last_spy_at,
+                   t.enabled, t.blacklisted
+            FROM queue q
+            LEFT JOIN targets t ON t.coord=q.coord
+            ORDER BY CASE WHEN q.state='queued' THEN 0 ELSE 1 END, q.position, q.id
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [
+            QueueSnapshot(
+                id=int(row["id"]), position=int(row["position"]), state=str(row["state"]),
+                coord=str(row["coord"]), player=str(row["player"] or "—"),
+                metal=row["metal"], minerals=row["minerals"], gas=row["resource_gas"],
+                last_spy_at=row["last_spy_at"], enabled=bool(row["enabled"]),
+                blacklisted=bool(row["blacklisted"]),
             )
             for row in rows
         ]
