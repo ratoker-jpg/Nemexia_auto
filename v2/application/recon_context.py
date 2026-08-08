@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Sequence
 
+from v2.application.queue_refill import QueueRefillService
 from v2.application.recon_repository import ReconIngestResult, V2ReconRecord, V2ReconRepository, V2TargetRecord
 from v2.application.spy_context import SpyEnabledApplicationContext
-from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
+from v2.domain.queue_policy import QueueMode, QueueRefillPreview
+from v2.domain.recon import LEGACY_METAL_QUEUE_MINIMUM, LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
+from v2.persistence.queue_refill import QueueApplySummary
 
 
 class ReconOwnedApplicationContext(SpyEnabledApplicationContext):
@@ -30,3 +34,33 @@ class ReconOwnedApplicationContext(SpyEnabledApplicationContext):
         if snapshot.state is not ReportReadState.FRESH:
             raise RuntimeError(f"{snapshot.state.value}: {snapshot.detail}")
         return self._v2_recon.ingest_snapshot(snapshot, now=now, lookback_hours=lookback_hours)
+
+    def preview_queue_refill(
+        self,
+        *,
+        mode: QueueMode,
+        queue_size: int = 45,
+        minimum_metal: int = LEGACY_METAL_QUEUE_MINIMUM,
+        now: datetime | None = None,
+        active_targets: Sequence[str] | None = None,
+    ) -> QueueRefillPreview:
+        if self._v2_queue is None:
+            raise RuntimeError("V2 queue repository is unavailable")
+        if active_targets is None:
+            if self._live_snapshot_ready:
+                active_targets = tuple(item.raw.target for item in self.cached_classified_active_flights())
+            else:
+                active_targets = ()
+        return QueueRefillService(self._v2_queue).preview(
+            self.targets(limit=5000),
+            mode=mode,
+            now=now,
+            queue_size=queue_size,
+            minimum_metal=minimum_metal,
+            active_targets=active_targets,
+        )
+
+    def apply_queue_refill(self, preview: QueueRefillPreview) -> QueueApplySummary:
+        if self._v2_queue is None:
+            raise RuntimeError("V2 queue repository is unavailable")
+        return QueueRefillService(self._v2_queue).apply(preview)
