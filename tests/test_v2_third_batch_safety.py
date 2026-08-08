@@ -15,7 +15,8 @@ def test_third_batch_pages_are_real_and_diagnostics_exposes_source_truth() -> No
     ):
         assert f'if key == "{key}"' in MAIN
         assert page in MAIN
-    assert "context.flight_status()" in DIAGNOSTICS
+    assert "context.cached_flight_status()" in DIAGNOSTICS
+    assert "context.flight_status()" not in DIAGNOSTICS
     assert "Live-полёты" in DIAGNOSTICS
 
 
