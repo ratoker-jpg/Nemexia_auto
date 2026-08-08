@@ -34,6 +34,7 @@ def test_debris_uses_one_authoritative_asteroid_mutation_and_journal_boundary() 
     context = text("v2/application/debris_context.py")
     journal = text("v2/application/asteroid_journal.py")
     backend = text("v2/infrastructure/cdp_asteroid_backend.py")
+    asteroid_domain = text("v2/domain/asteroids.py")
 
     assert "AsteroidDispatchCommand" in dispatch
     assert "AsteroidRequestCoordinator" in dispatch
@@ -44,7 +45,8 @@ def test_debris_uses_one_authoritative_asteroid_mutation_and_journal_boundary() 
     assert "#ship_1_11_max" in backend
     assert "#FleetsCount" in backend and "#MaxFleets" in backend
     assert "select_verified_asteroid_flight(" in backend
-    assert "Добыча газа" in backend
+    assert "ASTEROID_MISSION_NAME" in backend
+    assert 'ASTEROID_MISSION_NAME = "Добыча газа"' in asteroid_domain
     assert "#SendFleetButton" in backend
 
     combined = dispatch + context
@@ -93,8 +95,9 @@ def test_debris_controlled_workflow_is_bounded_confirmed_stop_first_and_non_repe
         "QTimer",
         ".retry(",
         "sleep(",
-        "scheduler",
-        "auto_repeat",
+        "debris_scheduler",
+        "debris_auto_repeat",
+        "debris_next_cycle_at",
     ):
         assert forbidden not in workflow
 
