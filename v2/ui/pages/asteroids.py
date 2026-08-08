@@ -116,6 +116,13 @@ class AsteroidsPage(FilterableReadOnlyTable):
         self.stop_button.clicked.connect(self._request_manual_stop)
         self.reload_view()
 
+    def hideEvent(self, event) -> None:
+        # Navigating away or closing the parent window is also an operator stop.
+        # The current remote attempt is not interrupted; the flag blocks the next one.
+        if self._series_running:
+            self._stop_requested = True
+        super().hideEvent(event)
+
     def _rows(self) -> list[tuple[object, ...]]:
         return [
             (
@@ -289,6 +296,9 @@ class AsteroidsPage(FilterableReadOnlyTable):
         # The remote attempt itself stays synchronous and atomic. Event delivery is
         # permitted only between completed attempts so Stop can block the next one.
         QApplication.processEvents()
+        window = self.window()
+        if not self.isVisible() or window is None or not window.isVisible():
+            self._stop_requested = True
         return bool(self._stop_requested)
 
     def _dispatch_selected(self) -> None:
