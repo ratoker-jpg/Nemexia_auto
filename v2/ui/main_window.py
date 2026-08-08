@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 from v2.application.context import V2ApplicationContext
 from v2.runtime_paths import RuntimePaths
 from v2.ui.pages.active import ActivePage
+from v2.ui.pages.asteroids import AsteroidsPage
 from v2.ui.pages.diagnostics import DiagnosticsPage
 from v2.ui.pages.farm import FarmPage
 from v2.ui.pages.overview import OverviewPage
@@ -169,6 +170,8 @@ class MainWindow(QMainWindow):
             return ActivePage(self.context, self)
         if key == "farm":
             return FarmPage(self.context, self)
+        if key == "asteroids":
+            return AsteroidsPage(self.context, self)
         if key == "recon":
             return ReconPage(self.context, self)
         if key == "targets":
