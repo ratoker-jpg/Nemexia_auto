@@ -6,6 +6,7 @@ from pathlib import Path
 
 from v2.application.flight_source import (
     ActiveFlightSnapshot,
+    FleetCapacitySnapshot,
     FlightSource,
     FlightSourceStatus,
     OfflineFlightSource,
@@ -62,6 +63,9 @@ class V2ApplicationContext:
         if self._store is not None:
             self._store.close()
             self._store = None
+        closer = getattr(self._flight_source, "close", None)
+        if callable(closer):
+            closer()
 
     def status(self) -> DataSourceStatus:
         if self._store is None:
@@ -99,3 +103,9 @@ class V2ApplicationContext:
 
     def active_flights(self) -> list[ActiveFlightSnapshot]:
         return list(self._flight_source.flights())
+
+    def fleet_capacity(self) -> FleetCapacitySnapshot | None:
+        capacity_reader = getattr(self._flight_source, "capacity", None)
+        if not callable(capacity_reader):
+            return None
+        return capacity_reader()
