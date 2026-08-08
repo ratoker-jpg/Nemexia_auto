@@ -35,12 +35,14 @@ def select_verified_asteroid_flight(
     rows: tuple[dict[str, str | None], ...],
     *,
     before_ids: frozenset[str],
+    source: str,
     target: str,
 ) -> dict[str, str | None] | None:
     matches = [
         row for row in rows
         if row.get("id")
         and str(row["id"]) not in before_ids
+        and extract_coord(str(row.get("source") or "")) == source
         and extract_coord(str(row.get("target") or "")) == target
         and str(row.get("mission") or "").strip().casefold() == ASTEROID_MISSION_NAME.casefold()
     ]
@@ -102,15 +104,23 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
             ].some(value => text.includes(value));
         }"""))
 
+    @staticmethod
+    def _server_parts_to_utc(values: object) -> datetime:
+        if not isinstance(values, (list, tuple)) or len(values) != 6:
+            raise AsteroidActionError("Не удалось доказать server currentTime")
+        try:
+            wall_clock = datetime(*(int(value) for value in values))
+        except (TypeError, ValueError) as exc:
+            raise AsteroidActionError("Некорректный server currentTime") from exc
+        return server_wall_clock_to_utc(wall_clock)
+
     async def _server_now_utc(self, page) -> datetime:
         values = await page.evaluate(r"""() => {
             const d=(window.currentTime instanceof Date && !Number.isNaN(window.currentTime.getTime()))
                 ? window.currentTime : null;
             return d ? [d.getFullYear(),d.getMonth()+1,d.getDate(),d.getHours(),d.getMinutes(),d.getSeconds()] : null;
         }""")
-        if not values or len(values) != 6:
-            raise AsteroidActionError("Не удалось доказать server currentTime")
-        return server_wall_clock_to_utc(datetime(*(int(value) for value in values)))
+        return self._server_parts_to_utc(values)
 
     async def _assert_source(self, page, source: str) -> None:
         if await self._captcha_present(page):
@@ -343,6 +353,19 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
         await self._assert_source(page, command.source)
         return prepared
 
+    @staticmethod
+    def _rows_from_raw(raw_rows: object) -> tuple[dict[str, str | None], ...]:
+        return tuple(
+            {
+                "id": str(item.get("id")) if item.get("id") else None,
+                "source": str(item.get("source") or ""),
+                "target": str(item.get("target") or ""),
+                "mission": str(item.get("mission") or ""),
+            }
+            for item in (raw_rows or ())
+            if isinstance(item, dict)
+        )
+
     async def _read_flight_rows(self, page) -> tuple[dict[str, str | None], ...]:
         raw = await page.evaluate(r"""() => Array.from(document.querySelectorAll('#fleetHandler tbody tr')).map(row => {
             const cells=Array.from(row.children).filter(el=>el.tagName==='TD');
@@ -356,15 +379,108 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
                 mission:details?.textContent?.trim()||cells[4]?.textContent?.trim()||''
             };
         })""")
-        return tuple(
-            {
-                "id": str(item.get("id")) if item.get("id") else None,
-                "source": str(item.get("source") or ""),
-                "target": str(item.get("target") or ""),
-                "mission": str(item.get("mission") or ""),
-            }
-            for item in (raw or ())
+        return self._rows_from_raw(raw)
+
+    async def _validated_pre_click_snapshot(
+        self,
+        page,
+        command: AsteroidDispatchCommand,
+        preparation: AsteroidDispatchPreparation,
+    ) -> tuple[datetime, frozenset[str]]:
+        """Atomically read the final DOM facts used to authorize the only click."""
+        raw = await page.evaluate(r"""() => {
+            const d=(window.currentTime instanceof Date && !Number.isNaN(window.currentTime.getTime()))
+                ? window.currentTime : null;
+            const digits=value => {
+                const m=String(value||'').replace(/[^0-9]/g,'');
+                return m ? Number(m) : 0;
+            };
+            const source=['#my_c1','#my_c2','#my_c3'].map(id=>document.querySelector(id)?.value||'').join(':');
+            const target=['#target_c1','#target_c2','#target_c3'].map(id=>document.querySelector(id)?.value||'').join(':');
+            const ships=Array.from(document.querySelectorAll('input.ships')).map(el=>({
+                id:el.id||'', count:digits(el.value)
+            })).filter(item=>item.count>0);
+            const rows=Array.from(document.querySelectorAll('#fleetHandler tbody tr')).map(row => {
+                const cells=Array.from(row.children).filter(el=>el.tagName==='TD');
+                const details=row.querySelector('.fleetType a');
+                const onclick=details?.getAttribute('onclick')||'';
+                const match=onclick.match(/fleetDetails\((\d+)\)/);
+                return {
+                    id:match?match[1]:null,
+                    source:cells[0]?.textContent?.trim()||'',
+                    target:cells[1]?.textContent?.trim()||'',
+                    mission:details?.textContent?.trim()||cells[4]?.textContent?.trim()||''
+                };
+            });
+            const bodyText=(document.body?.innerText||'').replace(/\s+/g,' ').toLowerCase();
+            const captcha=!!document.querySelector(
+                'iframe[src*="recaptcha"], .g-recaptcha, [data-sitekey], #recaptcha-anchor'
+            ) || (typeof window.BOTCHECK_PAGE_LOCK !== 'undefined' && !!window.BOTCHECK_PAGE_LOCK)
+              || ['are you human','защита от автоматических действий','humans only','я не робот']
+                 .some(value=>bodyText.includes(value));
+            const button=document.querySelector('#SendFleetButton');
+            return {
+                server_time:d ? [d.getFullYear(),d.getMonth()+1,d.getDate(),d.getHours(),d.getMinutes(),d.getSeconds()] : null,
+                source, target,
+                mission:document.querySelector('select#mission')?.value||'',
+                ships,
+                recycler_max:document.querySelector('#ship_1_11_max')?.value||'',
+                used:document.querySelector('#FleetsCount')?.textContent||'',
+                maximum:document.querySelector('#MaxFleets')?.textContent||'',
+                button_present:!!button,
+                button_disabled:!button || !!button.disabled,
+                captcha,
+                rows
+            };
+        }""")
+        if bool(raw.get("captcha")):
+            raise AsteroidCaptchaBlocked("CAPTCHA обнаружена непосредственно перед SendFleet")
+        if str(raw.get("source") or "") != preparation.source:
+            raise AsteroidDispatchRejected("Source planet изменена перед SendFleet")
+        if str(raw.get("target") or "") != preparation.target:
+            raise AsteroidDispatchRejected("Prepared target изменился перед SendFleet")
+        if str(raw.get("mission") or "") != ASTEROID_MISSION_CODE:
+            raise AsteroidDispatchRejected("Mission изменена перед SendFleet")
+        selected = [
+            (str(item.get("id") or ""), int(item.get("count") or 0))
+            for item in (raw.get("ships") or ())
+            if isinstance(item, dict)
+        ]
+        if selected != [(ASTEROID_RECYCLER_SHIP_KEY, command.recycler_count)]:
+            raise AsteroidDispatchRejected("Fleet composition изменена перед SendFleet")
+        available = parse_counter(str(raw.get("recycler_max") or ""))
+        used = parse_counter(str(raw.get("used") or ""))
+        maximum = parse_counter(str(raw.get("maximum") or ""))
+        if available is None or available < command.recycler_count:
+            raise AsteroidDispatchRejected("Недостаточно переработчиков перед SendFleet")
+        if used is None or maximum is None or maximum <= 0 or used >= maximum:
+            raise AsteroidDispatchRejected("Нет доказанного свободного fleet slot перед SendFleet")
+        if not bool(raw.get("button_present")) or bool(raw.get("button_disabled")):
+            raise AsteroidDispatchRejected("SendFleetButton недоступна до remote attempt")
+
+        sent_at = self._server_parts_to_utc(raw.get("server_time"))
+        current_arrival = sent_at + timedelta(seconds=preparation.one_way_seconds)
+        try:
+            predicted, _ = predict_coordinate(command.observation, current_arrival, safety_seconds=0)
+        except ValueError as exc:
+            raise AsteroidDispatchRejected(str(exc)) from exc
+        predicted_target = ":".join(str(value) for value in predicted)
+        if predicted_target != preparation.target:
+            raise AsteroidDispatchRejected(
+                f"Asteroid target устарел перед SendFleet: {preparation.target} -> {predicted_target}"
+            )
+        margin = movement_margin_seconds(
+            command.observation.next_move_at,
+            command.observation.period_seconds,
+            current_arrival,
         )
+        if margin < command.safety_seconds:
+            raise AsteroidDispatchRejected(
+                f"Оставшийся movement margin слишком мал: {margin:.1f}s < {command.safety_seconds}s"
+            )
+        rows = self._rows_from_raw(raw.get("rows"))
+        before_ids = frozenset(str(row["id"]) for row in rows if row.get("id"))
+        return sent_at, before_ids
 
     @staticmethod
     def _unverified_result(
@@ -394,34 +510,16 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
     ) -> AsteroidDispatchResult:
         page = await self._existing_fleets_page()
         await self._assert_source(page, command.source)
-        await self._recheck_observation(command.observation, reference_page=page)
-        available, free_slots = await self._capacity_and_recyclers(page)
-        if available < command.recycler_count:
-            raise AsteroidDispatchRejected("Недостаточно переработчиков перед SendFleet")
-        if free_slots <= 0:
-            raise AsteroidDispatchRejected("Нет свободных fleet slots перед SendFleet")
-        current_target = await page.evaluate("""() => [
-            document.querySelector('#target_c1')?.value||'',
-            document.querySelector('#target_c2')?.value||'',
-            document.querySelector('#target_c3')?.value||''
-        ].join(':')""")
-        if str(current_target) != preparation.target:
-            raise AsteroidDispatchRejected("Prepared target изменился до SendFleet")
-
-        before_rows = await self._read_flight_rows(page)
-        before_ids = frozenset(str(row["id"]) for row in before_rows if row.get("id"))
+        await self._capacity_and_recyclers(page)
         button = page.locator("#SendFleetButton")
         try:
             await button.wait_for(state="visible", timeout=5_000)
-            if await button.is_disabled():
-                raise AsteroidDispatchRejected(
-                    "Игра не разрешает SendFleet: проверь корабли, газ, координаты и fleet slots"
-                )
-        except AsteroidDispatchRejected:
-            raise
         except Exception as exc:
             raise AsteroidDispatchRejected("SendFleetButton недоступна до remote attempt") from exc
-        sent_at = await self._server_now_utc(page)
+
+        # Live trajectory re-check immediately precedes the final atomic DOM snapshot.
+        await self._recheck_observation(command.observation, reference_page=page)
+        sent_at, before_ids = await self._validated_pre_click_snapshot(page, command, preparation)
 
         # Exactly one remote mutation attempt. Never click SendFleet again in this method.
         try:
@@ -476,6 +574,7 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
             verified = select_verified_asteroid_flight(
                 rows,
                 before_ids=before_ids,
+                source=preparation.source,
                 target=preparation.target,
             )
             if verified is not None:
@@ -496,7 +595,7 @@ class V2AsteroidCdpBackend(ReadOnlyAsteroidCdpBackend):
         result = self._unverified_result(
             preparation,
             sent_at=sent_at,
-            detail=server_info or "Новая exact-target flight row Добыча газа не подтверждена",
+            detail=server_info or "Новая exact-source/target flight row Добыча газа не подтверждена",
         )
         raise AsteroidDispatchAmbiguous(
             "Asteroid SendFleet мог быть принят, но exact new-flight verification отсутствует",
