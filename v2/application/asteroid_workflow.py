@@ -21,6 +21,7 @@ class AsteroidWorkflowState(str, Enum):
     EMPTY = "empty"
     READY = "ready"
     COMPLETED = "completed"
+    STOPPED_MANUAL = "stopped_manual"
     STOPPED_CAPTCHA = "stopped_captcha"
     STOPPED_AMBIGUOUS = "stopped_ambiguous"
     STOPPED_ERROR = "stopped_error"
@@ -145,8 +146,14 @@ def dispatch_selected_asteroids(
     recycler_count: int,
     safety_seconds: int,
     request_id_factory: Callable[[int, AsteroidCandidate], str] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> AsteroidDispatchBatch:
-    """Dispatch an explicit bounded selection with no retry and first-error stop."""
+    """Dispatch a bounded selection and stop before the next side effect when requested.
+
+    Manual stop is intentionally checked only between candidates. An already-started
+    remote attempt is allowed to finish into verified/ambiguous journal state; V2
+    never cancels it mid-flight and never opens a duplicate retry window.
+    """
 
     selected = _bounded(candidates)
     if not selected:
@@ -157,6 +164,14 @@ def dispatch_selected_asteroids(
 
     completed: list[AsteroidDispatchStep] = []
     for index, candidate in enumerate(selected):
+        if should_stop is not None and bool(should_stop()):
+            return AsteroidDispatchBatch(
+                AsteroidWorkflowState.STOPPED_MANUAL,
+                tuple(completed),
+                candidate,
+                None,
+                "Manual stop requested before next asteroid side effect",
+            )
         request_id = str(factory(index, candidate) or "").strip()
         if not request_id:
             return AsteroidDispatchBatch(

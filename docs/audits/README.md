@@ -1,5 +1,11 @@
 # Аудиты проекта
 
+## Текущий V2 asteroid parity gate — 2026-08-08
+
+[`2026-08-08-v2-asteroid-parity-gate.md`](2026-08-08-v2-asteroid-parity-gate.md) фиксирует V2-58: restart recovery для pending/ambiguous asteroid actions, live movement/capacity/recycler re-check, exact new-flight verification, fail-closed CAPTCHA semantics, bounded manual-stop и отсутствие automatic retry/scheduler.
+
+Ключевой scope: asteroid action parity завершает V2-51→V2-58 без auto-repeat и без debris/recycling execution. Следующий action batch должен начинаться отдельным debris/recycling contract audit после точного squash/push-CI handoff.
+
 ## Текущий V2 asteroid action audit — 2026-08-08
 
 [`2026-08-08-v2-asteroid-contract-audit.md`](2026-08-08-v2-asteroid-contract-audit.md) фиксирует V2-51: эффективные legacy call sites, asteroid selectors/endpoints, UTC+04 movement semantics, 24-position coordinate math, iterative flight-time stabilization, recycler/mission facts, SendFleet verification и различия безопасности V2.
