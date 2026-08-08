@@ -177,10 +177,22 @@ def test_asteroid_auto_repeat_remains_deferred_and_no_scheduler_can_start_on_res
     assert "STOPPED_MANUAL" in combined
 
 
-def test_default_launcher_and_debris_boundary_are_unchanged() -> None:
+def test_default_launcher_and_debris_boundary_remain_controlled() -> None:
     launcher = text("run_app.bat")
     window = text("v2/ui/main_window.py")
+    debris_page = text("v2/ui/pages/debris.py")
+    debris_context = text("v2/application/debris_context.py")
     assert "app_entry.py" in launcher
     assert "app_qt.py" not in launcher
-    assert 'if key == "debris":' not in window
-    assert "DebrisPage" not in window
+    assert 'if key == "debris":' in window
+    assert "return DebrisPage(self.context, self)" in window
+    assert "AsteroidRequestCoordinator(self._asteroid_actions, database)" in debris_context
+    for forbidden in (
+        "playwright",
+        "SendFleetButton",
+        "refreshGalaxy",
+        ".goto(",
+        "new_page(",
+        "ajax_galaxy.php",
+    ):
+        assert forbidden not in debris_page

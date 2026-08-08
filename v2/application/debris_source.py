@@ -41,7 +41,7 @@ class DebrisReadSnapshot:
 
 
 class BrowserDebrisBackend(Protocol):
-    """Read-only debris boundary for the currently rendered galaxy system."""
+    """Read-only boundary for the currently rendered galaxy system."""
 
     def read_debris(self) -> BrowserDebrisSnapshot: ...
 
@@ -81,3 +81,8 @@ class V2DebrisSource:
             readable_square_info=int(snapshot.readable_square_info),
             detail=detail,
         )
+
+    def close(self) -> None:
+        close = getattr(self._backend, "close", None)
+        if callable(close):
+            close()

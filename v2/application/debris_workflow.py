@@ -149,6 +149,11 @@ class DebrisWorkflowController:
     def clear_stop(self) -> None:
         self._stop_requested = False
 
+    def cancel_prepared(self) -> None:
+        """Disarm a not-yet-confirmed batch without touching the journal/browser."""
+        self._prepared = ()
+        self._confirmation_id = None
+
     def prepare(
         self,
         candidates: Sequence[DebrisCandidate],
@@ -158,8 +163,7 @@ class DebrisWorkflowController:
         safety_seconds: int = 10,
     ) -> DebrisPreparationBatch:
         selected = _bounded_unique(candidates)
-        self._prepared = ()
-        self._confirmation_id = None
+        self.cancel_prepared()
         self._source = str(source)
         self._recycler_count = int(recycler_count)
         self._safety_seconds = int(safety_seconds)
@@ -212,7 +216,12 @@ class DebrisWorkflowController:
             detail=f"Prepared {len(prepared)} debris dispatches; explicit confirmation required",
         )
 
-    def confirm_and_dispatch(self, confirmation_id: str) -> DebrisDispatchBatch:
+    def confirm_and_dispatch(
+        self,
+        confirmation_id: str,
+        *,
+        between_attempts: Callable[[], None] | None = None,
+    ) -> DebrisDispatchBatch:
         supplied = str(confirmation_id or "").strip()
         expected = self._confirmation_id
         prepared = self._prepared
@@ -232,11 +241,12 @@ class DebrisWorkflowController:
         # Consume the confirmation before any side effect. A caller cannot invoke
         # confirm twice against the same prepared batch even if the first attempt
         # later stops or becomes ambiguous.
-        self._confirmation_id = None
-        self._prepared = ()
+        self.cancel_prepared()
         completed: list[DebrisDispatchStep] = []
         for index, item in enumerate(prepared):
             candidate = item.candidate
+            if between_attempts is not None:
+                between_attempts()
             if self._stop_requested:
                 return DebrisDispatchBatch(
                     DebrisWorkflowState.STOPPED_MANUAL,
