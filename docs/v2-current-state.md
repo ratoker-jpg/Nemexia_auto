@@ -1,6 +1,36 @@
 # Nemexia Raid Manager V2 — current state
 
-Updated by V2-40 after the #62–#71 action-migration batch.
+Documentation handoff after the completed #62–#71 V2 action-migration batch.
+
+## Current implementation baseline
+
+The code baseline completed by PR #71 is:
+
+- `a3db5b277ecea3ef5358a9cd9b0e3f93eebb8dd9`
+- PR #71: `V2-40: add explicitly armed controlled AutoFarm scheduler`
+
+This SHA is the implementation baseline before the docs-only handoff PR. After this documentation PR is merged, new work must start from the then-current `main`, while `a3db5b2...` remains the exact code baseline of the completed action batch.
+
+## Completed V2 action batch: PR #62–#71
+
+The full mutation path was migrated in small gated PRs:
+
+- #62 / V2-31 — typed raid action boundary;
+- #63 / V2-32 — attach-only raid preparation backend;
+- #64 / V2-33 — explicit runtime `actions_enabled` gate;
+- #65 / V2-34 — exactly-one-attempt verified raid dispatch;
+- #66 / V2-35 — persistent action journal + idempotency;
+- #67 / V2-36 — V2-owned raid queue in isolated SQLite;
+- #68 / V2-37 — confirmed manual dispatch from Plan;
+- #69 / V2-38 — reconciliation of pending/ambiguous sends from live flights;
+- #70 / V2-39 — typed AutoFarm state machine + one-wave execution;
+- #71 / V2-40 — explicitly armed controlled continuous AutoFarm scheduler.
+
+PR #71 was verified both before merge and again on the exact squash SHA in `main` with:
+
+- Windows Python 3.10: compileall + pytest + legacy self-test;
+- Windows Python 3.11: compileall + pytest + legacy self-test;
+- Python 3.11 + PySide6: real offscreen `QApplication` / `MainWindow` smoke.
 
 ## Safety baseline
 
@@ -11,6 +41,8 @@ The pre-PySide6 working version remains recoverable at:
 - source SHA `4e01bfda752c6383e48c0f6eb8be64d68676da67`
 
 The default launcher is still `run_app.bat -> app_entry.py` (Tkinter). V2 remains a separate `app_qt.py` entrypoint.
+
+Do not repoint, rewrite, or reuse the stable/archive refs for V2 work.
 
 ## Storage boundary
 
@@ -78,7 +110,7 @@ Multiple possible matches remain unresolved. Reconciliation never sends or click
 
 ## AutoFarm V2
 
-AutoFarm is now built on typed states rather than status-text parsing:
+AutoFarm is built on typed states rather than status-text parsing:
 
 - `actions_disabled`;
 - `live_not_checked`;
@@ -144,14 +176,37 @@ V2 still has no automatic action API for:
 
 Because automatic spying/refill is not migrated, the current V2 continuous farm cycle operates only on its existing V2 queue.
 
+## Next implementation batch
+
+The next implementation block is defined in:
+
+- [`plans/2026-08-08-v2-next-action-batch.md`](plans/2026-08-08-v2-next-action-batch.md)
+
+Target sequence is PR #72–#81. The critical order is:
+
+1. inspect and type the legacy spy/report acquisition contracts before browser mutation;
+2. add attach-only spy/report read + preparation boundaries;
+3. add persisted request journal/idempotency for any new side effect;
+4. acquire fresh spy reports without deleting messages;
+5. normalize fresh report facts into V2-owned target data;
+6. rebuild/refill the V2 queue through explicit typed policy, never by UI text;
+7. connect queue exhaustion to controlled fresh-recon/refill behavior;
+8. harden CAPTCHA/live-unavailable/ambiguous recovery;
+9. run parity and restart/crash-gap tests;
+10. only then consider asteroid/debris action migration.
+
+Do not combine automatic spying, queue refill, asteroid execution, and debris execution in one large PR.
+
 ## Verification gate
 
-GitHub Actions runs on Windows:
+Every implementation PR must use the existing Windows CI gate:
 
 - Python 3.10: compileall + pytest + legacy self-test;
 - Python 3.11: compileall + pytest + legacy self-test;
 - Python 3.11 + PySide6: real offscreen `QApplication` / `MainWindow` smoke.
 
 CI uses per-ref concurrency so stale superseded branch runs are cancelled instead of delaying the newest head.
+
+Before merge, inspect review findings and fix real P1/P2 issues instead of suppressing tests. After squash merge, verify the push-CI on the exact new `main` SHA.
 
 The local legacy working installation should not be replaced until final parity/cutover is explicitly completed.
