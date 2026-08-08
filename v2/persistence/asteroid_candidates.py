@@ -107,16 +107,17 @@ class AsteroidObservationRepository:
             )
             return conn.total_changes - before
 
-    def list(self, *, limit: int = 5000) -> list[dict[str, object]]:
-        rows = self.database._require_conn().execute(
-            """SELECT id, galaxy, system, position,
-                      last_move_at, next_move_at, period_seconds,
-                      observed_at, source, ingested_at
-                 FROM asteroid_observations
-                ORDER BY observed_at DESC, id DESC
-                LIMIT ?""",
-            (max(1, int(limit)),),
-        ).fetchall()
+    def list(self, *, limit: int | None = None) -> list[dict[str, object]]:
+        conn = self.database._require_conn()
+        base = """SELECT id, galaxy, system, position,
+                         last_move_at, next_move_at, period_seconds,
+                         observed_at, source, ingested_at
+                    FROM asteroid_observations
+                   ORDER BY observed_at DESC, id DESC"""
+        if limit is None:
+            rows = conn.execute(base).fetchall()
+        else:
+            rows = conn.execute(base + " LIMIT ?", (max(1, int(limit)),)).fetchall()
         return [dict(row) for row in rows]
 
     def identities(self) -> frozenset[tuple[object, ...]]:
