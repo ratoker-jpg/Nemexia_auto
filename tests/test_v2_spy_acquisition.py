@@ -36,6 +36,7 @@ def test_spy_backend_has_one_mutation_call_and_no_navigation_or_message_deletion
     assert source.count("window.processSpy(Number(fleetId))") == 1
     assert "spy1Link-${fleetId}" in source
     assert "link.closest('tr')" in source
+    assert "fleetType" in source
     assert "tr.espionageClass" not in source
     assert "loadTabContent('TabAdministrative', 2, 0)" in source
     for forbidden in (
@@ -50,8 +51,7 @@ def test_saved_fleets_fixture_proves_exact_and_bulk_process_spy_modes() -> None:
     assert 'class="espionageClass"' in html
     assert 'id="spy1Link-152272"' in html
     assert 'onclick="processSpy(152272)"' in html
-    assert "processSpy('0', true)" in html
-    assert 'Получить все шпионские отчеты' in html
+    assert 'onclick="processSpy(0);" value="Получить все шпионские отчеты"' in html
     assert '>3:39:11</a>' in html
     assert '>2:22:19</a>' in html
 
