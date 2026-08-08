@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import threading
+import time
+from datetime import datetime, timedelta
 from typing import Any, Coroutine
 
 from playwright.async_api import Browser, Page, Playwright, async_playwright
@@ -15,10 +19,11 @@ from v2.application.raid_actions import (
 
 
 class V2RaidCdpBackend:
-    """Attach to an already-open fleets.php page and prepare a raid form only.
+    """Attach to an already-open fleets.php page for guarded raid preparation/dispatch.
 
-    V2-32 deliberately does not click SendFleet, navigate, create tabs or launch a
-    browser. Dispatch remains unavailable until a later PR adds verified sending.
+    The adapter never launches a browser, creates a page, or navigates. Dispatch is
+    one-shot: after the SendFleet request is accepted, V2 verifies a new attack row
+    and never retries an ambiguous send automatically.
     """
 
     def __init__(
@@ -26,11 +31,11 @@ class V2RaidCdpBackend:
         endpoint: str,
         *,
         game_host: str = "game.ares.nemexia.com",
-        timeout_seconds: float = 12.0,
+        timeout_seconds: float = 30.0,
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.game_host = game_host
-        self.timeout_seconds = max(2.0, float(timeout_seconds))
+        self.timeout_seconds = max(5.0, float(timeout_seconds))
         self._thread = threading.Thread(
             target=self._thread_main,
             daemon=True,
@@ -54,12 +59,12 @@ class V2RaidCdpBackend:
         finally:
             loop.close()
 
-    def _submit(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
+    def _submit(self, coroutine: Coroutine[Any, Any, Any], *, timeout: float | None = None) -> Any:
         if self._closed or self._loop is None:
             raise RaidActionError("V2 raid CDP backend is closed")
         future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
         try:
-            return future.result(timeout=self.timeout_seconds + 2.0)
+            return future.result(timeout=timeout or self.timeout_seconds)
         except Exception as exc:
             future.cancel()
             if isinstance(exc, RaidActionError):
@@ -116,7 +121,7 @@ class V2RaidCdpBackend:
     async def _assert_ready(self, page: Page, command: RaidCommand) -> None:
         if await self._captcha_present(page):
             raise RaidActionError(
-                "CAPTCHA обнаружена. V2 остановил подготовку до ручного подтверждения."
+                "CAPTCHA обнаружена. V2 остановил действие до ручного подтверждения."
             )
         current = str(
             await page.evaluate(
@@ -200,11 +205,121 @@ class V2RaidCdpBackend:
             gas_needed=timing.get("gas"),
         )
 
+    @staticmethod
+    def _extract_coord(value: object) -> str:
+        match = re.search(r"(\d+)\s*:\s*(\d+)\s*:\s*(\d+)", str(value or ""))
+        return ":".join(match.groups()) if match else str(value or "").replace(" ", "")
+
+    async def _read_flight_rows(self, page: Page) -> list[dict[str, str | None]]:
+        return await page.evaluate(
+            r"""() => Array.from(document.querySelectorAll('#fleetHandler tbody tr')).map(row => {
+                const cells=Array.from(row.children).filter(el=>el.tagName==='TD');
+                const details=row.querySelector('.fleetType a');
+                const onclick=details?.getAttribute('onclick')||'';
+                const match=onclick.match(/fleetDetails\((\d+)\)/);
+                return {
+                    id:match?match[1]:null,
+                    source:cells[0]?.textContent?.trim()||'',
+                    target:cells[1]?.textContent?.trim()||'',
+                    mission:details?.textContent?.trim()||cells[4]?.textContent?.trim()||''
+                };
+            })"""
+        )
+
+    async def _dispatch(self, command: RaidCommand) -> RaidDispatchResult:
+        preparation = await self._prepare(command)
+        page = await self._existing_fleets_page()
+        await self._assert_ready(page, command)
+        before_rows = await self._read_flight_rows(page)
+        before_ids = {str(row["id"]) for row in before_rows if row.get("id")}
+
+        button = page.locator("#SendFleetButton")
+        if await button.is_disabled():
+            raise RaidActionError(
+                "Игра не разрешает отправку. Проверь корабли, газ, координаты и свободные слоты."
+            )
+
+        try:
+            async with page.expect_response(
+                lambda response: (
+                    "ajax_fleets.php" in response.url
+                    and response.request.method == "POST"
+                    and "type=SendFleet" in (response.request.post_data or "")
+                ),
+                timeout=15_000,
+            ) as response_info:
+                await button.click()
+            response = await response_info.value
+            response_text = await response.text()
+        except Exception as exc:
+            if await self._captcha_present(page):
+                raise RaidActionError(
+                    "CAPTCHA появилась при отправке. Повтор автоматически запрещён."
+                ) from exc
+            raise RaidActionError(
+                "Не получен однозначный ответ на отправку. Не повторяй рейд до проверки экрана «Активные»."
+            ) from exc
+
+        try:
+            payload = json.loads(response_text)
+            pass_value = str(payload.get("pass"))
+            server_info = str(payload.get("info") or "")
+        except Exception as exc:
+            raise RaidActionError(
+                "Ответ SendFleet не распознан. Запрос мог быть принят; автоматический повтор запрещён."
+            ) from exc
+        if pass_value == "0":
+            raise RaidActionError(server_info or "Игра отклонила отправку флота")
+        if pass_value not in {"1", "True", "true"}:
+            raise RaidActionError(
+                "Ответ SendFleet неоднозначен. Запрос мог быть принят; автоматический повтор запрещён."
+            )
+
+        sent_at = datetime.now().astimezone()
+        try:
+            await page.evaluate("() => { if (typeof showFleets === 'function') showFleets(); }")
+        except Exception:
+            pass
+
+        fleet_id: str | None = None
+        verified = False
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.45)
+            if await self._captcha_present(page):
+                break
+            rows = await self._read_flight_rows(page)
+            candidates = [
+                row
+                for row in rows
+                if row.get("id")
+                and str(row["id"]) not in before_ids
+                and self._extract_coord(row.get("target")) == command.target
+                and str(row.get("mission") or "").strip().casefold() == "атака"
+            ]
+            if candidates:
+                fleet_id = str(candidates[0]["id"])
+                verified = True
+                break
+
+        return RaidDispatchResult(
+            source=preparation.source,
+            target=preparation.target,
+            player=preparation.player,
+            ship_count=preparation.ship_count,
+            sent_at=sent_at.isoformat(),
+            arrival_at=(sent_at + timedelta(seconds=preparation.one_way_seconds)).isoformat(),
+            return_at=(sent_at + timedelta(seconds=preparation.round_trip_seconds)).isoformat(),
+            fleet_id=fleet_id,
+            verified=verified,
+            server_info=server_info,
+        )
+
     def prepare(self, command: RaidCommand) -> RaidPreparation:
         return self._submit(self._prepare(command))
 
     def dispatch(self, command: RaidCommand) -> RaidDispatchResult:
-        raise RaidActionError("V2 dispatch is not enabled yet")
+        return self._submit(self._dispatch(command), timeout=self.timeout_seconds + 20.0)
 
     async def _stop_playwright(self) -> None:
         # This backend attaches to a browser owned by the user. Never Browser.close().
