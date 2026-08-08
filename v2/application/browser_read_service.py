@@ -104,3 +104,8 @@ class V2BrowserFlightSource:
             free=max(0, maximum - used),
             source="game DOM #FleetsCount/#MaxFleets",
         )
+
+    def close(self) -> None:
+        closer = getattr(self._backend, "close", None)
+        if callable(closer):
+            closer()
