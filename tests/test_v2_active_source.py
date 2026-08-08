@@ -47,14 +47,21 @@ def test_injected_read_source_passes_live_facts_without_browser_dependency(tmp_p
         context.close()
 
 
-def test_active_ui_does_not_claim_zero_when_source_is_unavailable() -> None:
+def test_active_ui_uses_typed_semantics_and_does_not_claim_zero_when_unavailable() -> None:
     root = Path(__file__).resolve().parents[1]
     page = (root / "v2" / "ui" / "pages" / "active.py").read_text(encoding="utf-8")
     main = (root / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
     assert "Live-полёты не проверены" in page
     assert "Live-полёты пока не подключены" in page
     assert "context.refresh_live_source()" in page
-    assert "context.active_flights() if status.available else []" in page
+    assert "context.classified_active_flights() if status.available else []" in page
+    assert "Направление" in page
+    assert "В расчётах" in page
+    assert "Таймер фарма" in page
+    assert "item.facts.direction.value" in page
+    assert "item.facts.owner_scope.value" in page
+    assert "item.facts.excluded" in page
+    assert "item.facts.blocks_farm_cycle" in page
     assert "Обновить" in page
     assert 'if key == "active"' in main
     assert "ActivePage(self.context" in main
