@@ -6,13 +6,15 @@ APP_QT = (ROOT / "app_qt.py").read_text(encoding="utf-8")
 MAIN = (ROOT / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
 TABLES = (ROOT / "v2" / "ui" / "pages" / "read_tables.py").read_text(encoding="utf-8")
 RECON = (ROOT / "v2" / "ui" / "pages" / "recon.py").read_text(encoding="utf-8")
+ASTEROID_CONTEXT = (ROOT / "v2" / "application" / "asteroid_context.py").read_text(encoding="utf-8")
 
 
 def test_qt_preview_bootstraps_through_isolated_v2_and_readonly_legacy_context() -> None:
     assert "build_context(paths)" in APP_QT
     assert "V2Database(paths.database)" in APP_QT
     assert "LegacySettingsImporter" in APP_QT
-    assert "ReconOwnedApplicationContext(" in APP_QT
+    assert "AsteroidEnabledApplicationContext(" in APP_QT
+    assert "class AsteroidEnabledApplicationContext(ReconOwnedApplicationContext)" in ASTEROID_CONTEXT
     assert "V2ApplicationContext" in APP_QT
     assert "v2_settings=settings" in APP_QT
     assert "v2_database=database" in APP_QT
