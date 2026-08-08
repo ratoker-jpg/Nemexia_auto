@@ -44,3 +44,12 @@ def test_recon_ui_exposes_report_provenance() -> None:
     assert "item.report_at" in RECON
     assert "item.target_coord" in RECON
     assert "item.source" in RECON
+
+
+def test_recon_ui_exposes_one_explicit_controlled_refill_without_direct_browser_logic() -> None:
+    assert "ReconRefillState" in RECON
+    assert "run_controlled_recon_refill" in RECON
+    assert "recon-refill-" in RECON
+    assert "Разведка → AutoFarm refill" in RECON
+    for forbidden in ("playwright", "BrowserWorker", "ajax_fleets.php", "sqlite3"):
+        assert forbidden not in RECON
