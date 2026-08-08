@@ -23,7 +23,7 @@ def test_backup_contains_committed_settings_and_is_restoreable(tmp_path: Path) -
         settings = V2SettingsRepository(restored)
         assert restored.integrity_check() == "ok"
         assert restored.schema_version() == V2_SCHEMA_VERSION
-        assert {"raid_actions", "spy_actions"}.issubset(restored.table_names())
+        assert {"raid_actions", "spy_actions", "recon_targets", "recon_reports"}.issubset(restored.table_names())
         assert settings.get("cdp_port") == 9444
         assert settings.get("farm_return_buffer_minutes") == 9
 

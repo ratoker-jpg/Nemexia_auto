@@ -111,15 +111,18 @@ class TargetsPage(FilterableReadOnlyTable):
                 item.minerals,
                 item.gas,
                 item.last_spy_at,
-                item.raid_count,
+                item.latest_report_id,
                 "Blacklist" if item.blacklisted else ("Включена" if item.enabled else "Выключена"),
             )
             for item in targets
         ]
         super().__init__(
-            ("Координаты", "Игрок", "Энергия", "Металл", "Минералы", "Газ", "Разведка", "Рейдов", "Состояние"),
+            (
+                "Координаты", "Игрок", "Энергия", "Металл", "Минералы", "Газ",
+                "Разведка", "Report ID", "Состояние",
+            ),
             rows,
-            placeholder="Поиск по координатам, игроку, ресурсам или состоянию…",
+            placeholder="Поиск по V2-целям, ресурсам или состоянию…",
             parent=parent,
         )
 

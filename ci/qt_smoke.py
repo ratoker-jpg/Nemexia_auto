@@ -4,6 +4,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -15,11 +16,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from v2.application.context import V2ApplicationContext
 from v2.application.flight_source import ActiveFlightSnapshot, FleetCapacitySnapshot, FlightSourceStatus
 from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.read_store import ReadOnlyStore
+from v2.application.recon_context import ReconOwnedApplicationContext
+from v2.application.recon_repository import V2ReconRepository
+from v2.application.spy_actions import SpyActionService
 from v2.application.v2_settings import V2SettingsRepository
+from v2.domain.recon import SpyReportFact
 from v2.persistence.database import V2Database
 from v2.runtime_paths import build_runtime_paths, ensure_runtime_paths
 from v2.ui.main_window import MainWindow
@@ -77,6 +81,20 @@ class FakeLiveFlightSource:
         self.closed = True
 
 
+class FakeSpyBackend:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def prepare(self, command):
+        raise AssertionError("Qt smoke must not prepare spy actions")
+
+    def request(self, command, preparation):
+        raise AssertionError("Qt smoke must not request spy actions")
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def create_fixture(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(SCHEMA)
@@ -97,14 +115,35 @@ def main() -> int:
 
         database = V2Database(paths.database)
         settings = V2SettingsRepository(database)
+        recon = V2ReconRepository(database)
         with ReadOnlyStore(legacy_db) as source:
             LegacySettingsImporter(source, settings).import_missing()
+            recon.import_legacy_targets(source)
+        recon.ingest_reports((SpyReportFact(
+            report_id="smoke-report-1",
+            target="3:1:2",
+            reported_at=datetime(2026, 8, 8, 7, 0, tzinfo=timezone.utc),
+            energy=9000,
+            metal=700000,
+            minerals=800000,
+            gas=12,
+            source="smoke:typed",
+        ),), now=datetime(2026, 8, 8, 8, 0, tzinfo=timezone.utc))
         assert settings.get("cdp_port") == 9333
         assert settings.get("farm_home") == "3:39:11"
         assert settings.get("farm_return_buffer_minutes") == 7
 
         live_source = FakeLiveFlightSource()
-        context = V2ApplicationContext(legacy_db, flight_source=live_source, v2_settings=settings, v2_database=database)
+        spy_backend = FakeSpyBackend()
+        spy_actions = SpyActionService(spy_backend, enabled=False)
+        context = ReconOwnedApplicationContext(
+            legacy_db,
+            flight_source=live_source,
+            v2_settings=settings,
+            v2_database=database,
+            v2_recon=recon,
+            spy_actions=spy_actions,
+        )
         app = QApplication.instance() or QApplication([])
         app.setStyleSheet(ORBITAL_COMMAND_QSS)
         window = MainWindow(paths, context)
@@ -125,6 +164,11 @@ def main() -> int:
             for key, class_name in expected.items():
                 page = window.stack.widget(window._page_index[key])
                 assert page.__class__.__name__ == class_name, (key, page.__class__.__name__)
+
+            recon_page = window.stack.widget(window._page_index["recon"])
+            targets_page = window.stack.widget(window._page_index["targets"])
+            assert recon_page.model.rowCount() == 1
+            assert targets_page.model.rowCount() == 1
 
             active = window.stack.widget(window._page_index["active"])
             farm = window.stack.widget(window._page_index["farm"])
@@ -154,13 +198,15 @@ def main() -> int:
             window.close(); app.processEvents(); context.close()
 
         assert live_source.closed is True
+        assert spy_backend.closed is True
         assert legacy_db.read_bytes() == before
         assert paths.database.is_file()
         with V2Database(paths.database) as check:
             assert check.integrity_check() == "ok"
             assert V2SettingsRepository(check).get("farm_return_buffer_minutes") == 9
+            assert len(V2ReconRepository(check).list_recon()) == 1
 
-    print("OK: PySide6 V2 scheduler-disarmed settings/runtime smoke")
+    print("OK: PySide6 V2 scheduler-disarmed V2-recon settings/runtime smoke")
     return 0
 
 

@@ -8,9 +8,10 @@ from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
 from v2.application.raid_actions import RaidActionService
 from v2.application.read_store import ReadOnlyStore, ReadStoreUnavailable
+from v2.application.recon_context import ReconOwnedApplicationContext
+from v2.application.recon_repository import V2ReconRepository
 from v2.application.report_source import V2BrowserReportSource
 from v2.application.spy_actions import SpyActionService
-from v2.application.spy_context import SpyEnabledApplicationContext
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
@@ -25,6 +26,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
     database = V2Database(paths.database)
     settings = V2SettingsRepository(database)
     queue = V2QueueRepository(database)
+    recon = V2ReconRepository(database)
     raid_actions: RaidActionService | None = None
     spy_actions: SpyActionService | None = None
     try:
@@ -32,6 +34,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             with ReadOnlyStore(source_path) as legacy:
                 LegacySettingsImporter(legacy, settings).import_missing()
                 queue.import_legacy_if_empty(legacy)
+                recon.import_legacy_targets(legacy)
         except ReadStoreUnavailable:
             pass
 
@@ -47,13 +50,14 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             spy_backend,
             enabled=bool(settings.get("actions_enabled")),
         )
-        return SpyEnabledApplicationContext(
+        return ReconOwnedApplicationContext(
             source_path,
             flight_source=flight_source,
             report_source=report_source,
             v2_settings=settings,
             v2_database=database,
             v2_queue=queue,
+            v2_recon=recon,
             raid_actions=raid_actions,
             spy_actions=spy_actions,
         )

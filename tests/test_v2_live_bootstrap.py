@@ -64,7 +64,7 @@ def test_context_close_propagates_to_browser_source(tmp_path: Path) -> None:
     assert backend.closed is True
 
 
-def test_qt_bootstrap_wires_isolated_settings_and_guarded_spy_backend() -> None:
+def test_qt_bootstrap_wires_isolated_settings_spy_and_v2_recon() -> None:
     source = (Path(__file__).resolve().parents[1] / "app_qt.py").read_text(encoding="utf-8")
     assert "V2Database(paths.database)" in source
     assert "V2SettingsRepository(database)" in source
@@ -72,8 +72,11 @@ def test_qt_bootstrap_wires_isolated_settings_and_guarded_spy_backend() -> None:
     assert 'preferred_port=settings.get("cdp_port")' in source
     assert "V2SpyCdpBackend" in source
     assert "SpyActionService" in source
-    assert "SpyEnabledApplicationContext" in source
+    assert "V2ReconRepository(database)" in source
+    assert "recon.import_legacy_targets(legacy)" in source
+    assert "ReconOwnedApplicationContext(" in source
     assert "V2BrowserFlightSource" in source and "V2BrowserReportSource" in source
     assert "report_source=report_source" in source and "spy_actions=spy_actions" in source
+    assert "v2_recon=recon" in source
     for forbidden in ("BrowserWorker", "launch_yandex", "delete_messages", "app_entry.py"):
         assert forbidden not in source
