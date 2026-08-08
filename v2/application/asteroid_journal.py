@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from v2.application.asteroid_actions import (
     AsteroidActionError,
     AsteroidActionService,
     AsteroidActionsDisabled,
     AsteroidCaptchaBlocked,
+    AsteroidDispatchAmbiguous,
     AsteroidDispatchCommand,
     AsteroidDispatchPreparation,
     AsteroidDispatchRejected,
     AsteroidDispatchResult,
     AsteroidPreparationRejected,
     validate_command,
+    validate_fleet_id,
 )
 from v2.persistence.asteroid_journal import AsteroidJournalRepository
 from v2.persistence.database import V2Database, V2DatabaseError
@@ -73,7 +75,7 @@ class AsteroidRequestCoordinator:
         unresolved = self.journal.unresolved(
             source=preparation.source,
             observation_coord=preparation.observation.coord,
-            observation_next_move_at=preparation.observation.next_move_at.isoformat(),
+            observation_next_move_at=self._identity_iso(preparation.observation.next_move_at),
             target=preparation.target,
         )
         if unresolved is not None:
@@ -98,6 +100,23 @@ class AsteroidRequestCoordinator:
                 request_id,
                 status="failed_safe",
                 detail=str(exc),
+            )
+            raise
+        except AsteroidDispatchAmbiguous as exc:
+            # Preserve every structured fact the backend managed to observe. The
+            # row stays unresolved, so this evidence never opens a retry window.
+            evidence = exc.result
+            detail_parts = [str(exc)]
+            if evidence is not None and evidence.server_info:
+                detail_parts.append(str(evidence.server_info))
+            self.journal.finish(
+                request_id,
+                status="ambiguous",
+                fleet_id=evidence.fleet_id if evidence is not None else None,
+                sent_at=self._iso(evidence.sent_at) if evidence is not None else None,
+                arrival_at=self._iso(evidence.arrival_at) if evidence is not None else None,
+                return_at=self._iso(evidence.return_at) if evidence is not None else None,
+                detail=" | ".join(part for part in detail_parts if part),
             )
             raise
         except Exception as exc:
@@ -133,14 +152,14 @@ class AsteroidRequestCoordinator:
                 request_id=request_id,
                 source=preparation.source,
                 observation_coord=observation.coord,
-                observation_last_move_at=observation.last_move_at.isoformat(),
-                observation_next_move_at=observation.next_move_at.isoformat(),
+                observation_last_move_at=self._identity_iso(observation.last_move_at),
+                observation_next_move_at=self._identity_iso(observation.next_move_at),
                 observation_period_seconds=observation.period_seconds,
-                observation_observed_at=observation.observed_at.isoformat(),
+                observation_observed_at=self._identity_iso(observation.observed_at),
                 target=preparation.target,
                 recycler_count=preparation.recycler_count,
                 safety_seconds=command.safety_seconds,
-                prepared_at=preparation.prepared_at.isoformat(),
+                prepared_at=self._identity_iso(preparation.prepared_at),
                 one_way_seconds=preparation.one_way_seconds,
                 round_trip_seconds=preparation.round_trip_seconds,
                 shifts=preparation.shifts,
@@ -152,6 +171,15 @@ class AsteroidRequestCoordinator:
     @staticmethod
     def _iso(value: datetime | None) -> str | None:
         return None if value is None else value.isoformat()
+
+    @staticmethod
+    def _identity_iso(value: datetime) -> str:
+        # Asteroid domain comparisons treat naive values as UTC; journal identity
+        # must use the same canonical instant or offset variants could bypass the
+        # partial unique index after an ambiguous side effect.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
 
     @staticmethod
     def _record_from_row(row: dict[str, object]) -> AsteroidActionRecord:
@@ -187,6 +215,7 @@ class AsteroidRequestCoordinator:
         arrival_at: datetime | None = None,
         return_at: datetime | None = None,
     ) -> AsteroidActionRecord:
+        fleet_id = validate_fleet_id(fleet_id)
         for name, value in (
             ("sent_at", sent_at),
             ("arrival_at", arrival_at),
