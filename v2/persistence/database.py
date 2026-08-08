@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Mapping
 
 
 V2_SCHEMA_VERSION = 1
@@ -83,16 +84,23 @@ class V2Database:
         return str(row[0]) if row is not None else None
 
     def write_setting_raw(self, key: str, value: str) -> None:
+        self.write_settings_raw({str(key): str(value)})
+
+    def write_settings_raw(self, values: Mapping[str, str]) -> None:
+        """Commit one validated settings batch atomically."""
         if self._conn is None:
             raise V2DatabaseError("V2 database is closed")
+        if not values:
+            return
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        rows = [(str(key), str(value), now) for key, value in values.items()]
         with self._conn:
-            self._conn.execute(
+            self._conn.executemany(
                 """
                 INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
                 """,
-                (str(key), str(value), now),
+                rows,
             )
 
     def read_all_settings_raw(self) -> dict[str, str]:
