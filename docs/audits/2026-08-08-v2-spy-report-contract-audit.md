@@ -49,7 +49,7 @@ The original V2-41 wording called `processSpy(0)` a mass "spy request" and V2-43
 The saved page shows two distinct controls:
 
 - each existing espionage fleet row has an exact action such as `processSpy(152272)` and a matching `spy1Link-152272`;
-- the bulk control calls `processSpy('0', true)` and is visibly labeled **"Получить все шпионские отчеты"**.
+- the bulk control calls `processSpy(0)` and is visibly labeled **"Получить все шпионские отчеты"**.
 
 Therefore `processSpy` processes/retrieves a report for an **already existing espionage fleet**. It is not evidence of a command that dispatches new probes to an arbitrary source/target pair. The exact one-shot V2 identity is consequently:
 
