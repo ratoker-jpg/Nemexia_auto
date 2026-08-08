@@ -44,11 +44,18 @@ def test_plan_reflects_persisted_queue_without_mutation(tmp_path: Path) -> None:
     assert db.read_bytes() == before
 
 
-def test_plan_ui_is_non_actionable() -> None:
+def test_plan_ui_routes_manual_actions_only_through_v2_context() -> None:
     root = Path(__file__).resolve().parents[1]
     page = (root / 'v2' / 'ui' / 'pages' / 'plan.py').read_text(encoding='utf-8')
     main = (root / 'v2' / 'ui' / 'main_window.py').read_text(encoding='utf-8')
     assert 'context.plan()' in page
     assert 'PlanPage(self.context' in main
-    for forbidden in ('send_raid', 'prepare_raid', 'replace_queue', 'generate_queue', 'BrowserWorker', 'UPDATE ', 'DELETE ', 'INSERT INTO'):
+    assert 'context.prepare_raid' in page
+    assert 'context.dispatch_plan_raid' in page
+    assert 'context.raid_actions_enabled()' in page
+    assert 'QMessageBox.question' in page
+    for forbidden in (
+        'BrowserWorker', 'playwright', '#SendFleetButton', 'ajax_fleets.php',
+        'sqlite3', 'UPDATE ', 'DELETE ', 'INSERT INTO', 'replace_queue', 'generate_queue',
+    ):
         assert forbidden not in page
