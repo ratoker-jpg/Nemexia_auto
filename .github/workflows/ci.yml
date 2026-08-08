@@ -45,3 +45,29 @@ jobs:
 
       - name: Run legacy self-test
         run: python ci/run_legacy_self_test.py
+
+  qt-smoke:
+    name: PySide6 offscreen smoke / Python 3.11
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: "offscreen"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-v2.txt
+
+      - name: Install V2 dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-v2.txt
+
+      - name: Run Qt runtime smoke
+        run: python ci/qt_smoke.py
