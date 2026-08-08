@@ -12,6 +12,7 @@ from v2.application.live_flight_semantics import ClassifiedActiveFlight, build_l
 from v2.application.live_overview import LiveOverviewSnapshot, build_live_overview
 from v2.application.raid_actions import RaidActionService, RaidCommand, RaidDispatchResult, RaidPreparation
 from v2.application.raid_journal import RaidActionRecord, RaidDispatchCoordinator
+from v2.application.raid_reconciliation import RaidReconciliation, reconcile_unresolved_raids
 from v2.application.read_store import (
     HistorySnapshot, OverviewSnapshot, QueueSnapshot, ReadOnlyStore, ReadStoreUnavailable,
     ReconSnapshot, TargetSnapshot,
@@ -167,9 +168,6 @@ class V2ApplicationContext:
         if item.blacklisted:
             raise RuntimeError(f"Target is blacklisted: {item.coord}")
 
-        # Move to a non-retryable state before entering SendFleet. If the process
-        # dies after the game accepted the fleet but before our final state write,
-        # the row remains `sending` instead of becoming eligible for a duplicate.
         self._v2_queue.set_state(item.id, "sending")
         coordinator = RaidDispatchCoordinator(self._raid_actions, self._v2_database)
         try:
@@ -180,12 +178,9 @@ class V2ApplicationContext:
         except Exception:
             record = coordinator.record(request_id)
             if record is None:
-                # The failure happened before a journaled SendFleet attempt.
                 self._v2_queue.set_state(item.id, "queued")
             elif record.status == "ambiguous":
                 self._v2_queue.set_state(item.id, "ambiguous")
-            # pending/verified are deliberately left non-retryable as `sending`;
-            # reconciliation must decide them after a crash or persistence fault.
             raise
         self._v2_queue.set_state(item.id, "sent" if result.verified else "ambiguous")
         return result
@@ -194,6 +189,33 @@ class V2ApplicationContext:
         if self._raid_actions is None or self._v2_database is None:
             return []
         return RaidDispatchCoordinator(self._raid_actions, self._v2_database).recent(limit=limit)
+
+    def reconcile_raid_actions(self) -> list[RaidReconciliation]:
+        """Resolve journal uncertainty only from the last explicit live refresh."""
+        if (
+            self._raid_actions is None
+            or self._v2_database is None
+            or self._v2_queue is None
+            or not self._live_snapshot_ready
+            or self._last_flight_status is None
+            or not self._last_flight_status.available
+        ):
+            return []
+        coordinator = RaidDispatchCoordinator(self._raid_actions, self._v2_database)
+        resolved = reconcile_unresolved_raids(
+            coordinator,
+            coordinator.recent(limit=500),
+            self.cached_classified_active_flights(),
+        )
+        for item in resolved:
+            queue_matches = [
+                row for row in self.plan()
+                if row.coord == item.target and row.state in {"sending", "ambiguous"}
+            ]
+            # Never guess which queue row was responsible if duplicates exist.
+            if len(queue_matches) == 1:
+                self._v2_queue.set_state(queue_matches[0].id, "sent")
+        return resolved
 
     def flight_status(self) -> FlightSourceStatus:
         self._last_flight_status = self._flight_source.status()

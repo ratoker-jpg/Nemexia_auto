@@ -146,6 +146,40 @@ class V2Database:
         if cursor.rowcount != 1:
             raise V2DatabaseError(f"Pending raid request not found: {request_id}")
 
+    def resolve_raid_action(
+        self,
+        request_id: str,
+        *,
+        fleet_id: str,
+        sent_at: str | None = None,
+        arrival_at: str | None = None,
+        return_at: str | None = None,
+        detail: str = "live-flight reconciliation",
+    ) -> None:
+        """Resolve only a pending/ambiguous request after an exact live-flight match."""
+        if not str(fleet_id or "").strip():
+            raise V2DatabaseError("fleet_id is required to resolve a raid action")
+        conn = self._require_conn()
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        with conn:
+            cursor = conn.execute(
+                """
+                UPDATE raid_actions
+                   SET status='verified', fleet_id=?,
+                       sent_at=COALESCE(sent_at, ?),
+                       arrival_at=COALESCE(arrival_at, ?),
+                       return_at=COALESCE(return_at, ?),
+                       detail=?, updated_at=?
+                 WHERE request_id=? AND status IN ('pending','ambiguous')
+                """,
+                (
+                    str(fleet_id), sent_at, arrival_at, return_at,
+                    str(detail or ""), now, str(request_id),
+                ),
+            )
+        if cursor.rowcount != 1:
+            raise V2DatabaseError(f"Unresolved raid request not found: {request_id}")
+
     def read_raid_action(self, request_id: str) -> dict[str, object] | None:
         row = self._require_conn().execute(
             "SELECT * FROM raid_actions WHERE request_id=?", (str(request_id),)

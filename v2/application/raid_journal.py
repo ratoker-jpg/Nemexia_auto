@@ -26,6 +26,10 @@ class RaidActionRecord:
     ship_count: int
     status: str
     fleet_id: str | None
+    sent_at: str | None
+    arrival_at: str | None
+    return_at: str | None
+    created_at: str
     detail: str
 
 
@@ -70,10 +74,6 @@ class RaidDispatchCoordinator:
         try:
             result = self.service.dispatch(clean)
         except Exception as exc:
-            # The backend may have crossed the SendFleet boundary before an exception
-            # (network timeout, unreadable response, CAPTCHA during verification, etc.).
-            # Conservatively mark it ambiguous. A later reconciliation step must clear it;
-            # never auto-retry after an unknown side effect.
             self.database.finish_raid_action(
                 request_id,
                 status="ambiguous",
@@ -93,10 +93,8 @@ class RaidDispatchCoordinator:
         )
         return result
 
-    def record(self, request_id: str) -> RaidActionRecord | None:
-        row = self.database.read_raid_action(request_id)
-        if row is None:
-            return None
+    @staticmethod
+    def _record_from_row(row: dict[str, object]) -> RaidActionRecord:
         return RaidActionRecord(
             request_id=str(row["request_id"]),
             source=str(row["source"]),
@@ -105,22 +103,37 @@ class RaidDispatchCoordinator:
             ship_count=int(row["ship_count"]),
             status=str(row["status"]),
             fleet_id=str(row["fleet_id"]) if row.get("fleet_id") is not None else None,
+            sent_at=str(row["sent_at"]) if row.get("sent_at") is not None else None,
+            arrival_at=str(row["arrival_at"]) if row.get("arrival_at") is not None else None,
+            return_at=str(row["return_at"]) if row.get("return_at") is not None else None,
+            created_at=str(row["created_at"]),
             detail=str(row.get("detail") or ""),
         )
 
+    def record(self, request_id: str) -> RaidActionRecord | None:
+        row = self.database.read_raid_action(request_id)
+        return None if row is None else self._record_from_row(row)
+
     def recent(self, *, limit: int = 200) -> list[RaidActionRecord]:
-        records: list[RaidActionRecord] = []
-        for row in self.database.list_raid_actions(limit=limit):
-            records.append(
-                RaidActionRecord(
-                    request_id=str(row["request_id"]),
-                    source=str(row["source"]),
-                    target=str(row["target"]),
-                    player=str(row["player"]),
-                    ship_count=int(row["ship_count"]),
-                    status=str(row["status"]),
-                    fleet_id=str(row["fleet_id"]) if row.get("fleet_id") is not None else None,
-                    detail=str(row.get("detail") or ""),
-                )
-            )
-        return records
+        return [self._record_from_row(row) for row in self.database.list_raid_actions(limit=limit)]
+
+    def resolve_verified(
+        self,
+        request_id: str,
+        *,
+        fleet_id: str,
+        sent_at: str | None = None,
+        arrival_at: str | None = None,
+        return_at: str | None = None,
+    ) -> RaidActionRecord:
+        self.database.resolve_raid_action(
+            request_id,
+            fleet_id=fleet_id,
+            sent_at=sent_at,
+            arrival_at=arrival_at,
+            return_at=return_at,
+        )
+        record = self.record(request_id)
+        if record is None:
+            raise RaidActionError(f"Resolved raid request disappeared: {request_id}")
+        return record

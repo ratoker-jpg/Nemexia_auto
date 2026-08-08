@@ -7,7 +7,7 @@ from v2.ui.pages.read_tables import FilterableReadOnlyTable
 
 
 class ActivePage(QWidget):
-    """Show typed live-flight facts after an explicit read-only refresh."""
+    """Show typed live-flight facts and reconcile local V2 action uncertainty."""
 
     def __init__(self, context: V2ApplicationContext, parent=None) -> None:
         super().__init__(parent)
@@ -42,8 +42,12 @@ class ActivePage(QWidget):
         self.capacity_label = QLabel("Лимит флота: —", banner)
         self.capacity_label.setObjectName("Muted")
         self.capacity_label.setToolTip("Лимит не вычисляется по строкам таблицы")
+        self.journal_label = QLabel("Журнал V2: —", banner)
+        self.journal_label.setObjectName("Muted")
+        self.journal_label.setWordWrap(True)
         banner_layout.addWidget(self.status_detail)
         banner_layout.addWidget(self.capacity_label)
+        banner_layout.addWidget(self.journal_label)
         layout.addWidget(banner)
 
         self.flight_table = FilterableReadOnlyTable(
@@ -59,15 +63,18 @@ class ActivePage(QWidget):
         layout.addWidget(self.flight_table, 1)
 
     def reload_view(self) -> None:
-        """Read the already-open fleet page; never navigate or trigger game actions."""
+        """Read live flights; only local V2 journal/queue may be reconciled."""
         self.refresh_button.setEnabled(False)
         self.status_title.setText("Проверяем live-полёты…")
         self.status_detail.setText("Читаю текущий DOM fleets.php через attach-only CDP.")
+        reconciled = []
         try:
             status = self.context.refresh_live_source()
             flights = self.context.classified_active_flights() if status.available else []
             capacity = self.context.fleet_capacity() if status.available else None
-        except Exception as exc:  # fail closed at the UI boundary as well
+            if status.available:
+                reconciled = self.context.reconcile_raid_actions()
+        except Exception as exc:
             status = None
             flights = []
             capacity = None
@@ -77,7 +84,10 @@ class ActivePage(QWidget):
             self.status_title.setText(
                 "Live-полёты подключены" if status.available else "Live-полёты пока не подключены"
             )
-            self.status_detail.setText(status.detail)
+            detail = status.detail
+            if reconciled:
+                detail += f" · журнал: подтверждено {len(reconciled)}"
+            self.status_detail.setText(detail)
 
         rows = [
             (
@@ -103,4 +113,16 @@ class ActivePage(QWidget):
                 f"Полёты: {capacity.used} / {capacity.maximum} · свободно {capacity.free}"
             )
             self.capacity_label.setToolTip(capacity.source)
+
+        actions = self.context.recent_raid_actions(limit=200)
+        unresolved = [item for item in actions if item.status in {"pending", "ambiguous"}]
+        if not actions:
+            self.journal_label.setText("Журнал V2: отправок пока нет")
+        else:
+            latest = actions[0]
+            self.journal_label.setText(
+                f"Журнал V2: {len(actions)} записей · unresolved {len(unresolved)} · "
+                f"последняя {latest.request_id} → {latest.target} · {latest.status} · "
+                f"fleet {latest.fleet_id or '—'}"
+            )
         self.refresh_button.setEnabled(True)
