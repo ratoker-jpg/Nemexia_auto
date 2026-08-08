@@ -7,7 +7,7 @@ from v2.ui.pages.read_tables import FilterableReadOnlyTable
 
 
 class ActivePage(QWidget):
-    """Show live facts only after an explicit read-only refresh."""
+    """Show typed live-flight facts after an explicit read-only refresh."""
 
     def __init__(self, context: V2ApplicationContext, parent=None) -> None:
         super().__init__(parent)
@@ -47,7 +47,10 @@ class ActivePage(QWidget):
         layout.addWidget(banner)
 
         self.flight_table = FilterableReadOnlyTable(
-            ("Откуда", "Куда", "Миссия", "Отправление", "Прибытие", "Возврат", "Fleet ID"),
+            (
+                "Откуда", "Куда", "Миссия", "Направление", "Scope",
+                "В расчётах", "Таймер фарма", "Возврат", "Fleet ID",
+            ),
             (),
             placeholder="Поиск по активным полётам…",
             parent=self,
@@ -62,7 +65,7 @@ class ActivePage(QWidget):
         self.status_detail.setText("Читаю текущий DOM fleets.php через attach-only CDP.")
         try:
             status = self.context.refresh_live_source()
-            flights = self.context.active_flights() if status.available else []
+            flights = self.context.classified_active_flights() if status.available else []
             capacity = self.context.fleet_capacity() if status.available else None
         except Exception as exc:  # fail closed at the UI boundary as well
             status = None
@@ -78,13 +81,15 @@ class ActivePage(QWidget):
 
         rows = [
             (
-                item.source,
-                item.target,
-                item.mission,
-                item.departure_at,
-                item.arrival_at,
-                item.return_at,
-                item.fleet_id,
+                item.raw.source,
+                item.raw.target,
+                item.raw.mission,
+                item.facts.direction.value,
+                item.facts.owner_scope.value,
+                "Исключён" if item.facts.excluded else "Учитывается",
+                "Блокирует" if item.facts.blocks_farm_cycle else "Нет",
+                item.raw.return_at,
+                item.raw.fleet_id,
             )
             for item in flights
         ]
