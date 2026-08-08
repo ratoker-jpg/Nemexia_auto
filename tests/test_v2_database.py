@@ -11,14 +11,14 @@ from v2.persistence.database import V2Database, V2DatabaseError, V2_SCHEMA_VERSI
 def test_new_v2_database_is_versioned_and_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "v2" / "nemexia.sqlite3"
     with V2Database(path) as db:
-        assert db.schema_version() == V2_SCHEMA_VERSION == 7
+        assert db.schema_version() == V2_SCHEMA_VERSION == 8
         assert {
             "settings", "schema_migrations", "raid_actions", "raid_queue", "spy_actions",
-            "recon_targets", "recon_reports", "asteroid_actions",
+            "recon_targets", "recon_reports", "asteroid_actions", "asteroid_observations",
         }.issubset(db.table_names())
         assert db.integrity_check() == "ok"
     with V2Database(path) as reopened:
-        assert reopened.schema_version() == 7 and reopened.integrity_check() == "ok"
+        assert reopened.schema_version() == 8 and reopened.integrity_check() == "ok"
 
 
 def test_schema_v1_is_migrated_without_losing_settings(tmp_path: Path) -> None:
@@ -32,11 +32,11 @@ def test_schema_v1_is_migrated_without_losing_settings(tmp_path: Path) -> None:
         PRAGMA user_version=1;
         """)
     with V2Database(path) as db:
-        assert db.schema_version() == 7
+        assert db.schema_version() == 8
         assert db.read_setting_raw("cdp_port") == "9333"
         assert db.integrity_check() == "ok"
         versions = db._require_conn().execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
-        assert [int(row[0]) for row in versions] == [1, 2, 3, 4, 5, 6, 7]
+        assert [int(row[0]) for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8]
 
 
 def _create_schema_v4_spy_database(path: Path) -> None:
@@ -70,8 +70,10 @@ def test_schema_v4_spy_rows_are_preserved_without_invented_fleet_identity(tmp_pa
         assert row is not None and row["fleet_id"] is None
         assert row["status"] == "ambiguous"
         assert "fleet_id was not recorded" in str(row["detail"])
-        assert migrated.schema_version() == 7
-        assert {"recon_targets", "recon_reports", "asteroid_actions"}.issubset(migrated.table_names())
+        assert migrated.schema_version() == 8
+        assert {
+            "recon_targets", "recon_reports", "asteroid_actions", "asteroid_observations",
+        }.issubset(migrated.table_names())
 
 
 def test_schema_v5_rebuild_rolls_back_as_one_transaction(tmp_path: Path, monkeypatch) -> None:
