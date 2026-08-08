@@ -59,10 +59,7 @@ class FarmRuntime(Protocol):
 
 
 def eligible_queue(items: Sequence[QueueSnapshot]) -> list[QueueSnapshot]:
-    return [
-        item for item in items
-        if item.state == "queued" and item.enabled and not item.blacklisted
-    ]
+    return [item for item in items if item.state == "queued" and item.enabled and not item.blacklisted]
 
 
 def _parse_dt(value: object) -> datetime | None:
@@ -85,16 +82,12 @@ def _iso(value: datetime | None) -> str | None:
 def _return_buffer_minutes(runtime: FarmRuntime) -> int:
     try:
         value = int(str(runtime.v2_setting("farm_return_buffer_minutes", 5)).strip())
-    except (TypeError, ValueError):
+    except (AttributeError, TypeError, ValueError):
         value = 5
     return max(0, min(60, value))
 
 
-def _journal_ready_at(
-    actions: Sequence[RaidActionRecord],
-    *,
-    buffer_minutes: int,
-) -> datetime | None:
+def _journal_ready_at(actions: Sequence[RaidActionRecord], *, buffer_minutes: int) -> datetime | None:
     deadlines: list[datetime] = []
     for item in actions:
         if item.status != "verified" or not item.request_id.startswith("farm-"):
@@ -119,76 +112,31 @@ class FarmController:
         unresolved = [item for item in actions if item.status in {"pending", "ambiguous"}]
 
         live_ready = _parse_dt(overview.inferred_farm_ready_at) if overview is not None else None
-        journal_ready = _journal_ready_at(
-            actions,
-            buffer_minutes=_return_buffer_minutes(runtime),
-        )
+        journal_ready = _journal_ready_at(actions, buffer_minutes=_return_buffer_minutes(runtime))
         deadlines = [value for value in (live_ready, journal_ready) if value is not None]
         ready_deadline = max(deadlines, default=None)
         ready_at = _iso(ready_deadline)
 
         if not runtime.raid_actions_enabled():
-            return FarmSnapshot(
-                FarmState.ACTIONS_DISABLED,
-                "Действия V2 выключены в Настройках.",
-                len(items), free_slots, blocking, len(unresolved), ready_at,
-            )
+            return FarmSnapshot(FarmState.ACTIONS_DISABLED, "Действия V2 выключены в Настройках.", len(items), free_slots, blocking, len(unresolved), ready_at)
         if status is None:
-            return FarmSnapshot(
-                FarmState.LIVE_NOT_CHECKED,
-                "Сначала обнови live-полёты.",
-                len(items), 0, 0, len(unresolved), ready_at,
-            )
+            return FarmSnapshot(FarmState.LIVE_NOT_CHECKED, "Сначала обнови live-полёты.", len(items), 0, 0, len(unresolved), ready_at)
         if not status.available or capacity is None:
-            return FarmSnapshot(
-                FarmState.LIVE_UNAVAILABLE,
-                status.detail or "Live-полёты или capacity недоступны.",
-                len(items), 0, 0, len(unresolved), ready_at,
-            )
+            return FarmSnapshot(FarmState.LIVE_UNAVAILABLE, status.detail or "Live-полёты или capacity недоступны.", len(items), 0, 0, len(unresolved), ready_at)
         if unresolved:
-            return FarmSnapshot(
-                FarmState.BLOCKED_UNRESOLVED,
-                f"Есть unresolved отправки: {len(unresolved)}. Сначала сверка через «Активные».",
-                len(items), free_slots, blocking, len(unresolved), ready_at,
-            )
+            return FarmSnapshot(FarmState.BLOCKED_UNRESOLVED, f"Есть unresolved отправки: {len(unresolved)}. Сначала сверка через «Активные».", len(items), free_slots, blocking, len(unresolved), ready_at)
         if blocking:
             suffix = f" Следующая проверка после {ready_at}." if ready_at else ""
-            return FarmSnapshot(
-                FarmState.WAITING_RETURN,
-                f"Есть farm-blocking атаки: {blocking}. Новую волну пока не запускаем.{suffix}",
-                len(items), free_slots, blocking, 0, ready_at,
-            )
+            return FarmSnapshot(FarmState.WAITING_RETURN, f"Есть farm-blocking атаки: {blocking}. Новую волну пока не запускаем.{suffix}", len(items), free_slots, blocking, 0, ready_at)
         if not items:
-            return FarmSnapshot(
-                FarmState.NO_TARGETS,
-                "В V2-очереди нет eligible queued целей.",
-                0, free_slots, 0, 0, ready_at,
-            )
+            return FarmSnapshot(FarmState.NO_TARGETS, "В V2-очереди нет eligible queued целей.", 0, free_slots, 0, 0, ready_at)
         if ready_deadline is not None and datetime.now(timezone.utc) < ready_deadline:
-            return FarmSnapshot(
-                FarmState.WAITING_RETURN,
-                f"Farm-return завершён, действует return-buffer до {ready_at}.",
-                len(items), free_slots, 0, 0, ready_at,
-            )
+            return FarmSnapshot(FarmState.WAITING_RETURN, f"Farm-return завершён, действует return-buffer до {ready_at}.", len(items), free_slots, 0, 0, ready_at)
         if free_slots <= 0:
-            return FarmSnapshot(
-                FarmState.WAITING_CAPACITY,
-                "Свободных fleet slots нет.",
-                len(items), 0, 0, 0, ready_at,
-            )
-        return FarmSnapshot(
-            FarmState.READY,
-            f"Готово к волне: целей {len(items)}, свободных слотов {free_slots}.",
-            len(items), free_slots, 0, 0, ready_at,
-        )
+            return FarmSnapshot(FarmState.WAITING_CAPACITY, "Свободных fleet slots нет.", len(items), 0, 0, 0, ready_at)
+        return FarmSnapshot(FarmState.READY, f"Готово к волне: целей {len(items)}, свободных слотов {free_slots}.", len(items), free_slots, 0, 0, ready_at)
 
-    def run_one_wave(
-        self,
-        runtime: FarmRuntime,
-        *,
-        ship_count: int,
-        max_targets: int,
-    ) -> FarmWaveResult:
+    def run_one_wave(self, runtime: FarmRuntime, *, ship_count: int, max_targets: int) -> FarmWaveResult:
         if int(ship_count) <= 0:
             raise ValueError("ship_count must be > 0")
         if int(max_targets) <= 0:
@@ -202,25 +150,16 @@ class FarmController:
         verified_targets: list[str] = []
         attempted = 0
         stopped_reason = "wave complete"
-
         for item in targets[:requested]:
             request_id = f"farm-{uuid.uuid4().hex}"
             attempted += 1
             try:
-                result = runtime.dispatch_plan_raid(
-                    queue_id=item.id,
-                    target=item.coord,
-                    player=item.player,
-                    ship_count=int(ship_count),
-                    request_id=request_id,
-                )
+                result = runtime.dispatch_plan_raid(queue_id=item.id, target=item.coord, player=item.player, ship_count=int(ship_count), request_id=request_id)
             except Exception as exc:
                 stopped_reason = f"stopped after {item.coord}: {exc}"
                 break
             if not result.verified:
-                stopped_reason = (
-                    f"stopped after ambiguous {item.coord}; automatic retry is forbidden"
-                )
+                stopped_reason = f"stopped after ambiguous {item.coord}; automatic retry is forbidden"
                 break
             verified_targets.append(item.coord)
 
