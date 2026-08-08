@@ -8,6 +8,7 @@ from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
 from v2.application.raid_actions import RaidActionService
 from v2.application.read_store import ReadOnlyStore, ReadStoreUnavailable
+from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
 from v2.infrastructure.cdp_account_reader import ReadOnlyAccountCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
@@ -16,22 +17,21 @@ from v2.runtime_paths import RuntimePaths, build_runtime_paths, ensure_runtime_p
 
 
 def build_context(paths: RuntimePaths) -> V2ApplicationContext:
-    """Build V2 with isolated writes, read-only facts and an explicit action gate."""
+    """Build V2 with isolated writes, read-only legacy facts and explicit action gates."""
     source_path = resolve_legacy_source_path()
     database = V2Database(paths.database)
     settings = V2SettingsRepository(database)
+    queue = V2QueueRepository(database)
     raid_actions: RaidActionService | None = None
     try:
         try:
             with ReadOnlyStore(source_path) as legacy:
                 LegacySettingsImporter(legacy, settings).import_missing()
+                queue.import_legacy_if_empty(legacy)
         except ReadStoreUnavailable:
             pass
 
-        endpoint = resolve_cdp_endpoint(
-            source_path,
-            preferred_port=settings.get("cdp_port"),
-        )
+        endpoint = resolve_cdp_endpoint(source_path, preferred_port=settings.get("cdp_port"))
         read_backend = ReadOnlyAccountCdpBackend(endpoint.endpoint)
         flight_source = V2BrowserFlightSource(read_backend)
         raid_actions = RaidActionService(
@@ -43,6 +43,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             flight_source=flight_source,
             v2_settings=settings,
             v2_database=database,
+            v2_queue=queue,
             raid_actions=raid_actions,
         )
     except Exception:

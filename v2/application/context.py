@@ -6,28 +6,18 @@ from pathlib import Path
 from typing import Mapping
 
 from v2.application.flight_source import (
-    ActiveFlightSnapshot,
-    FleetCapacitySnapshot,
-    FlightSource,
-    FlightSourceStatus,
-    OfflineFlightSource,
+    ActiveFlightSnapshot, FleetCapacitySnapshot, FlightSource, FlightSourceStatus, OfflineFlightSource,
 )
 from v2.application.live_flight_semantics import (
-    ClassifiedActiveFlight,
-    build_live_flight_policy,
-    classify_active_flights,
+    ClassifiedActiveFlight, build_live_flight_policy, classify_active_flights,
 )
 from v2.application.live_overview import LiveOverviewSnapshot, build_live_overview
 from v2.application.raid_actions import RaidActionService, RaidCommand, RaidPreparation
 from v2.application.read_store import (
-    HistorySnapshot,
-    OverviewSnapshot,
-    QueueSnapshot,
-    ReadOnlyStore,
-    ReadStoreUnavailable,
-    ReconSnapshot,
-    TargetSnapshot,
+    HistorySnapshot, OverviewSnapshot, QueueSnapshot, ReadOnlyStore, ReadStoreUnavailable,
+    ReconSnapshot, TargetSnapshot,
 )
+from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
 from v2.persistence.database import V2Database
 
@@ -41,7 +31,6 @@ class DataSourceStatus:
 
 
 def legacy_db_path(*, environ: dict[str, str] | None = None, home: Path | None = None) -> Path:
-    """Return the legacy SQLite location without creating any directories."""
     env = os.environ if environ is None else environ
     user_home = Path.home() if home is None else Path(home)
     if os.name == "nt" or "LOCALAPPDATA" in env:
@@ -54,12 +43,10 @@ class V2ApplicationContext:
     """UI-facing migration context with isolated V2 writes and read-only legacy data."""
 
     def __init__(
-        self,
-        source_path: Path,
-        *,
-        flight_source: FlightSource | None = None,
+        self, source_path: Path, *, flight_source: FlightSource | None = None,
         v2_settings: V2SettingsRepository | None = None,
         v2_database: V2Database | None = None,
+        v2_queue: V2QueueRepository | None = None,
         raid_actions: RaidActionService | None = None,
     ) -> None:
         self.source_path = Path(source_path)
@@ -68,6 +55,7 @@ class V2ApplicationContext:
         self._flight_source: FlightSource = flight_source or OfflineFlightSource()
         self._v2_settings = v2_settings
         self._v2_database = v2_database
+        self._v2_queue = v2_queue
         self._raid_actions = raid_actions
         self._last_flight_status: FlightSourceStatus | None = None
         self._live_snapshot_ready = False
@@ -118,7 +106,14 @@ class V2ApplicationContext:
         return [] if self._store is None else self._store.list_recon(limit=limit)
 
     def plan(self, *, limit: int = 5000) -> list[QueueSnapshot]:
+        if self._v2_queue is not None:
+            return self._v2_queue.list(limit=limit)
         return [] if self._store is None else self._store.list_plan(limit=limit)
+
+    def set_plan_state(self, queue_id: int, state: str) -> None:
+        if self._v2_queue is None:
+            raise RuntimeError("V2 raid queue is unavailable")
+        self._v2_queue.set_state(queue_id, state)
 
     def legacy_setting(self, key: str, default: str | None = None) -> str | None:
         return default if self._store is None else self._store.get_setting(key, default)
@@ -150,9 +145,7 @@ class V2ApplicationContext:
         if self._raid_actions is None:
             raise RuntimeError("V2 raid action service is unavailable")
         home = str(self.v2_setting("farm_home", ""))
-        return self._raid_actions.prepare(
-            RaidCommand(target=target, player=player, ship_count=ship_count, home=home)
-        )
+        return self._raid_actions.prepare(RaidCommand(target=target, player=player, ship_count=ship_count, home=home))
 
     def flight_status(self) -> FlightSourceStatus:
         self._last_flight_status = self._flight_source.status()
