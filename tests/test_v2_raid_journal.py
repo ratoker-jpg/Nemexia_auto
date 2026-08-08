@@ -10,7 +10,7 @@ from v2.application.raid_actions import (
     RaidPreparation,
 )
 from v2.application.raid_journal import RaidDispatchCoordinator, RaidRequestBlocked
-from v2.persistence.database import V2Database
+from v2.persistence.database import V2Database, V2_SCHEMA_VERSION
 
 
 class FakeBackend:
@@ -97,13 +97,13 @@ def test_disabled_actions_do_not_create_journal_row(tmp_path: Path) -> None:
         assert backend.calls == 0
 
 
-def test_schema_v2_migrates_existing_settings_database(tmp_path: Path) -> None:
+def test_raid_journal_survives_later_schema_migrations(tmp_path: Path) -> None:
     path = tmp_path / "v2.sqlite3"
     with V2Database(path) as db:
-        assert db.schema_version() == 2
+        assert db.schema_version() == V2_SCHEMA_VERSION
         assert "raid_actions" in db.table_names()
         db.write_setting_raw("cdp_port", "9333")
     with V2Database(path) as db:
-        assert db.schema_version() == 2
+        assert db.schema_version() == V2_SCHEMA_VERSION
         assert db.read_setting_raw("cdp_port") == "9333"
         assert db.integrity_check() == "ok"
