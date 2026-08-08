@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QTimer
@@ -8,6 +9,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -17,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from v2.application.context import V2ApplicationContext
 from v2.application.farm_controller import FarmSnapshot, FarmState
+from v2.application.recon_refill import ReconRefillState
 
 
 SCHEDULER_INTERVAL_MS = 30_000
@@ -107,6 +110,16 @@ class FarmPage(QWidget):
         row.addWidget(self.wave_button)
         controls_layout.addLayout(row)
 
+        recon_row = QHBoxLayout()
+        recon_row.addWidget(QLabel("Spy fleet ID для восстановления очереди", controls))
+        self.spy_fleet_id = QLineEdit(controls)
+        self.spy_fleet_id.setObjectName("FarmSpyFleetId")
+        self.spy_fleet_id.setPlaceholderText("Exact fleet ID, например 152272")
+        self.spy_fleet_id.setMaximumWidth(240)
+        recon_row.addWidget(self.spy_fleet_id)
+        recon_row.addStretch(1)
+        controls_layout.addLayout(recon_row)
+
         cycle_row = QHBoxLayout()
         self.start_button = QPushButton("Запустить цикл", controls)
         self.start_button.setObjectName("PrimaryButton")
@@ -122,9 +135,11 @@ class FarmPage(QWidget):
 
         note = QLabel(
             "Цикл живёт только в текущем запуске app_qt.py и после перезапуска всегда выключен. "
-            "Каждые 30 секунд он заново читает live flights/capacity и отправляет волну только в state=ready. "
-            "Return-buffer удерживается в памяти текущего цикла. Pending/ambiguous, live error или ошибка волны разоружают цикл. "
-            "Автоматической разведки и пополнения очереди в этом PR ещё нет.",
+            "Spy fleet ID тоже не сохраняется: пользователь задаёт exact ID существующей строки fleets.php для текущей сессии. "
+            "Каждые 30 секунд цикл перечитывает live state. При исчерпании очереди он может выполнить только один journaled "
+            "processSpy по этому exact ID, принять exact fresh report и сделать deterministic AutoFarm refill. "
+            "Fresh scan без eligible целей включает отдельный persisted cooldown 25 минут. CAPTCHA, stale/no fresh evidence, "
+            "pending/ambiguous raid/spy journal, live error или неоднозначный side effect разоружают цикл без автоматического повтора.",
             controls,
         )
         note.setObjectName("Muted")
@@ -202,20 +217,39 @@ class FarmPage(QWidget):
             FarmState.LIVE_NOT_CHECKED,
             FarmState.LIVE_UNAVAILABLE,
             FarmState.BLOCKED_UNRESOLVED,
-            FarmState.NO_TARGETS,
         }
         if snapshot.state in forbidden:
             QMessageBox.warning(self, "Автофарм V2", snapshot.detail)
             return
+
+        fleet_id = self.spy_fleet_id.text().strip()
+        if not fleet_id:
+            QMessageBox.warning(
+                self,
+                "Автофарм V2",
+                "Для непрерывного recovery укажи exact Spy fleet ID существующей строки fleets.php. ID не сохраняется.",
+            )
+            return
+        prepare = getattr(self.context, "prepare_spy", None)
+        if not callable(prepare):
+            QMessageBox.critical(self, "Автофарм V2", "V2 spy action service недоступен.")
+            return
+        try:
+            spy = prepare(fleet_id)
+        except Exception as exc:
+            QMessageBox.warning(self, "Автофарм V2", f"Spy fleet не готов: {exc}")
+            return
+
         answer = QMessageBox.question(
             self,
             "Запуск непрерывного цикла",
             "Запустить автофарм до ручной остановки или safety-stop?\n\n"
             f"Кораблей на цель: {self.ship_count.value()}\n"
             f"Макс. целей за волну: {self.max_targets.value()}\n"
+            f"Recon recovery: fleet {spy.fleet_id} · {spy.source} → {spy.target}\n"
             "Проверка состояния: каждые 30 секунд.\n\n"
-            "Цикл НЕ включается автоматически после перезапуска. "
-            "Любая ambiguous отправка, unresolved journal или live failure остановит цикл.",
+            "Цикл и Spy fleet ID НЕ сохраняются после перезапуска. При need_recon будет выполнен только journaled exact-fleet "
+            "processSpy; ambiguity/CAPTCHA/live failure/unresolved journal немедленно остановят цикл без повтора.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -237,10 +271,12 @@ class FarmPage(QWidget):
                 FarmState.ACTIONS_DISABLED,
                 FarmState.LIVE_UNAVAILABLE,
                 FarmState.BLOCKED_UNRESOLVED,
-                FarmState.NO_TARGETS,
             }
             if snapshot.state in hard_stop:
                 self._disarm(f"safety-stop: {snapshot.detail}")
+                return
+            if snapshot.state is FarmState.NEED_RECON:
+                self._recover_recon()
                 return
             if snapshot.state in {FarmState.WAITING_RETURN, FarmState.WAITING_CAPACITY}:
                 self.scheduler_value.setText(f"Цикл: ожидание · {snapshot.state.value}")
@@ -277,6 +313,31 @@ class FarmPage(QWidget):
             self._disarm(f"safety-stop: {exc}")
         finally:
             self._set_busy(False)
+
+    def _recover_recon(self) -> None:
+        fleet_id = self.spy_fleet_id.text().strip()
+        if not fleet_id:
+            self._disarm("safety-stop: exact Spy fleet ID отсутствует в текущей сессии")
+            return
+        run = getattr(self.context, "run_controlled_recon_refill", None)
+        if not callable(run):
+            self._disarm("safety-stop: controlled recon/refill service недоступен")
+            return
+        result = run(
+            fleet_id,
+            request_id=f"recon-cycle-{uuid.uuid4().hex}",
+        )
+        self.result_label.setText(result.detail)
+        if result.state is ReconRefillState.REFILLED:
+            self.scheduler_value.setText("Цикл: recon подтверждён · очередь пополнена · следующая волна на следующей проверке")
+            self._refresh_snapshot()
+            return
+        if result.state in {ReconRefillState.EMPTY_COOLDOWN, ReconRefillState.COOLDOWN}:
+            suffix = f" до {result.cooldown_until}" if result.cooldown_until else ""
+            self.scheduler_value.setText(f"Цикл: no-target recon cooldown{suffix}")
+            return
+        reason = result.stop_reason.value if result.stop_reason is not None else "stopped"
+        self._disarm(f"safety-stop recon · {reason}: {result.detail}")
 
     def _execute_wave(self) -> None:
         self._set_busy(True)
@@ -330,3 +391,4 @@ class FarmPage(QWidget):
         self.stop_button.setEnabled(self._armed)
         self.ship_count.setEnabled((not self._busy) and (not self._armed))
         self.max_targets.setEnabled((not self._busy) and (not self._armed))
+        self.spy_fleet_id.setEnabled((not self._busy) and (not self._armed))
