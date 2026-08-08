@@ -116,5 +116,7 @@ class V2AsteroidRepository:
         return AsteroidIngestResult(
             inserted=inserted,
             exact_duplicates=exact_duplicates,
-            preview=self.preview(now=now),
+            # Keep the operation diff: recomputing after persistence would turn
+            # ADD into KEEP and would erase rejected incoming decisions entirely.
+            preview=preview,
         )
