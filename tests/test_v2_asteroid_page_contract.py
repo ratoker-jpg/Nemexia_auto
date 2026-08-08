@@ -24,7 +24,11 @@ def test_page_uses_typed_context_boundaries_not_browser_backend_or_ui_text_logic
         "AsteroidReadState.CAPTCHA",
         "AsteroidWorkflowState.READY",
         "AsteroidWorkflowState.COMPLETED",
+        "AsteroidWorkflowState.STOPPED_MANUAL",
         "ExtendedSelection",
+        "StopAsteroidsButton",
+        "should_stop=self._poll_manual_stop",
+        "QApplication.processEvents()",
     ):
         assert required in PAGE
     for forbidden in (
@@ -41,6 +45,23 @@ def test_page_uses_typed_context_boundaries_not_browser_backend_or_ui_text_logic
         assert forbidden not in PAGE
 
 
+def test_manual_stop_cannot_start_reentrant_actions_while_series_is_running() -> None:
+    assert "self._set_series_controls(True)" in PAGE
+    assert "self._set_series_controls(False)" in PAGE
+    for widget in (
+        "self.read_button",
+        "self.prepare_button",
+        "self.send_button",
+        "self.source_coord",
+        "self.recycler_count",
+        "self.safety_seconds",
+        "self.table",
+    ):
+        assert widget in PAGE
+    assert "self.stop_button.setEnabled(running)" in PAGE
+    assert "текущая SendFleet-попытка не прерывается" in PAGE
+
+
 def test_context_owns_candidate_repository_and_routes_series_through_journaled_dispatch() -> None:
     assert "V2AsteroidRepository" in CONTEXT
     assert "def asteroid_candidates(" in CONTEXT
@@ -49,14 +70,17 @@ def test_context_owns_candidate_repository_and_routes_series_through_journaled_d
     assert "prepare_selected_asteroids(" in CONTEXT
     assert "dispatch_selected_asteroids(" in CONTEXT
     assert "AsteroidRequestCoordinator" in CONTEXT
+    assert "should_stop=should_stop" in CONTEXT
 
 
-def test_bounded_workflow_has_no_retry_scheduler_or_browser_dependency() -> None:
+def test_bounded_workflow_has_manual_stop_but_no_retry_scheduler_or_browser_dependency() -> None:
     assert "ASTEROID_SELECTED_BATCH_LIMIT = 200" in WORKFLOW
+    assert "STOPPED_MANUAL" in WORKFLOW
     assert "STOPPED_CAPTCHA" in WORKFLOW
     assert "STOPPED_AMBIGUOUS" in WORKFLOW
     assert "STOPPED_ERROR" in WORKFLOW
     assert "asteroid_action_record" in WORKFLOW
+    assert "should_stop" in WORKFLOW
     for forbidden in (
         "while True",
         "for attempt in",
