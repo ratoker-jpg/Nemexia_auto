@@ -51,8 +51,13 @@ def test_queue_policies_keep_accepted_metal_mineral_autofarm_contracts() -> None
     policy = text("v2/domain/queue_policy.py")
     assert "LEGACY_METAL_QUEUE_MINIMUM = 480_000" in recon
     assert "LEGACY_AUTOFARM_MINERALS_MINIMUM = 500_000" in recon
-    assert "eligible_for_manual_queue" in policy
-    assert "eligible_for_autofarm" in policy
+    assert 'if mode == "metal"' in policy
+    assert "int(item.metal) < max(0, int(minimum_metal))" in policy
+    assert 'elif mode == "minerals"' in policy
+    assert "item.minerals is None" in policy
+    assert 'elif mode == "autofarm"' in policy
+    assert "int(item.minerals) < LEGACY_AUTOFARM_MINERALS_MINIMUM" in policy
+    assert "-int(item.minerals or 0), -int(item.metal or 0), item.coord" in policy
 
 
 def test_continuous_cycle_is_explicit_session_only_and_fail_closed() -> None:
