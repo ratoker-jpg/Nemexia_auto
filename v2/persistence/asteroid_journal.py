@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -7,6 +8,7 @@ from v2.persistence.database import V2Database, V2DatabaseError
 
 
 ASTEROID_ACTION_STATUSES = frozenset({"pending", "verified", "ambiguous", "failed_safe"})
+_FLEET_ID_RE = re.compile(r"^[1-9]\d*$")
 
 
 def install_asteroid_journal_schema(conn: sqlite3.Connection) -> None:
@@ -57,6 +59,24 @@ class AsteroidJournalRepository:
     def _now() -> str:
         return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
+    @staticmethod
+    def _canonical_iso(value: str) -> str:
+        text = str(value or "").strip()
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise V2DatabaseError(f"Invalid asteroid journal timestamp: {value!r}") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).isoformat()
+
+    @staticmethod
+    def _positive_fleet_id(value: object) -> str:
+        fleet_id = str(value or "").strip()
+        if _FLEET_ID_RE.fullmatch(fleet_id) is None:
+            raise V2DatabaseError("fleet_id must be a positive integer identity")
+        return fleet_id
+
     def begin(
         self,
         *,
@@ -78,6 +98,10 @@ class AsteroidJournalRepository:
     ) -> None:
         conn = self.database._require_conn()
         now = self._now()
+        last_move = self._canonical_iso(observation_last_move_at)
+        next_move = self._canonical_iso(observation_next_move_at)
+        observed_at = self._canonical_iso(observation_observed_at)
+        prepared = self._canonical_iso(prepared_at)
         try:
             with conn:
                 conn.execute(
@@ -91,9 +115,9 @@ class AsteroidJournalRepository:
                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)""",
                     (
                         str(request_id), str(source), str(observation_coord),
-                        str(observation_last_move_at), str(observation_next_move_at),
-                        int(observation_period_seconds), str(observation_observed_at),
-                        str(target), int(recycler_count), int(safety_seconds), str(prepared_at),
+                        last_move, next_move,
+                        int(observation_period_seconds), observed_at,
+                        str(target), int(recycler_count), int(safety_seconds), prepared,
                         int(one_way_seconds), int(round_trip_seconds), int(shifts), gas_needed,
                         now, now,
                     ),
@@ -117,8 +141,8 @@ class AsteroidJournalRepository:
     ) -> None:
         if status not in {"verified", "ambiguous", "failed_safe"}:
             raise V2DatabaseError(f"Invalid asteroid action status: {status}")
-        if status == "verified" and not str(fleet_id or "").strip():
-            raise V2DatabaseError("Verified asteroid action requires fleet_id")
+        if status == "verified":
+            fleet_id = self._positive_fleet_id(fleet_id)
         conn = self.database._require_conn()
         with conn:
             cursor = conn.execute(
@@ -143,8 +167,7 @@ class AsteroidJournalRepository:
         return_at: str | None = None,
         detail: str = "live-flight reconciliation",
     ) -> None:
-        if not str(fleet_id or "").strip():
-            raise V2DatabaseError("fleet_id is required to resolve an asteroid action")
+        fleet_id = self._positive_fleet_id(fleet_id)
         conn = self.database._require_conn()
         with conn:
             cursor = conn.execute(
@@ -156,7 +179,7 @@ class AsteroidJournalRepository:
                        detail=?, updated_at=?
                  WHERE request_id=? AND status IN ('pending','ambiguous')""",
                 (
-                    str(fleet_id), sent_at, arrival_at, return_at,
+                    fleet_id, sent_at, arrival_at, return_at,
                     str(detail or ""), self._now(), str(request_id),
                 ),
             )
@@ -185,6 +208,7 @@ class AsteroidJournalRepository:
         observation_next_move_at: str,
         target: str,
     ) -> dict[str, object] | None:
+        next_move = self._canonical_iso(observation_next_move_at)
         row = self.database._require_conn().execute(
             """SELECT * FROM asteroid_actions
                 WHERE source=? AND observation_coord=?
@@ -193,7 +217,7 @@ class AsteroidJournalRepository:
                 ORDER BY id DESC LIMIT 1""",
             (
                 str(source), str(observation_coord),
-                str(observation_next_move_at), str(target),
+                next_move, str(target),
             ),
         ).fetchone()
         return dict(row) if row is not None else None
