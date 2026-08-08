@@ -13,7 +13,7 @@ Re-inspection of saved `fleets.php` proves the real actionable identity:
 - an existing fleet exposes exact link `id="spy1Link-152272"` with `onclick="processSpy(152272)"`;
 - that row contains source `3:39:11` and target `2:22:19`;
 - the raw snapshot also contains `tr.espionageClass`, but V2 does **not** depend on that class or row visibility;
-- a separate bulk control calls `processSpy('0', true)` and is labeled `Получить все шпионские отчеты`.
+- a separate bulk control calls `processSpy(0)` and is labeled `Получить все шпионские отчеты`.
 
 The side effect is therefore **processing an already-existing espionage fleet by fleet ID**. It is not evidence of dispatching arbitrary probe ships to a caller-supplied target. V2 must not invent probe counts, ship keys, or dispatch APIs.
 
