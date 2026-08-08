@@ -36,37 +36,62 @@ def test_schema_v1_is_migrated_without_losing_settings(tmp_path: Path) -> None:
         assert [int(row[0]) for row in versions] == [1, 2, 3, 4, 5]
 
 
+def _create_schema_v4_spy_database(path: Path) -> None:
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+        CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+        INSERT INTO schema_migrations VALUES(4,'2026-08-08T10:00:00+00:00');
+        CREATE TABLE spy_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL UNIQUE,
+            source TEXT NOT NULL, target TEXT NOT NULL,
+            probe_count INTEGER NOT NULL CHECK(probe_count > 0), probe_ship_key TEXT NOT NULL,
+            available_probes INTEGER NOT NULL CHECK(available_probes >= 0),
+            status TEXT NOT NULL CHECK(status IN ('pending','verified','ambiguous','failed_safe')),
+            report_id TEXT, requested_at TEXT, report_at TEXT, detail TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_spy_actions_target_status ON spy_actions(source, target, status);
+        CREATE UNIQUE INDEX idx_spy_actions_unresolved_target
+            ON spy_actions(source, target) WHERE status IN ('pending','ambiguous');
+        INSERT INTO spy_actions(request_id,source,target,probe_count,probe_ship_key,available_probes,status,detail,created_at,updated_at)
+        VALUES('old','3:39:11','2:22:19',5,'spy_probe',20,'ambiguous','','2026-08-08T10:00:00+00:00','2026-08-08T10:00:00+00:00');
+        PRAGMA user_version=4;
+        """)
+
+
 def test_schema_v4_spy_rows_are_preserved_without_invented_fleet_identity(tmp_path: Path) -> None:
     path = tmp_path / "schema-v4.sqlite3"
-    with V2Database(path) as db:
-        # New DB is v5; recreate a faithful v4 spy table to exercise only migration 5.
-        conn = db._require_conn()
-        with conn:
-            conn.execute("DROP INDEX IF EXISTS idx_spy_actions_target_status")
-            conn.execute("DROP INDEX IF EXISTS idx_spy_actions_unresolved_fleet")
-            conn.execute("DROP INDEX IF EXISTS idx_spy_actions_unresolved_target")
-            conn.execute("DROP TABLE spy_actions")
-            conn.executescript("""
-            CREATE TABLE spy_actions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL UNIQUE,
-                source TEXT NOT NULL, target TEXT NOT NULL,
-                probe_count INTEGER NOT NULL CHECK(probe_count > 0), probe_ship_key TEXT NOT NULL,
-                available_probes INTEGER NOT NULL CHECK(available_probes >= 0),
-                status TEXT NOT NULL CHECK(status IN ('pending','verified','ambiguous','failed_safe')),
-                report_id TEXT, requested_at TEXT, report_at TEXT, detail TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-            );
-            INSERT INTO spy_actions(request_id,source,target,probe_count,probe_ship_key,available_probes,status,detail,created_at,updated_at)
-            VALUES('old','3:39:11','2:22:19',5,'spy_probe',20,'ambiguous','','2026-08-08T10:00:00+00:00','2026-08-08T10:00:00+00:00');
-            DELETE FROM schema_migrations WHERE version=5;
-            PRAGMA user_version=4;
-            """)
+    _create_schema_v4_spy_database(path)
     with V2Database(path) as migrated:
         row = migrated.read_spy_action("old")
         assert row is not None and row["fleet_id"] is None
         assert row["status"] == "ambiguous"
         assert "fleet_id was not recorded" in str(row["detail"])
         assert migrated.schema_version() == 5
+
+
+def test_schema_v5_rebuild_rolls_back_as_one_transaction(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "schema-v4-interrupted.sqlite3"
+    _create_schema_v4_spy_database(path)
+    original = V2Database._record_migration
+
+    def interrupt_after_rebuild(self: V2Database, version: int) -> None:
+        if version == 5:
+            raise RuntimeError("simulated interruption before version commit")
+        original(self, version)
+
+    monkeypatch.setattr(V2Database, "_record_migration", interrupt_after_rebuild)
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        V2Database(path)
+
+    with sqlite3.connect(path) as conn:
+        assert int(conn.execute("PRAGMA user_version").fetchone()[0]) == 4
+        columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(spy_actions)").fetchall()}
+        tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        assert "probe_count" in columns
+        assert "fleet_id" not in columns
+        assert "spy_actions_v4" not in tables
+        assert conn.execute("SELECT request_id FROM spy_actions").fetchone()[0] == "old"
 
 
 def test_future_schema_is_rejected_instead_of_downgraded(tmp_path: Path) -> None:
