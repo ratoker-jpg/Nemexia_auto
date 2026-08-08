@@ -9,10 +9,12 @@ from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_s
 from v2.application.raid_actions import RaidActionService
 from v2.application.read_store import ReadOnlyStore, ReadStoreUnavailable
 from v2.application.report_source import V2BrowserReportSource
+from v2.application.spy_actions import SpyActionService
+from v2.application.spy_context import SpyEnabledApplicationContext
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
-from v2.infrastructure.cdp_account_reader import ReadOnlyAccountCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
+from v2.infrastructure.cdp_spy_backend import V2SpyCdpBackend
 from v2.persistence.database import V2Database
 from v2.runtime_paths import RuntimePaths, build_runtime_paths, ensure_runtime_paths
 
@@ -24,6 +26,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
     settings = V2SettingsRepository(database)
     queue = V2QueueRepository(database)
     raid_actions: RaidActionService | None = None
+    spy_actions: SpyActionService | None = None
     try:
         try:
             with ReadOnlyStore(source_path) as legacy:
@@ -33,14 +36,18 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             pass
 
         endpoint = resolve_cdp_endpoint(source_path, preferred_port=settings.get("cdp_port"))
-        read_backend = ReadOnlyAccountCdpBackend(endpoint.endpoint)
-        flight_source = V2BrowserFlightSource(read_backend)
-        report_source = V2BrowserReportSource(read_backend)
+        spy_backend = V2SpyCdpBackend(endpoint.endpoint)
+        flight_source = V2BrowserFlightSource(spy_backend)
+        report_source = V2BrowserReportSource(spy_backend)
         raid_actions = RaidActionService(
             V2RaidCdpBackend(endpoint.endpoint),
             enabled=bool(settings.get("actions_enabled")),
         )
-        return V2ApplicationContext(
+        spy_actions = SpyActionService(
+            spy_backend,
+            enabled=bool(settings.get("actions_enabled")),
+        )
+        return SpyEnabledApplicationContext(
             source_path,
             flight_source=flight_source,
             report_source=report_source,
@@ -48,8 +55,11 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             v2_database=database,
             v2_queue=queue,
             raid_actions=raid_actions,
+            spy_actions=spy_actions,
         )
     except Exception:
+        if spy_actions is not None:
+            spy_actions.close()
         if raid_actions is not None:
             raid_actions.close()
         database.close()

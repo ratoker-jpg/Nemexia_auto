@@ -17,17 +17,15 @@ from v2.persistence.database import V2Database, V2DatabaseError
 
 
 class SpyRequestBlocked(SpyActionError):
-    """A request ID is duplicate or the source/target has unresolved intent."""
+    """A request ID or spy fleet has unresolved immutable intent."""
 
 
 @dataclass(frozen=True)
 class SpyActionRecord:
     request_id: str
+    fleet_id: str | None
     source: str
     target: str
-    probe_count: int
-    probe_ship_key: str
-    available_probes: int
     status: str
     report_id: str | None
     requested_at: str | None
@@ -37,7 +35,7 @@ class SpyActionRecord:
 
 
 class SpyRequestCoordinator:
-    """Persist immutable intent before any future spy-request side effect."""
+    """Persist exact spy-fleet intent before one `processSpy(fleet_id)` attempt."""
 
     def __init__(self, service: SpyActionService, database: V2Database) -> None:
         self.service = service
@@ -56,36 +54,34 @@ class SpyRequestCoordinator:
             raise SpyRequestBlocked(
                 f"Spy request {request_id} already exists with status {existing['status']}"
             )
-        unresolved = self.database.unresolved_spy_action(source=clean.source, target=clean.target)
-        if unresolved is not None:
+        unresolved_fleet = self.database.unresolved_spy_action(fleet_id=clean.fleet_id)
+        if unresolved_fleet is not None:
             raise SpyRequestBlocked(
-                "Есть незавершённая или неоднозначная разведка на эту цель: "
-                f"{unresolved['request_id']} · {unresolved['status']}"
+                "Есть незавершённая или неоднозначная обработка spy fleet: "
+                f"{unresolved_fleet['request_id']} · {unresolved_fleet['status']}"
             )
 
-        # Preparation is explicitly read-only. Invalid coordinates, CAPTCHA or
-        # insufficient probes fail before an intent row is created.
+        # Preparation is read-only and derives source/target from the exact row.
         preparation = self.service.prepare(clean)
-        self._begin(request_id, clean, preparation)
+        unresolved_target = self.database.unresolved_spy_target(
+            source=preparation.source,
+            target=preparation.target,
+        )
+        if unresolved_target is not None:
+            raise SpyRequestBlocked(
+                "Есть незавершённая или неоднозначная разведка на эту цель: "
+                f"{unresolved_target['request_id']} · {unresolved_target['status']}"
+            )
+        self._begin(request_id, preparation)
 
         try:
             result = self.service.request_prepared(clean, preparation)
         except (SpyActionsDisabled, SpyRequestRejected) as exc:
-            # These failures prove that the remote side effect was not accepted.
-            self.database.finish_spy_action(
-                request_id,
-                status="failed_safe",
-                detail=str(exc),
-            )
+            self.database.finish_spy_action(request_id, status="failed_safe", detail=str(exc))
             raise
         except Exception as exc:
-            # Once the pending row exists, any uncertainty at/after the backend
-            # boundary is ambiguous and must block automatic retry.
-            self.database.finish_spy_action(
-                request_id,
-                status="ambiguous",
-                detail=str(exc),
-            )
+            # After pending is committed, uncertainty can never open an automatic retry window.
+            self.database.finish_spy_action(request_id, status="ambiguous", detail=str(exc))
             raise
 
         self.database.finish_spy_action(
@@ -98,20 +94,13 @@ class SpyRequestCoordinator:
         )
         return result
 
-    def _begin(
-        self,
-        request_id: str,
-        command: SpyRequestCommand,
-        preparation: SpyRequestPreparation,
-    ) -> None:
+    def _begin(self, request_id: str, preparation: SpyRequestPreparation) -> None:
         try:
             self.database.begin_spy_action(
                 request_id=request_id,
-                source=command.source,
-                target=command.target,
-                probe_count=command.probe_count,
-                probe_ship_key=preparation.probe_ship_key,
-                available_probes=preparation.available_probes,
+                fleet_id=preparation.fleet_id,
+                source=preparation.source,
+                target=preparation.target,
             )
         except V2DatabaseError as exc:
             raise SpyRequestBlocked(str(exc)) from exc
@@ -124,11 +113,9 @@ class SpyRequestCoordinator:
     def _record_from_row(row: dict[str, object]) -> SpyActionRecord:
         return SpyActionRecord(
             request_id=str(row["request_id"]),
+            fleet_id=str(row["fleet_id"]) if row.get("fleet_id") is not None else None,
             source=str(row["source"]),
             target=str(row["target"]),
-            probe_count=int(row["probe_count"]),
-            probe_ship_key=str(row["probe_ship_key"]),
-            available_probes=int(row["available_probes"]),
             status=str(row["status"]),
             report_id=str(row["report_id"]) if row.get("report_id") is not None else None,
             requested_at=str(row["requested_at"]) if row.get("requested_at") is not None else None,

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 
-V2_SCHEMA_VERSION = 4
+V2_SCHEMA_VERSION = 5
 
 
 class V2DatabaseError(RuntimeError):
@@ -147,35 +147,22 @@ class V2Database:
             raise V2DatabaseError(f"Pending raid request not found: {request_id}")
 
     def resolve_raid_action(
-        self,
-        request_id: str,
-        *,
-        fleet_id: str,
-        sent_at: str | None = None,
-        arrival_at: str | None = None,
-        return_at: str | None = None,
+        self, request_id: str, *, fleet_id: str, sent_at: str | None = None,
+        arrival_at: str | None = None, return_at: str | None = None,
         detail: str = "live-flight reconciliation",
     ) -> None:
-        """Resolve only a pending/ambiguous request after an exact live-flight match."""
         if not str(fleet_id or "").strip():
             raise V2DatabaseError("fleet_id is required to resolve a raid action")
         conn = self._require_conn()
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         with conn:
             cursor = conn.execute(
-                """
-                UPDATE raid_actions
-                   SET status='verified', fleet_id=?,
-                       sent_at=COALESCE(sent_at, ?),
-                       arrival_at=COALESCE(arrival_at, ?),
-                       return_at=COALESCE(return_at, ?),
+                """UPDATE raid_actions
+                   SET status='verified', fleet_id=?, sent_at=COALESCE(sent_at, ?),
+                       arrival_at=COALESCE(arrival_at, ?), return_at=COALESCE(return_at, ?),
                        detail=?, updated_at=?
-                 WHERE request_id=? AND status IN ('pending','ambiguous')
-                """,
-                (
-                    str(fleet_id), sent_at, arrival_at, return_at,
-                    str(detail or ""), now, str(request_id),
-                ),
+                 WHERE request_id=? AND status IN ('pending','ambiguous')""",
+                (str(fleet_id), sent_at, arrival_at, return_at, str(detail or ""), now, str(request_id)),
             )
         if cursor.rowcount != 1:
             raise V2DatabaseError(f"Unresolved raid request not found: {request_id}")
@@ -200,47 +187,26 @@ class V2Database:
         ).fetchone()
         return dict(row) if row is not None else None
 
-    def begin_spy_action(
-        self,
-        *,
-        request_id: str,
-        source: str,
-        target: str,
-        probe_count: int,
-        probe_ship_key: str,
-        available_probes: int,
-    ) -> None:
-        """Persist immutable intent before a future remote spy-request attempt."""
+    def begin_spy_action(self, *, request_id: str, fleet_id: str, source: str, target: str) -> None:
+        """Persist immutable exact-fleet intent before one remote processSpy attempt."""
         conn = self._require_conn()
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         try:
             with conn:
                 conn.execute(
-                    """
-                    INSERT INTO spy_actions(
-                        request_id, source, target, probe_count, probe_ship_key,
-                        available_probes, status, created_at, updated_at
-                    ) VALUES(?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-                    """,
-                    (
-                        str(request_id), str(source), str(target), int(probe_count),
-                        str(probe_ship_key), int(available_probes), now, now,
-                    ),
+                    """INSERT INTO spy_actions(
+                        request_id, fleet_id, source, target, status, created_at, updated_at
+                    ) VALUES(?, ?, ?, ?, 'pending', ?, ?)""",
+                    (str(request_id), str(fleet_id), str(source), str(target), now, now),
                 )
         except sqlite3.IntegrityError as exc:
             raise V2DatabaseError(
-                f"Spy request conflicts with an existing request or unresolved target: {request_id}"
+                f"Spy request conflicts with an existing request or unresolved fleet: {request_id}"
             ) from exc
 
     def finish_spy_action(
-        self,
-        request_id: str,
-        *,
-        status: str,
-        report_id: str | None = None,
-        requested_at: str | None = None,
-        report_at: str | None = None,
-        detail: str = "",
+        self, request_id: str, *, status: str, report_id: str | None = None,
+        requested_at: str | None = None, report_at: str | None = None, detail: str = "",
     ) -> None:
         allowed = {"verified", "ambiguous", "failed_safe"}
         if status not in allowed:
@@ -251,39 +217,27 @@ class V2Database:
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         with conn:
             cursor = conn.execute(
-                """
-                UPDATE spy_actions
+                """UPDATE spy_actions
                    SET status=?, report_id=?, requested_at=?, report_at=?, detail=?, updated_at=?
-                 WHERE request_id=? AND status='pending'
-                """,
-                (
-                    str(status), report_id, requested_at, report_at,
-                    str(detail or ""), now, str(request_id),
-                ),
+                 WHERE request_id=? AND status='pending'""",
+                (status, report_id, requested_at, report_at, str(detail or ""), now, str(request_id)),
             )
         if cursor.rowcount != 1:
             raise V2DatabaseError(f"Pending spy request not found: {request_id}")
 
     def resolve_spy_action(
-        self,
-        request_id: str,
-        *,
-        report_id: str,
-        report_at: str,
+        self, request_id: str, *, report_id: str, report_at: str,
         detail: str = "fresh-report reconciliation",
     ) -> None:
-        """Resolve pending/ambiguous intent only from an exact fresh report identity."""
         if not str(report_id or "").strip() or not str(report_at or "").strip():
             raise V2DatabaseError("report_id and report_at are required to resolve a spy action")
         conn = self._require_conn()
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         with conn:
             cursor = conn.execute(
-                """
-                UPDATE spy_actions
+                """UPDATE spy_actions
                    SET status='verified', report_id=?, report_at=?, detail=?, updated_at=?
-                 WHERE request_id=? AND status IN ('pending','ambiguous')
-                """,
+                 WHERE request_id=? AND status IN ('pending','ambiguous')""",
                 (str(report_id), str(report_at), str(detail or ""), now, str(request_id)),
             )
         if cursor.rowcount != 1:
@@ -301,13 +255,18 @@ class V2Database:
         ).fetchall()
         return [dict(row) for row in rows]
 
-    def unresolved_spy_action(self, *, source: str, target: str) -> dict[str, object] | None:
+    def unresolved_spy_action(self, *, fleet_id: str) -> dict[str, object] | None:
         row = self._require_conn().execute(
-            """
-            SELECT * FROM spy_actions
-             WHERE source=? AND target=? AND status IN ('pending','ambiguous')
-             ORDER BY id DESC LIMIT 1
-            """,
+            """SELECT * FROM spy_actions WHERE fleet_id=?
+               AND status IN ('pending','ambiguous') ORDER BY id DESC LIMIT 1""",
+            (str(fleet_id),),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def unresolved_spy_target(self, *, source: str, target: str) -> dict[str, object] | None:
+        row = self._require_conn().execute(
+            """SELECT * FROM spy_actions WHERE source=? AND target=?
+               AND status IN ('pending','ambiguous') ORDER BY id DESC LIMIT 1""",
             (str(source), str(target)),
         ).fetchone()
         return dict(row) if row is not None else None
@@ -452,3 +411,60 @@ class V2Database:
                 WHERE status IN ('pending','ambiguous');"""
         )
         self._record_migration(4)
+
+    def _migrate_to_5(self) -> None:
+        """Atomically correct the unproven probe model to exact spy-fleet identity."""
+        conn = self._require_conn()
+        # executescript() would implicitly commit before running its script. Start
+        # one explicit transaction and use individual execute() calls so the table
+        # rebuild, migration record and caller's PRAGMA user_version=5 commit or
+        # roll back together.
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DROP INDEX IF EXISTS idx_spy_actions_target_status")
+        conn.execute("DROP INDEX IF EXISTS idx_spy_actions_unresolved_target")
+        conn.execute("ALTER TABLE spy_actions RENAME TO spy_actions_v4")
+        conn.execute(
+            """CREATE TABLE spy_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL UNIQUE,
+                fleet_id TEXT,
+                source TEXT NOT NULL,
+                target TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('pending','verified','ambiguous','failed_safe')),
+                report_id TEXT,
+                requested_at TEXT,
+                report_at TEXT,
+                detail TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )"""
+        )
+        conn.execute(
+            """INSERT INTO spy_actions(
+                id, request_id, fleet_id, source, target, status, report_id,
+                requested_at, report_at, detail, created_at, updated_at
+            )
+            SELECT id, request_id, NULL, source, target, status, report_id,
+                   requested_at, report_at,
+                   CASE
+                     WHEN detail='' THEN 'migrated from V2 schema 4: fleet_id was not recorded'
+                     ELSE detail || ' | migrated from V2 schema 4: fleet_id was not recorded'
+                   END,
+                   created_at, updated_at
+              FROM spy_actions_v4"""
+        )
+        conn.execute("DROP TABLE spy_actions_v4")
+        conn.execute(
+            "CREATE INDEX idx_spy_actions_target_status ON spy_actions(source, target, status)"
+        )
+        conn.execute(
+            """CREATE UNIQUE INDEX idx_spy_actions_unresolved_fleet
+               ON spy_actions(fleet_id)
+               WHERE fleet_id IS NOT NULL AND status IN ('pending','ambiguous')"""
+        )
+        conn.execute(
+            """CREATE UNIQUE INDEX idx_spy_actions_unresolved_target
+               ON spy_actions(source, target)
+               WHERE status IN ('pending','ambiguous')"""
+        )
+        self._record_migration(5)

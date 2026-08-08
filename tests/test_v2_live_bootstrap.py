@@ -39,70 +39,41 @@ def test_v2_preferred_port_wins_after_environment_overrides(tmp_path: Path) -> N
     preferred = resolve_cdp_endpoint(db, environ={}, preferred_port=9444)
     assert preferred.endpoint == "http://127.0.0.1:9444"
     assert preferred.source == "V2 settings: cdp_port"
-    env = resolve_cdp_endpoint(
-        db,
-        environ={"NEMEXIA_V2_CDP_PORT": "9555"},
-        preferred_port=9444,
-    )
+    env = resolve_cdp_endpoint(db, environ={"NEMEXIA_V2_CDP_PORT": "9555"}, preferred_port=9444)
     assert env.endpoint == "http://127.0.0.1:9555"
     assert db.read_bytes() == before
 
 
 def test_endpoint_override_wins_and_missing_db_falls_back(tmp_path: Path) -> None:
     missing = tmp_path / "missing.sqlite3"
-    override = resolve_cdp_endpoint(
-        missing,
-        environ={"NEMEXIA_V2_CDP_ENDPOINT": "http://127.0.0.1:9444/"},
-    )
+    override = resolve_cdp_endpoint(missing, environ={"NEMEXIA_V2_CDP_ENDPOINT": "http://127.0.0.1:9444/"})
     assert override.endpoint == "http://127.0.0.1:9444"
-    fallback = resolve_cdp_endpoint(missing, environ={})
-    assert fallback.endpoint == "http://127.0.0.1:9222"
+    assert resolve_cdp_endpoint(missing, environ={}).endpoint == "http://127.0.0.1:9222"
 
 
 def test_context_close_propagates_to_browser_source(tmp_path: Path) -> None:
     class Backend:
-        def __init__(self) -> None:
-            self.closed = False
-
-        def status(self) -> BrowserReadStatus:
-            return BrowserReadStatus(False, detail="offline")
-
-        def flights(self):
-            return ()
-
-        def capacity(self):
-            return None
-
-        def close(self) -> None:
-            self.closed = True
-
+        def __init__(self): self.closed = False
+        def status(self): return BrowserReadStatus(False, detail="offline")
+        def flights(self): return ()
+        def capacity(self): return None
+        def close(self): self.closed = True
     backend = Backend()
-    context = V2ApplicationContext(
-        tmp_path / "missing.sqlite3",
-        flight_source=V2BrowserFlightSource(backend),
-    )
+    context = V2ApplicationContext(tmp_path / "missing.sqlite3", flight_source=V2BrowserFlightSource(backend))
     context.close()
     assert backend.closed is True
 
 
-def test_qt_bootstrap_wires_isolated_settings_plus_read_side_browser_adapters() -> None:
-    root = Path(__file__).resolve().parents[1]
-    source = (root / "app_qt.py").read_text(encoding="utf-8")
+def test_qt_bootstrap_wires_isolated_settings_and_guarded_spy_backend() -> None:
+    source = (Path(__file__).resolve().parents[1] / "app_qt.py").read_text(encoding="utf-8")
     assert "V2Database(paths.database)" in source
     assert "V2SettingsRepository(database)" in source
     assert "LegacySettingsImporter" in source
     assert 'preferred_port=settings.get("cdp_port")' in source
-    assert "ReadOnlyAccountCdpBackend" in source
-    assert "V2BrowserFlightSource" in source
-    assert "V2BrowserReportSource" in source
-    assert "report_source=report_source" in source
-    for forbidden in (
-        "BrowserWorker",
-        "launch_yandex",
-        "send_raid",
-        "prepare_raid",
-        "request_spy",
-        "delete_messages",
-        "app_entry.py",
-    ):
+    assert "V2SpyCdpBackend" in source
+    assert "SpyActionService" in source
+    assert "SpyEnabledApplicationContext" in source
+    assert "V2BrowserFlightSource" in source and "V2BrowserReportSource" in source
+    assert "report_source=report_source" in source and "spy_actions=spy_actions" in source
+    for forbidden in ("BrowserWorker", "launch_yandex", "delete_messages", "app_entry.py"):
         assert forbidden not in source

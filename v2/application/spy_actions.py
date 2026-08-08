@@ -6,11 +6,12 @@ from datetime import datetime
 from typing import Protocol
 
 
+_FLEET_ID_RE = re.compile(r"^[1-9]\d*$")
 _COORD_RE = re.compile(r"^(\d+):(\d+):(\d+)$")
 
 
 class SpyActionError(RuntimeError):
-    """Base V2 spy-request contract failure."""
+    """Base V2 spy-acquisition contract failure."""
 
 
 class SpyActionsDisabled(SpyActionError):
@@ -22,32 +23,35 @@ class SpyCaptchaBlocked(SpyActionError):
 
 
 class SpyRequestRejected(SpyActionError):
-    """Backend proved that no remote spy-request side effect was accepted."""
+    """Backend proved that no remote spy side effect was accepted."""
 
 
 @dataclass(frozen=True)
 class SpyRequestCommand:
-    source: str
-    target: str
-    probe_count: int
+    """Process one already-existing Nemexia espionage fleet.
+
+    The legacy `processSpy(fleet_id)` action is bound to an existing spy-fleet
+    row. Source and target are therefore observed facts from that exact row,
+    never caller-supplied routing inputs.
+    """
+
+    fleet_id: str
 
 
 @dataclass(frozen=True)
 class SpyRequestPreparation:
+    fleet_id: str
     source: str
     target: str
-    probe_count: int
-    probe_ship_key: str
-    available_probes: int
     captcha_present: bool = False
     detail: str = ""
 
 
 @dataclass(frozen=True)
 class SpyRequestResult:
+    fleet_id: str
     source: str
     target: str
-    probe_count: int
     requested_at: datetime
     verified: bool
     report_id: str | None = None
@@ -56,8 +60,6 @@ class SpyRequestResult:
 
 
 class SpyActionBackend(Protocol):
-    """Backend contract only; browser mutation is intentionally implemented later."""
-
     def prepare(self, command: SpyRequestCommand) -> SpyRequestPreparation: ...
 
     def request(
@@ -67,6 +69,13 @@ class SpyActionBackend(Protocol):
     ) -> SpyRequestResult: ...
 
     def close(self) -> None: ...
+
+
+def normalize_fleet_id(value: object) -> str:
+    text = str(value or "").strip()
+    if _FLEET_ID_RE.fullmatch(text) is None:
+        raise SpyActionError(f"Invalid spy fleet_id: {value!r}")
+    return text
 
 
 def normalize_coord(value: object) -> str:
@@ -81,17 +90,7 @@ def normalize_coord(value: object) -> str:
 
 
 def validate_command(command: SpyRequestCommand) -> SpyRequestCommand:
-    source = normalize_coord(command.source)
-    target = normalize_coord(command.target)
-    try:
-        probe_count = int(command.probe_count)
-    except (TypeError, ValueError) as exc:
-        raise SpyActionError("probe_count must be an integer") from exc
-    if probe_count <= 0:
-        raise SpyActionError("probe_count must be greater than zero")
-    if source == target:
-        raise SpyActionError("target must differ from source")
-    return SpyRequestCommand(source=source, target=target, probe_count=probe_count)
+    return SpyRequestCommand(fleet_id=normalize_fleet_id(command.fleet_id))
 
 
 def validate_preparation(
@@ -100,41 +99,32 @@ def validate_preparation(
 ) -> SpyRequestPreparation:
     if preparation.captcha_present:
         raise SpyCaptchaBlocked(
-            preparation.detail or "CAPTCHA detected; spy request stopped for manual handling"
+            preparation.detail or "CAPTCHA detected; spy action stopped for manual handling"
         )
-    if preparation.source != command.source or preparation.target != command.target:
-        raise SpyActionError("Backend preparation does not match requested source/target")
-    if int(preparation.probe_count) != command.probe_count:
-        raise SpyActionError("Backend preparation does not match requested probe count")
-    ship_key = str(preparation.probe_ship_key or "").strip()
-    if not ship_key:
-        raise SpyActionError("Backend did not identify the required probe ship")
-    try:
-        available = int(preparation.available_probes)
-    except (TypeError, ValueError) as exc:
-        raise SpyActionError("Backend returned invalid probe availability") from exc
-    if available < 0:
-        raise SpyActionError("Backend returned invalid probe availability")
-    if available < command.probe_count:
-        raise SpyActionError(
-            f"Insufficient probes: available {available}, requested {command.probe_count}"
-        )
+    fleet_id = normalize_fleet_id(preparation.fleet_id)
+    if fleet_id != command.fleet_id:
+        raise SpyActionError("Backend preparation does not match requested spy fleet_id")
+    source = normalize_coord(preparation.source)
+    target = normalize_coord(preparation.target)
+    if source == target:
+        raise SpyActionError("Spy fleet target must differ from source")
     return SpyRequestPreparation(
-        source=command.source,
-        target=command.target,
-        probe_count=command.probe_count,
-        probe_ship_key=ship_key,
-        available_probes=available,
+        fleet_id=fleet_id,
+        source=source,
+        target=target,
         captcha_present=False,
         detail=str(preparation.detail or ""),
     )
 
 
-def validate_result(command: SpyRequestCommand, result: SpyRequestResult) -> SpyRequestResult:
-    if result.source != command.source or result.target != command.target:
-        raise SpyActionError("Backend result does not match requested source/target")
-    if int(result.probe_count) != command.probe_count:
-        raise SpyActionError("Backend result does not match requested probe count")
+def validate_result(
+    preparation: SpyRequestPreparation,
+    result: SpyRequestResult,
+) -> SpyRequestResult:
+    if normalize_fleet_id(result.fleet_id) != preparation.fleet_id:
+        raise SpyActionError("Backend result does not match requested spy fleet_id")
+    if normalize_coord(result.source) != preparation.source or normalize_coord(result.target) != preparation.target:
+        raise SpyActionError("Backend result does not match prepared source/target")
     if result.requested_at.tzinfo is None:
         raise SpyActionError("Backend result requested_at must be timezone-aware")
     if result.verified:
@@ -146,7 +136,7 @@ def validate_result(command: SpyRequestCommand, result: SpyRequestResult) -> Spy
 
 
 class SpyActionService:
-    """Single application boundary for future V2 spy-request mutations."""
+    """Single guarded application boundary for V2 `processSpy(fleet_id)`."""
 
     def __init__(self, backend: SpyActionBackend, *, enabled: bool = False) -> None:
         self.backend = backend
@@ -156,7 +146,7 @@ class SpyActionService:
         self.enabled = bool(enabled)
 
     def prepare(self, command: SpyRequestCommand) -> SpyRequestPreparation:
-        """Perform validation and read-only preparation; never issue the request."""
+        """Perform validation and read-only preparation; never process the fleet."""
         clean = validate_command(command)
         self._assert_enabled()
         return validate_preparation(clean, self.backend.prepare(clean))
@@ -166,15 +156,11 @@ class SpyActionService:
         command: SpyRequestCommand,
         preparation: SpyRequestPreparation,
     ) -> SpyRequestResult:
-        """Issue one backend request from an already validated preparation.
-
-        Coordinators use this after persisting an immutable pending request so a
-        crash cannot silently open a retry window.
-        """
+        """Cross the backend side-effect boundary exactly once from persisted intent."""
         clean = validate_command(command)
         self._assert_enabled()
         prepared = validate_preparation(clean, preparation)
-        return validate_result(clean, self.backend.request(clean, prepared))
+        return validate_result(prepared, self.backend.request(clean, prepared))
 
     def request(self, command: SpyRequestCommand) -> SpyRequestResult:
         clean = validate_command(command)
