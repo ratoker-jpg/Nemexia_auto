@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
-from v2.application.flight_source import ActiveFlightSnapshot, FlightSourceStatus
+from v2.application.flight_source import (
+    ActiveFlightSnapshot,
+    FleetCapacitySnapshot,
+    FlightSourceStatus,
+)
 
 
 @dataclass(frozen=True)
@@ -25,17 +29,30 @@ class BrowserFlightRecord:
     fleet_id: str | None = None
 
 
+@dataclass(frozen=True)
+class BrowserFleetCapacity:
+    used: int
+    maximum: int
+
+    @property
+    def free(self) -> int:
+        return max(0, int(self.maximum) - int(self.used))
+
+
 class BrowserReadBackend(Protocol):
     """Read-only browser contract used by V2.
 
     Implementations may inspect an existing browser/CDP session, but this contract
     intentionally exposes no navigation, message deletion, queue mutation or fleet
-    dispatch operations.
+    dispatch operations. Fleet capacity must come from the game's own counters,
+    never from the number of rows returned by ``flights()``.
     """
 
     def status(self) -> BrowserReadStatus: ...
 
     def flights(self) -> Sequence[BrowserFlightRecord]: ...
+
+    def capacity(self) -> BrowserFleetCapacity | None: ...
 
 
 class V2BrowserFlightSource:
@@ -69,4 +86,21 @@ class V2BrowserFlightSource:
                 fleet_id=item.fleet_id,
             )
             for item in self._backend.flights()
+        )
+
+    def capacity(self) -> FleetCapacitySnapshot | None:
+        if not self.status().available:
+            return None
+        capacity = self._backend.capacity()
+        if capacity is None:
+            return None
+        used = max(0, int(capacity.used))
+        maximum = max(0, int(capacity.maximum))
+        if maximum <= 0 or used > maximum:
+            return None
+        return FleetCapacitySnapshot(
+            used=used,
+            maximum=maximum,
+            free=max(0, maximum - used),
+            source="game DOM #FleetsCount/#MaxFleets",
         )
