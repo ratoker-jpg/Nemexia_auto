@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Protocol, Sequence
 
 from v2.application.flight_source import FleetCapacitySnapshot, FlightSourceStatus
+from v2.application.live_overview import LiveOverviewSnapshot
 from v2.application.raid_actions import RaidDispatchResult
 from v2.application.raid_journal import RaidActionRecord
 from v2.application.read_store import QueueSnapshot
@@ -30,6 +31,7 @@ class FarmSnapshot:
     free_slots: int
     blocking_attacks: int
     unresolved_actions: int
+    ready_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,7 @@ class FarmRuntime(Protocol):
     def cached_flight_status(self) -> FlightSourceStatus | None: ...
     def fleet_capacity(self) -> FleetCapacitySnapshot | None: ...
     def farm_blocking_flights(self) -> list[object]: ...
+    def live_overview_snapshot(self) -> LiveOverviewSnapshot: ...
     def plan(self, *, limit: int = 5000) -> list[QueueSnapshot]: ...
     def recent_raid_actions(self, *, limit: int = 200) -> list[RaidActionRecord]: ...
     def dispatch_plan_raid(
@@ -69,6 +72,8 @@ class FarmController:
         capacity = runtime.fleet_capacity() if status is not None and status.available else None
         free_slots = max(0, int(capacity.free)) if capacity is not None else 0
         blocking = len(runtime.farm_blocking_flights()) if status is not None and status.available else 0
+        overview = runtime.live_overview_snapshot() if status is not None and status.available else None
+        ready_at = overview.inferred_farm_ready_at if overview is not None else None
         unresolved = [
             item for item in runtime.recent_raid_actions(limit=500)
             if item.status in {"pending", "ambiguous"}
@@ -78,48 +83,49 @@ class FarmController:
             return FarmSnapshot(
                 FarmState.ACTIONS_DISABLED,
                 "Действия V2 выключены в Настройках.",
-                len(items), free_slots, blocking, len(unresolved),
+                len(items), free_slots, blocking, len(unresolved), ready_at,
             )
         if status is None:
             return FarmSnapshot(
                 FarmState.LIVE_NOT_CHECKED,
                 "Сначала обнови live-полёты.",
-                len(items), 0, 0, len(unresolved),
+                len(items), 0, 0, len(unresolved), None,
             )
         if not status.available or capacity is None:
             return FarmSnapshot(
                 FarmState.LIVE_UNAVAILABLE,
                 status.detail or "Live-полёты или capacity недоступны.",
-                len(items), 0, 0, len(unresolved),
+                len(items), 0, 0, len(unresolved), None,
             )
         if unresolved:
             return FarmSnapshot(
                 FarmState.BLOCKED_UNRESOLVED,
                 f"Есть unresolved отправки: {len(unresolved)}. Сначала сверка через «Активные».",
-                len(items), free_slots, blocking, len(unresolved),
+                len(items), free_slots, blocking, len(unresolved), ready_at,
             )
         if blocking:
+            suffix = f" Следующая проверка после {ready_at}." if ready_at else ""
             return FarmSnapshot(
                 FarmState.WAITING_RETURN,
-                f"Есть farm-blocking атаки: {blocking}. Новую волну пока не запускаем.",
-                len(items), free_slots, blocking, 0,
+                f"Есть farm-blocking атаки: {blocking}. Новую волну пока не запускаем.{suffix}",
+                len(items), free_slots, blocking, 0, ready_at,
             )
         if free_slots <= 0:
             return FarmSnapshot(
                 FarmState.WAITING_CAPACITY,
                 "Свободных fleet slots нет.",
-                len(items), 0, 0, 0,
+                len(items), 0, 0, 0, ready_at,
             )
         if not items:
             return FarmSnapshot(
                 FarmState.NO_TARGETS,
                 "В V2-очереди нет eligible queued целей.",
-                0, free_slots, 0, 0,
+                0, free_slots, 0, 0, ready_at,
             )
         return FarmSnapshot(
             FarmState.READY,
             f"Готово к волне: целей {len(items)}, свободных слотов {free_slots}.",
-            len(items), free_slots, 0, 0,
+            len(items), free_slots, 0, 0, ready_at,
         )
 
     def run_one_wave(
