@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 
-V2_SCHEMA_VERSION = 5
+V2_SCHEMA_VERSION = 6
 
 
 class V2DatabaseError(RuntimeError):
@@ -318,6 +318,102 @@ class V2Database:
         if cursor.rowcount != 1:
             raise V2DatabaseError(f"Raid queue row not found: {queue_id}")
 
+    def import_recon_target_rows(self, rows: Sequence[Mapping[str, object]]) -> int:
+        """Seed only missing V2 target metadata from read-only legacy input."""
+        if not rows:
+            return 0
+        conn = self._require_conn()
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        unique: dict[str, Mapping[str, object]] = {}
+        for row in rows:
+            coord = str(row.get("coord") or "").strip()
+            if coord:
+                unique.setdefault(coord, row)
+        payload = [
+            (
+                coord,
+                str(row.get("player") or "—"),
+                int(bool(row.get("enabled", True))),
+                int(bool(row.get("blacklisted", False))),
+                str(row.get("notes") or ""),
+                now,
+                now,
+            )
+            for coord, row in unique.items()
+        ]
+        with conn:
+            before = conn.total_changes
+            conn.executemany(
+                """INSERT OR IGNORE INTO recon_targets(
+                    coord, player, enabled, blacklisted, notes, created_at, updated_at
+                ) VALUES(?,?,?,?,?,?,?)""",
+                payload,
+            )
+            return conn.total_changes - before
+
+    def insert_recon_report_rows(self, rows: Sequence[Mapping[str, object]]) -> int:
+        """Persist immutable report snapshots and ensure every report has a V2 target row."""
+        if not rows:
+            return 0
+        conn = self._require_conn()
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        targets = sorted({str(row["target"]) for row in rows})
+        with conn:
+            conn.executemany(
+                """INSERT OR IGNORE INTO recon_targets(
+                    coord, player, enabled, blacklisted, notes, created_at, updated_at
+                ) VALUES(?, '—', 1, 0, '', ?, ?)""",
+                [(coord, now, now) for coord in targets],
+            )
+            before = conn.total_changes
+            conn.executemany(
+                """INSERT OR IGNORE INTO recon_reports(
+                    report_id, target, report_at, energy, metal, minerals, gas, source, ingested_at
+                ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                [
+                    (
+                        str(row["report_id"]),
+                        str(row["target"]),
+                        str(row["report_at"]),
+                        row.get("energy"),
+                        row.get("metal"),
+                        row.get("minerals"),
+                        row.get("gas"),
+                        str(row.get("source") or "messages"),
+                        now,
+                    )
+                    for row in rows
+                ],
+            )
+            return conn.total_changes - before
+
+    def list_recon_report_rows(self, *, limit: int = 2000) -> list[dict[str, object]]:
+        rows = self._require_conn().execute(
+            """SELECT id, report_id, target, report_at, energy, metal, minerals, gas, source, ingested_at
+               FROM recon_reports
+               ORDER BY report_at DESC, report_id DESC, id DESC
+               LIMIT ?""",
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_recon_target_rows(self, *, limit: int = 5000) -> list[dict[str, object]]:
+        rows = self._require_conn().execute(
+            """SELECT t.coord, t.player, t.enabled, t.blacklisted, t.notes,
+                      r.report_id, r.report_at, r.energy, r.metal, r.minerals, r.gas
+               FROM recon_targets t
+               LEFT JOIN recon_reports r ON r.id = (
+                   SELECT rr.id FROM recon_reports rr
+                    WHERE rr.target=t.coord
+                    ORDER BY rr.report_at DESC, rr.report_id DESC, rr.id DESC
+                    LIMIT 1
+               )
+               ORDER BY t.coord
+               LIMIT ?""",
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def _migrate(self) -> None:
         current = self.schema_version()
         if current > V2_SCHEMA_VERSION:
@@ -468,3 +564,36 @@ class V2Database:
                WHERE status IN ('pending','ambiguous')"""
         )
         self._record_migration(5)
+
+    def _migrate_to_6(self) -> None:
+        """Add V2-owned immutable reconnaissance snapshots and target metadata."""
+        self._require_conn().executescript(
+            """CREATE TABLE IF NOT EXISTS recon_targets (
+                coord TEXT PRIMARY KEY,
+                player TEXT NOT NULL DEFAULT '—',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                blacklisted INTEGER NOT NULL DEFAULT 0,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS recon_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id TEXT NOT NULL,
+                target TEXT NOT NULL,
+                report_at TEXT NOT NULL,
+                energy INTEGER,
+                metal INTEGER,
+                minerals INTEGER,
+                gas INTEGER,
+                source TEXT NOT NULL,
+                ingested_at TEXT NOT NULL,
+                UNIQUE(report_id, target, report_at),
+                FOREIGN KEY(target) REFERENCES recon_targets(coord)
+            );
+            CREATE INDEX IF NOT EXISTS idx_recon_reports_target_time
+                ON recon_reports(target, report_at DESC, report_id DESC);
+            CREATE INDEX IF NOT EXISTS idx_recon_reports_time
+                ON recon_reports(report_at DESC, report_id DESC);"""
+        )
+        self._record_migration(6)
