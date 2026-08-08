@@ -33,6 +33,12 @@ CREATE TABLE history (
     sent_at TEXT, arrival_at TEXT, return_at TEXT, status TEXT, error TEXT
 );
 CREATE TABLE queue (id INTEGER PRIMARY KEY, coord TEXT, position INTEGER, state TEXT);
+CREATE TABLE spy_reports (
+    id INTEGER PRIMARY KEY, message_id TEXT, dedupe_key TEXT UNIQUE, target_coord TEXT,
+    report_at TEXT, energy INTEGER, metal INTEGER, minerals INTEGER, gas INTEGER,
+    population INTEGER, ships INTEGER, defense INTEGER, completeness TEXT,
+    source TEXT, imported_at TEXT, raw_payload TEXT
+);
 """
 
 
@@ -53,6 +59,15 @@ def create_fixture(path: Path) -> None:
             INSERT INTO history VALUES (
                 1,'3:39:11','3:1:2','Alpha',25,'2026-08-08T06:00:00+00:00',
                 NULL,'2026-08-08T08:00:00+00:00','sent',NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO spy_reports VALUES (
+                1,'m1','d1','3:1:2','2026-08-08T07:00:00+00:00',9000,
+                700000,800000,12,100,5,6,'full','messages',
+                '2026-08-08T07:01:00+00:00','{}'
             )
             """
         )
@@ -83,6 +98,9 @@ def main() -> int:
 
             expected = {
                 "overview": "OverviewPage",
+                "plan": "PlanPage",
+                "active": "ActivePage",
+                "recon": "ReconPage",
                 "targets": "TargetsPage",
                 "history": "HistoryPage",
                 "diagnostics": "DiagnosticsPage",
@@ -91,10 +109,21 @@ def main() -> int:
                 page = window.stack.widget(window._page_index[key])
                 assert page.__class__.__name__ == class_name, (key, page.__class__.__name__)
 
+            plan = window.stack.widget(window._page_index["plan"])
+            active = window.stack.widget(window._page_index["active"])
+            recon = window.stack.widget(window._page_index["recon"])
             targets = window.stack.widget(window._page_index["targets"])
             history = window.stack.widget(window._page_index["history"])
+
+            assert plan.model.rowCount() == 1
+            assert recon.model.rowCount() == 1
             assert targets.model.rowCount() == 1
             assert history.model.rowCount() == 1
+
+            # No live backend is injected in preview mode. This is explicitly
+            # unavailable data, not a factual claim that the account has zero flights.
+            assert context.flight_status().available is False
+            assert active.model.rowCount() == 0
 
             window.show()
             app.processEvents()
@@ -106,7 +135,7 @@ def main() -> int:
         assert legacy_db.read_bytes() == before
         assert not paths.database.exists(), "V2 preview must not create its own SQLite yet"
 
-    print("OK: PySide6 V2 offscreen smoke")
+    print("OK: PySide6 V2 third-batch offscreen smoke")
     return 0
 
 
