@@ -80,14 +80,24 @@ QLabel#StatusBadge {{
     border-radius: 8px;
     padding: 6px 10px;
 }}
-QFrame#PlaceholderCard, QFrame#DataCard {{
+QFrame#PlaceholderCard, QFrame#DataCard, QFrame#InfoCard, QFrame#MetricCard {{
     background: {COLORS['surface_1']};
     border: 1px solid {COLORS['border_subtle']};
     border-radius: 12px;
 }}
-QLabel#PlaceholderTitle {{
+QLabel#PlaceholderTitle, QLabel#SectionTitle {{
     font-size: 16px;
     font-weight: 600;
+}}
+QLabel#MetricLabel {{
+    color: {COLORS['text_secondary']};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#MetricValue {{
+    color: {COLORS['text_primary']};
+    font-size: 26px;
+    font-weight: 700;
 }}
 QLabel#Muted {{
     color: {COLORS['text_muted']};
