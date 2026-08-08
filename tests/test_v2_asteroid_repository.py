@@ -115,6 +115,34 @@ def test_out_of_range_evidence_is_rejected_from_owned_candidate_state(tmp_path: 
         )
 
 
+def test_projection_does_not_drop_older_valid_evidence_after_5000_rows(tmp_path: Path) -> None:
+    path = tmp_path / "v2.sqlite3"
+    now = datetime(2026, 8, 8, 10, 30, tzinfo=timezone.utc)
+    older_distinct = fact(
+        system=22,
+        position=1,
+        observed_at=datetime(2026, 8, 8, 8, 0, tzinfo=timezone.utc),
+    )
+    newer_same_candidate = tuple(
+        fact(
+            system=23,
+            position=8,
+            observed_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc)
+            + timedelta(microseconds=index),
+        )
+        for index in range(5000)
+    )
+    with V2Database(path) as db:
+        repository = V2AsteroidRepository(db)
+        assert repository.ingest((older_distinct,), now=now).inserted == 1
+        assert repository.ingest(newer_same_candidate, now=now).inserted == 5000
+        assert len(repository.observations()) == 5001
+
+    with V2Database(path) as reopened:
+        preview = V2AsteroidRepository(reopened).preview(now=now)
+        assert [candidate.current_coord for candidate in preview.candidates] == ["2:23:8", "2:22:1"]
+
+
 def test_no_browser_or_side_effect_dependency_in_candidate_repository() -> None:
     root = Path(__file__).resolve().parents[1]
     combined = (
