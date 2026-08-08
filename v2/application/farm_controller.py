@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Protocol, Sequence
 
@@ -49,6 +50,7 @@ class FarmRuntime(Protocol):
     def fleet_capacity(self) -> FleetCapacitySnapshot | None: ...
     def farm_blocking_flights(self) -> list[object]: ...
     def live_overview_snapshot(self) -> LiveOverviewSnapshot: ...
+    def v2_setting(self, key: str, default: object = None) -> object: ...
     def plan(self, *, limit: int = 5000) -> list[QueueSnapshot]: ...
     def recent_raid_actions(self, *, limit: int = 200) -> list[RaidActionRecord]: ...
     def dispatch_plan_raid(
@@ -63,6 +65,46 @@ def eligible_queue(items: Sequence[QueueSnapshot]) -> list[QueueSnapshot]:
     ]
 
 
+def _parse_dt(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.replace(microsecond=0).isoformat() if value is not None else None
+
+
+def _return_buffer_minutes(runtime: FarmRuntime) -> int:
+    try:
+        value = int(str(runtime.v2_setting("farm_return_buffer_minutes", 5)).strip())
+    except (TypeError, ValueError):
+        value = 5
+    return max(0, min(60, value))
+
+
+def _journal_ready_at(
+    actions: Sequence[RaidActionRecord],
+    *,
+    buffer_minutes: int,
+) -> datetime | None:
+    deadlines: list[datetime] = []
+    for item in actions:
+        if item.status != "verified" or not item.request_id.startswith("farm-"):
+            continue
+        returned = _parse_dt(item.return_at)
+        if returned is not None:
+            deadlines.append(returned + timedelta(minutes=buffer_minutes))
+    return max(deadlines, default=None)
+
+
 class FarmController:
     """Typed V2 farm policy; UI text never drives farm decisions."""
 
@@ -73,11 +115,17 @@ class FarmController:
         free_slots = max(0, int(capacity.free)) if capacity is not None else 0
         blocking = len(runtime.farm_blocking_flights()) if status is not None and status.available else 0
         overview = runtime.live_overview_snapshot() if status is not None and status.available else None
-        ready_at = overview.inferred_farm_ready_at if overview is not None else None
-        unresolved = [
-            item for item in runtime.recent_raid_actions(limit=500)
-            if item.status in {"pending", "ambiguous"}
-        ]
+        actions = runtime.recent_raid_actions(limit=500)
+        unresolved = [item for item in actions if item.status in {"pending", "ambiguous"}]
+
+        live_ready = _parse_dt(overview.inferred_farm_ready_at) if overview is not None else None
+        journal_ready = _journal_ready_at(
+            actions,
+            buffer_minutes=_return_buffer_minutes(runtime),
+        )
+        deadlines = [value for value in (live_ready, journal_ready) if value is not None]
+        ready_deadline = max(deadlines, default=None)
+        ready_at = _iso(ready_deadline)
 
         if not runtime.raid_actions_enabled():
             return FarmSnapshot(
@@ -89,13 +137,13 @@ class FarmController:
             return FarmSnapshot(
                 FarmState.LIVE_NOT_CHECKED,
                 "Сначала обнови live-полёты.",
-                len(items), 0, 0, len(unresolved), None,
+                len(items), 0, 0, len(unresolved), ready_at,
             )
         if not status.available or capacity is None:
             return FarmSnapshot(
                 FarmState.LIVE_UNAVAILABLE,
                 status.detail or "Live-полёты или capacity недоступны.",
-                len(items), 0, 0, len(unresolved), None,
+                len(items), 0, 0, len(unresolved), ready_at,
             )
         if unresolved:
             return FarmSnapshot(
@@ -110,17 +158,23 @@ class FarmController:
                 f"Есть farm-blocking атаки: {blocking}. Новую волну пока не запускаем.{suffix}",
                 len(items), free_slots, blocking, 0, ready_at,
             )
-        if free_slots <= 0:
-            return FarmSnapshot(
-                FarmState.WAITING_CAPACITY,
-                "Свободных fleet slots нет.",
-                len(items), 0, 0, 0, ready_at,
-            )
         if not items:
             return FarmSnapshot(
                 FarmState.NO_TARGETS,
                 "В V2-очереди нет eligible queued целей.",
                 0, free_slots, 0, 0, ready_at,
+            )
+        if ready_deadline is not None and datetime.now(timezone.utc) < ready_deadline:
+            return FarmSnapshot(
+                FarmState.WAITING_RETURN,
+                f"Farm-return завершён, действует return-buffer до {ready_at}.",
+                len(items), free_slots, 0, 0, ready_at,
+            )
+        if free_slots <= 0:
+            return FarmSnapshot(
+                FarmState.WAITING_CAPACITY,
+                "Свободных fleet slots нет.",
+                len(items), 0, 0, 0, ready_at,
             )
         return FarmSnapshot(
             FarmState.READY,
