@@ -62,6 +62,14 @@ def test_manual_stop_cannot_start_reentrant_actions_while_series_is_running() ->
     assert "текущая SendFleet-попытка не прерывается" in PAGE
 
 
+def test_hiding_page_or_closing_parent_requests_stop_before_next_side_effect() -> None:
+    assert "def hideEvent(self, event)" in PAGE
+    assert "if self._series_running:" in PAGE
+    assert "self._stop_requested = True" in PAGE
+    assert "not self.isVisible()" in PAGE
+    assert "not window.isVisible()" in PAGE
+
+
 def test_context_owns_candidate_repository_and_routes_series_through_journaled_dispatch() -> None:
     assert "V2AsteroidRepository" in CONTEXT
     assert "def asteroid_candidates(" in CONTEXT
