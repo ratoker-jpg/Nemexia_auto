@@ -31,10 +31,10 @@ def test_mission_type_does_not_define_capacity_but_attack_type_still_defines_tim
     assert "read_fleet_capacity" in RUNTIME
 
 
-def test_sync_and_dashboard_show_game_capacity_but_return_timer_is_attack_only() -> None:
+def test_sync_and_dashboard_show_game_capacity_but_return_timer_is_our_attack_only() -> None:
     assert "Подключено · полёты: {used}/{maximum}" in PRESENTATION
     assert 'self.card_slots_var.set(f"{int(used)} / {int(maximum)}")' in PRESENTATION
-    assert "attacks = [flight for flight in self.active_flights if _normal_attack(flight)]" in PRESENTATION
+    assert "attacks = _farm_attacks(list(self.active_flights), self.home())" in PRESENTATION
     assert "next_return = min(" in PRESENTATION
 
 
