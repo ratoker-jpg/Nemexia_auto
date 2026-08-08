@@ -37,7 +37,7 @@ def test_queue_import_is_one_time_and_legacy_remains_byte_identical(tmp_path: Pa
     create_legacy(legacy_path)
     before = legacy_path.read_bytes()
     with V2Database(tmp_path / "v2.sqlite3") as db:
-        assert db.schema_version() == V2_SCHEMA_VERSION == 3
+        assert db.schema_version() == V2_SCHEMA_VERSION == 4
         queue = V2QueueRepository(db)
         with ReadOnlyStore(legacy_path) as legacy:
             assert queue.import_legacy_if_empty(legacy) == 1
