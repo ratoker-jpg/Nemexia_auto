@@ -15,6 +15,7 @@ from v2.application.asteroid_actions import (
     AsteroidPreparationRejected,
     validate_command,
 )
+from v2.persistence.asteroid_journal import AsteroidJournalRepository
 from v2.persistence.database import V2Database, V2DatabaseError
 
 
@@ -45,6 +46,7 @@ class AsteroidRequestCoordinator:
     def __init__(self, service: AsteroidActionService, database: V2Database) -> None:
         self.service = service
         self.database = database
+        self.journal = AsteroidJournalRepository(database)
 
     def dispatch(
         self,
@@ -59,7 +61,7 @@ class AsteroidRequestCoordinator:
         if not self.service.enabled:
             raise AsteroidActionsDisabled("V2 asteroid actions are disabled")
 
-        existing = self.database.read_asteroid_action(request_id)
+        existing = self.journal.read(request_id)
         if existing is not None:
             raise AsteroidRequestBlocked(
                 f"Asteroid request {request_id} already exists with status {existing['status']}"
@@ -68,7 +70,7 @@ class AsteroidRequestCoordinator:
         # Preparation is read-only. It must complete before the journal creates
         # immutable pending intent, while no remote SendFleet has been attempted.
         preparation = self.service.prepare(clean)
-        unresolved = self.database.unresolved_asteroid_action(
+        unresolved = self.journal.unresolved(
             source=preparation.source,
             observation_coord=preparation.observation.coord,
             observation_next_move_at=preparation.observation.next_move_at.isoformat(),
@@ -92,7 +94,7 @@ class AsteroidRequestCoordinator:
         ) as exc:
             # These exception types are reserved for conditions where the backend
             # has positively proved no remote fleet was accepted.
-            self.database.finish_asteroid_action(
+            self.journal.finish(
                 request_id,
                 status="failed_safe",
                 detail=str(exc),
@@ -101,14 +103,14 @@ class AsteroidRequestCoordinator:
         except Exception as exc:
             # Once pending exists, every unclassified failure is conservative:
             # the remote effect may have happened, so no automatic retry window.
-            self.database.finish_asteroid_action(
+            self.journal.finish(
                 request_id,
                 status="ambiguous",
                 detail=str(exc),
             )
             raise
 
-        self.database.finish_asteroid_action(
+        self.journal.finish(
             request_id,
             status="verified" if result.verified else "ambiguous",
             fleet_id=result.fleet_id,
@@ -127,7 +129,7 @@ class AsteroidRequestCoordinator:
     ) -> None:
         observation = preparation.observation
         try:
-            self.database.begin_asteroid_action(
+            self.journal.begin(
                 request_id=request_id,
                 source=preparation.source,
                 observation_coord=observation.coord,
@@ -170,14 +172,11 @@ class AsteroidRequestCoordinator:
         )
 
     def record(self, request_id: str) -> AsteroidActionRecord | None:
-        row = self.database.read_asteroid_action(request_id)
+        row = self.journal.read(request_id)
         return None if row is None else self._record_from_row(row)
 
     def recent(self, *, limit: int = 200) -> list[AsteroidActionRecord]:
-        return [
-            self._record_from_row(row)
-            for row in self.database.list_asteroid_actions(limit=limit)
-        ]
+        return [self._record_from_row(row) for row in self.journal.list(limit=limit)]
 
     def resolve_verified(
         self,
@@ -195,7 +194,7 @@ class AsteroidRequestCoordinator:
         ):
             if value is not None and value.tzinfo is None:
                 raise AsteroidActionError(f"{name} must be timezone-aware")
-        self.database.resolve_asteroid_action(
+        self.journal.resolve_verified(
             request_id,
             fleet_id=fleet_id,
             sent_at=self._iso(sent_at),
