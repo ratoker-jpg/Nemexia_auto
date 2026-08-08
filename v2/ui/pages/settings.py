@@ -24,13 +24,11 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
-
         card = QFrame(self)
         card.setObjectName("InfoCard")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(18, 16, 18, 16)
         card_layout.setSpacing(12)
-
         title = QLabel("Параметры V2", card)
         title.setObjectName("SectionTitle")
         card_layout.addWidget(title)
@@ -45,38 +43,31 @@ class SettingsPage(QWidget):
         form = QFormLayout()
         form.setHorizontalSpacing(18)
         form.setVerticalSpacing(10)
-
         self.cdp_port = QSpinBox(card)
         self.cdp_port.setRange(1, 65535)
         form.addRow("CDP port", self.cdp_port)
-
         self.farm_home = QLineEdit(card)
         self.farm_home.setPlaceholderText("3:39:11")
         form.addRow("Планета автофарма", self.farm_home)
-
         self.command_planet = QLineEdit(card)
         self.command_planet.setPlaceholderText("2:5:6")
         form.addRow("Командная планета", self.command_planet)
-
         self.return_buffer = QSpinBox(card)
         self.return_buffer.setRange(0, 60)
         self.return_buffer.setSuffix(" мин")
         form.addRow("Буфер после возврата", self.return_buffer)
-
         card_layout.addLayout(form)
 
         self.save_button = QPushButton("Сохранить", card)
         self.save_button.setObjectName("PrimaryButton")
         self.save_button.clicked.connect(self.save_settings)
         card_layout.addWidget(self.save_button)
-
         self.status_label = QLabel("", card)
         self.status_label.setObjectName("Muted")
         self.status_label.setWordWrap(True)
         card_layout.addWidget(self.status_label)
         layout.addWidget(card)
         layout.addStretch(1)
-
         self.reload_view()
 
     def reload_view(self) -> None:
@@ -95,13 +86,14 @@ class SettingsPage(QWidget):
 
     def save_settings(self) -> None:
         self.save_button.setEnabled(False)
+        values = {
+            "cdp_port": self.cdp_port.value(),
+            "farm_home": self.farm_home.text(),
+            "command_planet": self.command_planet.text(),
+            "farm_return_buffer_minutes": self.return_buffer.value(),
+        }
         try:
-            self.context.set_v2_setting("cdp_port", self.cdp_port.value())
-            self.context.set_v2_setting("farm_home", self.farm_home.text())
-            self.context.set_v2_setting("command_planet", self.command_planet.text())
-            self.context.set_v2_setting(
-                "farm_return_buffer_minutes", self.return_buffer.value()
-            )
+            self.context.set_v2_settings(values)
         except Exception as exc:
             self.status_label.setText(f"Не сохранено: {exc}")
         else:
