@@ -1,5 +1,11 @@
 # Аудиты проекта
 
+## Текущий V2 asteroid action audit — 2026-08-08
+
+[`2026-08-08-v2-asteroid-contract-audit.md`](2026-08-08-v2-asteroid-contract-audit.md) фиксирует V2-51: эффективные legacy call sites, asteroid selectors/endpoints, UTC+04 movement semantics, 24-position coordinate math, iterative flight-time stabilization, recycler/mission facts, SendFleet verification и различия безопасности V2.
+
+Ключевой scope: contract/fixtures only — без live scan, SendFleet, SQLite mutation, Qt action или scheduler. V2 остаётся attach-only; automatic retry после потенциального remote effect не переносится.
+
 ## Актуальный V2 raid-loop parity gate — 2026-08-08
 
 [`2026-08-08-v2-raid-loop-parity-gate.md`](2026-08-08-v2-raid-loop-parity-gate.md) фиксирует фактическое состояние V2 после V2-41→V2-49: exact-fleet fresh spy acquisition, V2-owned recon, deterministic refill, persisted no-target cooldown и continuous recovery без legacy mutation code.
