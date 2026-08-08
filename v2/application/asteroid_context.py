@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 from v2.application.asteroid_actions import (
     AsteroidActionService,
@@ -156,6 +156,7 @@ class AsteroidEnabledApplicationContext(ReconOwnedApplicationContext):
         source: str,
         recycler_count: int,
         safety_seconds: int = 10,
+        should_stop: Callable[[], bool] | None = None,
     ) -> AsteroidDispatchBatch:
         return dispatch_selected_asteroids(
             self,
@@ -163,6 +164,7 @@ class AsteroidEnabledApplicationContext(ReconOwnedApplicationContext):
             source=source,
             recycler_count=recycler_count,
             safety_seconds=safety_seconds,
+            should_stop=should_stop,
         )
 
     def recent_asteroid_actions(self, *, limit: int = 200) -> list[AsteroidActionRecord]:
