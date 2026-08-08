@@ -1,6 +1,6 @@
 # Nemexia Raid Manager V2 — current state
 
-Updated by V2-30 after the #52–#60 migration batch. Baseline entering V2-30: `610eb763c7cf4a3b05cc0d3f3f41122936c6fc75`.
+Updated by V2-40 after the #62–#71 action-migration batch.
 
 ## Safety baseline
 
@@ -12,98 +12,146 @@ The pre-PySide6 working version remains recoverable at:
 
 The default launcher is still `run_app.bat -> app_entry.py` (Tkinter). V2 remains a separate `app_qt.py` entrypoint.
 
-## V2 storage boundary
+## Storage boundary
 
-Legacy data source:
+Legacy SQLite remains read-only:
 
-- opened through SQLite `mode=ro`;
+- SQLite `mode=ro`;
 - `PRAGMA query_only=ON`;
-- targets/history/queue/recon and allow-listed migration inputs are reads only.
+- legacy targets/history/recon and migration inputs are reads only.
 
-V2-owned data:
+V2-owned storage lives under `%LOCALAPPDATA%/NemexiaRaidManagerV2/` and now uses schema version 3:
 
-- `%LOCALAPPDATA%/NemexiaRaidManagerV2/`;
-- versioned SQLite with `PRAGMA user_version`;
-- typed allow-listed settings only;
-- atomic settings batches;
+- typed allow-listed settings;
+- `raid_actions` action journal;
+- `raid_queue` mutable V2-owned queue;
+- atomic settings writes;
 - SQLite-native consistent backups with retention.
 
-Only these legacy settings are eligible for first-run import, and only when the corresponding V2 key is still absent:
-
-- `port` -> `cdp_port`;
-- `home_g/home_s/home_p` -> `farm_home`;
-- `farm_return_buffer_minutes` -> same V2 key.
+The legacy Plan is imported into `raid_queue` only when the V2 queue is empty. Once V2 owns the queue, later legacy reads never overwrite its states.
 
 ## Live browser boundary
 
-V2 attaches to an existing Chromium/Yandex CDP session and reads an already-open `fleets.php` page. It does not navigate or create tabs.
+V2 attaches to an existing Chromium/Yandex CDP session and requires an already-open `fleets.php` page. It does not launch the browser, create tabs, or navigate the account.
 
-Verified read facts include:
+Read facts include:
 
-- `#fleetHandler tbody tr`;
-- `#FleetsCount`;
-- `#MaxFleets`;
-- `#planetsListHolder a`.
+- active fleet rows and fleet IDs;
+- `#FleetsCount` / `#MaxFleets`;
+- own planet coordinates.
 
-CAPTCHA remains fail-closed. No CAPTCHA solving/clicking exists.
+CAPTCHA remains fail-closed. V2 does not solve, click, or bypass CAPTCHA.
 
-## Flight semantics
+## Raid action boundary
 
-V2 has typed classification for:
+Mutating raid actions are disabled by default. `actions_enabled` must be explicitly enabled in V2 Settings.
 
-- outgoing / incoming / foreign;
-- personal / command / unknown ownership;
-- excluded flights;
-- exact normal `Атака`;
-- farm-cycle-blocking flights.
+The raid path is now:
 
-Current policy:
+1. typed `RaidCommand` validation;
+2. attach-only preparation of the existing fleet form;
+3. exact source/target/ship-count checks;
+4. persistent `request_id` journal entry before SendFleet;
+5. exactly one SendFleet attempt;
+6. server-response handling;
+7. verification against a new exact target + mission `Атака` + fleet ID;
+8. `verified` or `ambiguous` journal state;
+9. no automatic retry after an ambiguous side effect.
 
-- command planet default `2:5:6` is centralized and editable in V2 settings;
-- command involvement excludes a flight from personal calculations;
-- physical fleet capacity comes from game `FleetsCount/MaxFleets`, never `len(flights)`;
-- only an exact outbound `Атака` from configured `farm_home` blocks the farm timer;
-- recycling/transport/etc. may occupy game capacity but do not drive the farm return timer;
-- live Overview uses latest blocking return + configured buffer and compares it with persisted legacy `farm_next_cycle_at` read-only.
+The Plan page provides explicit manual Prepare and Send actions. Send requires a modal confirmation with source, target, player, and ship count.
+
+Disabled and blacklisted targets cannot reach the dispatch backend. A queue row moves to non-retryable `sending` before SendFleet, closing the crash gap where a successful send could otherwise be repeated after restart.
+
+## Reconciliation
+
+Pending/ambiguous raid actions may be reconciled only from an explicit live fleet refresh.
+
+A request becomes verified only when there is one unique matching live attack with:
+
+- exact source;
+- exact target;
+- mission `Атака`;
+- non-empty fleet ID;
+- flight time not older than the journal request.
+
+Multiple possible matches remain unresolved. Reconciliation never sends or clicks anything.
+
+## AutoFarm V2
+
+AutoFarm is now built on typed states rather than status-text parsing:
+
+- `actions_disabled`;
+- `live_not_checked`;
+- `live_unavailable`;
+- `blocked_unresolved`;
+- `waiting_return`;
+- `waiting_capacity`;
+- `no_targets`;
+- `ready`.
+
+Eligible targets are only V2 queue rows that are:
+
+- `queued`;
+- enabled;
+- not blacklisted.
+
+A wave is capped by current live free fleet slots, eligible queue size, and the user max-target limit. Every target uses the same persistent journal/idempotency boundary as manual sending. The wave stops at the first error or ambiguous result.
+
+The AutoFarm page supports:
+
+- explicit one-wave execution;
+- an explicitly armed continuous in-session cycle;
+- 30-second live refresh/capacity checks;
+- waiting for farm-blocking attacks;
+- configured return buffer;
+- return-buffer recovery from verified `farm-*` V2 action-journal timestamps after restart;
+- automatic safety-disarm on unresolved action, live failure, or wave error.
+
+Continuous AutoFarm is never persisted as armed. Every new `app_qt.py` process starts with the scheduler off and requires a fresh manual Start confirmation.
+
+V2-40 does **not** automatically request new spy reports or rebuild/refill the queue. When eligible queue targets are exhausted, the scheduler stops.
 
 ## Real Qt pages
 
-Currently backed by real services/data:
+Backed by real application services/data:
 
 - Overview;
-- Plan (read-only persisted queue);
-- Active (explicit live refresh + typed classification + capacity);
-- Recon (read-only saved spy reports);
+- Plan — V2-owned queue + explicit manual raid actions;
+- Active — live flights, typed classification, capacity, journal reconciliation;
+- AutoFarm — typed state, one-wave action, controlled in-session cycle;
+- Recon — read-only saved spy reports;
 - Targets;
 - History;
-- Settings (V2-owned settings only);
+- Settings — V2-owned settings;
 - Diagnostics.
 
-Still placeholders / not migrated:
+Still not migrated as V2 action surfaces:
 
-- Auto-farm;
 - Asteroids;
 - Debris.
 
 ## Explicitly not enabled yet
 
-V2 still exposes no UI/application API for:
+V2 still has no automatic action API for:
 
-- raid dispatch;
-- fleet form filling;
-- spy requests;
+- spy requests / fresh-report acquisition;
 - message deletion;
-- queue mutation;
+- automatic queue generation/refill from newly scanned reports;
 - automatic browser navigation;
-- auto-farm execution;
-- asteroid/debris execution.
+- asteroid execution;
+- debris/recycling execution;
+- CAPTCHA solving.
+
+Because automatic spying/refill is not migrated, the current V2 continuous farm cycle operates only on its existing V2 queue.
 
 ## Verification gate
 
-GitHub Actions currently runs on Windows:
+GitHub Actions runs on Windows:
 
 - Python 3.10: compileall + pytest + legacy self-test;
 - Python 3.11: compileall + pytest + legacy self-test;
 - Python 3.11 + PySide6: real offscreen `QApplication` / `MainWindow` smoke.
 
-The local working installation should not be updated to V2 until action parity and final cutover are explicitly completed.
+CI uses per-ref concurrency so stale superseded branch runs are cancelled instead of delaying the newest head.
+
+The local legacy working installation should not be replaced until final parity/cutover is explicitly completed.

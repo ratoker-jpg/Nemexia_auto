@@ -111,15 +111,29 @@ def main() -> int:
         try:
             assert window.minimumWidth() == 1180 and window.minimumHeight() == 720
             assert window.stack.count() == 11
-            expected = {"overview":"OverviewPage","plan":"PlanPage","active":"ActivePage","recon":"ReconPage","targets":"TargetsPage","history":"HistoryPage","settings":"SettingsPage","diagnostics":"DiagnosticsPage"}
+            expected = {
+                "overview":"OverviewPage",
+                "plan":"PlanPage",
+                "active":"ActivePage",
+                "farm":"FarmPage",
+                "recon":"ReconPage",
+                "targets":"TargetsPage",
+                "history":"HistoryPage",
+                "settings":"SettingsPage",
+                "diagnostics":"DiagnosticsPage",
+            }
             for key, class_name in expected.items():
                 page = window.stack.widget(window._page_index[key])
                 assert page.__class__.__name__ == class_name, (key, page.__class__.__name__)
 
             active = window.stack.widget(window._page_index["active"])
+            farm = window.stack.widget(window._page_index["farm"])
             settings_page = window.stack.widget(window._page_index["settings"])
             diagnostics = window.stack.widget(window._page_index["diagnostics"])
+            assert farm._armed is False
+            assert farm._timer.isActive() is False
             assert live_source.status_reads == 0 and live_source.refreshes == 0
+
             window._show_page("active", "Активные", "Текущие полёты и возвраты")
             app.processEvents()
             assert live_source.refreshes == 1 and live_source.status_reads == 1
@@ -146,7 +160,7 @@ def main() -> int:
             assert check.integrity_check() == "ok"
             assert V2SettingsRepository(check).get("farm_return_buffer_minutes") == 9
 
-    print("OK: PySide6 V2 settings/runtime offscreen smoke")
+    print("OK: PySide6 V2 scheduler-disarmed settings/runtime smoke")
     return 0
 
 
