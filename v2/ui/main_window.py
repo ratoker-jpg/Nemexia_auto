@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
 
 from v2.application.context import V2ApplicationContext
 from v2.runtime_paths import RuntimePaths
+from v2.ui.pages.diagnostics import DiagnosticsPage
+from v2.ui.pages.overview import OverviewPage
 from v2.ui.pages.read_tables import HistoryPage, TargetsPage
 from v2.ui.theme import ORBITAL_COMMAND_QSS
 
@@ -172,10 +174,14 @@ class MainWindow(QMainWindow):
         return topbar
 
     def _build_page(self, key: str, title: str, description: str) -> QWidget:
+        if key == "overview":
+            return OverviewPage(self.context, self)
         if key == "targets":
             return TargetsPage(self.context, self)
         if key == "history":
             return HistoryPage(self.context, self)
+        if key == "diagnostics":
+            return DiagnosticsPage(self.context, self.runtime_paths, self)
         return self._placeholder_page(title, description)
 
     def _placeholder_page(self, title: str, description: str) -> QWidget:
