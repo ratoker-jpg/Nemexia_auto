@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from v2.application.context import V2ApplicationContext
 from v2.runtime_paths import RuntimePaths
+from v2.ui.pages.active import ActivePage
 from v2.ui.pages.diagnostics import DiagnosticsPage
 from v2.ui.pages.overview import OverviewPage
 from v2.ui.pages.plan import PlanPage
@@ -46,7 +47,7 @@ def _iter_pages() -> Iterable[tuple[str, str, str]]:
 
 
 class MainWindow(QMainWindow):
-    """Side-by-side V2 shell with read-only legacy data access."""
+    """Side-by-side V2 shell with explicit read-only service boundaries."""
 
     def __init__(self, runtime_paths: RuntimePaths, context: V2ApplicationContext) -> None:
         super().__init__()
@@ -162,6 +163,8 @@ class MainWindow(QMainWindow):
             return OverviewPage(self.context, self)
         if key == "plan":
             return PlanPage(self.context, self)
+        if key == "active":
+            return ActivePage(self.context, self)
         if key == "recon":
             return ReconPage(self.context, self)
         if key == "targets":
