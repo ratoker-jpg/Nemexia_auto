@@ -50,6 +50,12 @@ class ReadOnlyRowsModel(QAbstractTableModel):
             return self.headers[section]
         return section + 1
 
+    def replace_rows(self, rows: Sequence[Sequence[object]]) -> None:
+        """Replace displayed facts without enabling any editing path."""
+        self.beginResetModel()
+        self.rows = tuple(tuple(row) for row in rows)
+        self.endResetModel()
+
 
 class FilterableReadOnlyTable(QWidget):
     def __init__(self, headers: Sequence[str], rows: Sequence[Sequence[object]], *, placeholder: str, parent=None) -> None:

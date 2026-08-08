@@ -48,6 +48,7 @@ class V2ApplicationContext:
         self._store: ReadOnlyStore | None = None
         self._error: str | None = None
         self._flight_source: FlightSource = flight_source or OfflineFlightSource()
+        self._last_flight_status: FlightSourceStatus | None = None
         try:
             self._store = ReadOnlyStore(self.source_path)
         except ReadStoreUnavailable as exc:
@@ -99,7 +100,17 @@ class V2ApplicationContext:
         return [] if self._store is None else self._store.list_plan(limit=limit)
 
     def flight_status(self) -> FlightSourceStatus:
-        return self._flight_source.status()
+        self._last_flight_status = self._flight_source.status()
+        return self._last_flight_status
+
+    def cached_flight_status(self) -> FlightSourceStatus | None:
+        return self._last_flight_status
+
+    def refresh_live_source(self) -> FlightSourceStatus:
+        refresher = getattr(self._flight_source, "refresh", None)
+        if callable(refresher):
+            refresher()
+        return self.flight_status()
 
     def active_flights(self) -> list[ActiveFlightSnapshot]:
         return list(self._flight_source.flights())

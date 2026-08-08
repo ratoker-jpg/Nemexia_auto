@@ -210,6 +210,10 @@ class MainWindow(QMainWindow):
         button = self._nav_buttons.get(key)
         if button is not None and not button.isChecked():
             button.setChecked(True)
+        page = self.stack.widget(index)
+        reloader = getattr(page, "reload_view", None)
+        if callable(reloader):
+            reloader()
 
 
 def run_qt_app(runtime_paths: RuntimePaths, context: V2ApplicationContext) -> int:

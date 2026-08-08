@@ -51,9 +51,11 @@ def test_active_ui_does_not_claim_zero_when_source_is_unavailable() -> None:
     root = Path(__file__).resolve().parents[1]
     page = (root / "v2" / "ui" / "pages" / "active.py").read_text(encoding="utf-8")
     main = (root / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
+    assert "Live-полёты не проверены" in page
     assert "Live-полёты пока не подключены" in page
-    assert "context.flight_status()" in page
+    assert "context.refresh_live_source()" in page
     assert "context.active_flights() if status.available else []" in page
+    assert "Обновить" in page
     assert 'if key == "active"' in main
     assert "ActivePage(self.context" in main
     for forbidden in ("BrowserWorker", "send_raid", "prepare_raid", "FleetsCount", "MaxFleets"):
