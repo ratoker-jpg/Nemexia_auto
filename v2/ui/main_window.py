@@ -23,6 +23,7 @@ from v2.runtime_paths import RuntimePaths
 from v2.ui.pages.diagnostics import DiagnosticsPage
 from v2.ui.pages.overview import OverviewPage
 from v2.ui.pages.read_tables import HistoryPage, TargetsPage
+from v2.ui.pages.recon import ReconPage
 from v2.ui.theme import ORBITAL_COMMAND_QSS
 
 
@@ -176,6 +177,8 @@ class MainWindow(QMainWindow):
     def _build_page(self, key: str, title: str, description: str) -> QWidget:
         if key == "overview":
             return OverviewPage(self.context, self)
+        if key == "recon":
+            return ReconPage(self.context, self)
         if key == "targets":
             return TargetsPage(self.context, self)
         if key == "history":

@@ -51,6 +51,22 @@ class HistorySnapshot:
 
 
 @dataclass(frozen=True)
+class ReconSnapshot:
+    id: int
+    target_coord: str
+    report_at: str | None
+    energy: int | None
+    metal: int | None
+    minerals: int | None
+    gas: int | None
+    population: int | None
+    ships: int | None
+    defense: int | None
+    completeness: str | None
+    source: str
+
+
+@dataclass(frozen=True)
 class StoreStatus:
     path: Path
     query_only: bool
@@ -61,17 +77,11 @@ _REQUIRED_TABLES = frozenset({"targets", "history", "queue"})
 
 
 def _readonly_uri(path: Path) -> str:
-    # Path.as_uri handles Windows drive letters and spaces correctly for sqlite URI mode.
     return f"{path.resolve().as_uri()}?mode=ro"
 
 
 class ReadOnlyStore:
-    """Read legacy Nemexia data without ever initializing or mutating its schema.
-
-    Unlike `storage.Database`, this adapter never executes SCHEMA, migrations,
-    defaults or protected-coordinate updates. SQLite is opened with `mode=ro` and
-    additionally placed in `PRAGMA query_only=ON` as a second write barrier.
-    """
+    """Read legacy Nemexia data without initializing or mutating its schema."""
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -84,7 +94,6 @@ class ReadOnlyStore:
             tables = self._table_names()
         except sqlite3.Error as exc:
             raise ReadStoreUnavailable(f"Cannot open SQLite read-only: {self.path}") from exc
-
         missing = _REQUIRED_TABLES - tables
         if missing:
             self.close()
@@ -104,9 +113,7 @@ class ReadOnlyStore:
             self._conn = None
 
     def _table_names(self) -> frozenset[str]:
-        rows = self._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
+        rows = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         return frozenset(str(row[0]) for row in rows)
 
     def status(self) -> StoreStatus:
@@ -118,16 +125,13 @@ class ReadOnlyStore:
     def overview(self) -> OverviewSnapshot:
         target_row = self._conn.execute(
             """
-            SELECT
-                COUNT(*) AS total,
-                COALESCE(SUM(CASE WHEN enabled=1 AND blacklisted=0 THEN 1 ELSE 0 END), 0) AS enabled,
-                MAX(last_spy_at) AS latest_spy_at
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(CASE WHEN enabled=1 AND blacklisted=0 THEN 1 ELSE 0 END), 0) AS enabled,
+                   MAX(last_spy_at) AS latest_spy_at
             FROM targets
             """
         ).fetchone()
-        queued = self._conn.execute(
-            "SELECT COUNT(*) FROM queue WHERE state='queued'"
-        ).fetchone()[0]
+        queued = self._conn.execute("SELECT COUNT(*) FROM queue WHERE state='queued'").fetchone()[0]
         history_row = self._conn.execute(
             "SELECT COUNT(*) AS total, MAX(sent_at) AS latest_raid_at FROM history"
         ).fetchone()
@@ -154,19 +158,12 @@ class ReadOnlyStore:
         ).fetchall()
         return [
             TargetSnapshot(
-                coord=str(row["coord"]),
-                player=str(row["player"] or "—"),
-                energy=int(row["energy"] or 0),
-                enabled=bool(row["enabled"]),
-                blacklisted=bool(row["blacklisted"]),
-                notes=str(row["notes"] or ""),
-                metal=row["metal"],
-                minerals=row["minerals"],
-                gas=row["resource_gas"],
-                last_spy_at=row["last_spy_at"],
-                raid_count=int(row["raid_count"] or 0),
-                last_raid_at=row["last_raid_at"],
-                last_return_at=row["last_return_at"],
+                coord=str(row["coord"]), player=str(row["player"] or "—"),
+                energy=int(row["energy"] or 0), enabled=bool(row["enabled"]),
+                blacklisted=bool(row["blacklisted"]), notes=str(row["notes"] or ""),
+                metal=row["metal"], minerals=row["minerals"], gas=row["resource_gas"],
+                last_spy_at=row["last_spy_at"], raid_count=int(row["raid_count"] or 0),
+                last_raid_at=row["last_raid_at"], last_return_at=row["last_return_at"],
             )
             for row in rows
         ]
@@ -184,16 +181,35 @@ class ReadOnlyStore:
         ).fetchall()
         return [
             HistorySnapshot(
-                id=int(row["id"]),
-                source=row["source"],
-                target=str(row["target"]),
-                player=row["player"],
-                ship_count=row["ship_count"],
-                sent_at=str(row["sent_at"]),
-                arrival_at=row["arrival_at"],
-                return_at=row["return_at"],
-                status=str(row["status"]),
-                error=row["error"],
+                id=int(row["id"]), source=row["source"], target=str(row["target"]),
+                player=row["player"], ship_count=row["ship_count"], sent_at=str(row["sent_at"]),
+                arrival_at=row["arrival_at"], return_at=row["return_at"],
+                status=str(row["status"]), error=row["error"],
+            )
+            for row in rows
+        ]
+
+    def list_recon(self, *, limit: int = 2000) -> list[ReconSnapshot]:
+        """Return persisted spy reports newest first; never trigger a live refresh."""
+        if "spy_reports" not in self._table_names():
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT id, target_coord, report_at, energy, metal, minerals, gas,
+                   population, ships, defense, completeness, source
+            FROM spy_reports
+            ORDER BY COALESCE(report_at, imported_at) DESC, id DESC
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [
+            ReconSnapshot(
+                id=int(row["id"]), target_coord=str(row["target_coord"]),
+                report_at=row["report_at"], energy=row["energy"], metal=row["metal"],
+                minerals=row["minerals"], gas=row["gas"], population=row["population"],
+                ships=row["ships"], defense=row["defense"], completeness=row["completeness"],
+                source=str(row["source"] or "messages"),
             )
             for row in rows
         ]

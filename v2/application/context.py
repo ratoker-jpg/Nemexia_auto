@@ -9,6 +9,7 @@ from v2.application.read_store import (
     OverviewSnapshot,
     ReadOnlyStore,
     ReadStoreUnavailable,
+    ReconSnapshot,
     TargetSnapshot,
 )
 
@@ -32,12 +33,7 @@ def legacy_db_path(*, environ: dict[str, str] | None = None, home: Path | None =
 
 
 class V2ApplicationContext:
-    """UI-facing read context.
-
-    During the migration phase this context is deliberately read-only. It may
-    inspect the working legacy SQLite database, but all write/game-action APIs are
-    absent by design.
-    """
+    """UI-facing read context with no storage-write or game-action APIs."""
 
     def __init__(self, source_path: Path) -> None:
         self.source_path = Path(source_path)
@@ -76,16 +72,13 @@ class V2ApplicationContext:
         )
 
     def overview(self) -> OverviewSnapshot:
-        if self._store is None:
-            return OverviewSnapshot()
-        return self._store.overview()
+        return OverviewSnapshot() if self._store is None else self._store.overview()
 
     def targets(self, *, limit: int = 5000) -> list[TargetSnapshot]:
-        if self._store is None:
-            return []
-        return self._store.list_targets(limit=limit)
+        return [] if self._store is None else self._store.list_targets(limit=limit)
 
     def history(self, *, limit: int = 1000) -> list[HistorySnapshot]:
-        if self._store is None:
-            return []
-        return self._store.list_history(limit=limit)
+        return [] if self._store is None else self._store.list_history(limit=limit)
+
+    def recon(self, *, limit: int = 2000) -> list[ReconSnapshot]:
+        return [] if self._store is None else self._store.list_recon(limit=limit)
