@@ -18,15 +18,18 @@ def test_v2_capacity_selectors_are_grounded_in_saved_real_fleets_page() -> None:
     assert "#MaxFleets" in CDP
 
 
-def test_concrete_qt_browser_path_stays_attach_only_and_read_only() -> None:
-    assert "ReadOnlyAccountCdpBackend" in APP_QT
+def test_concrete_qt_read_sources_stay_attach_only_and_non_mutating() -> None:
+    # V2-45 intentionally wires a separate guarded mutation backend in app_qt.
+    # The older invariant here is narrower: the flight/account read sources must
+    # remain attach-only and must not inherit navigation or game-side effects.
+    assert "V2SpyCdpBackend" in APP_QT
     assert "ReadOnlyCdpBackend" in ACCOUNT_CDP
     assert "connect_over_cdp" in CDP
     assert "fleets.php" in CDP
     assert "#fleetHandler tbody tr" in CDP
     assert "refresh_live_source()" in ACTIVE
 
-    combined = APP_QT + CDP + ACCOUNT_CDP + ACTIVE
+    combined = CDP + ACCOUNT_CDP + ACTIVE
     for forbidden in (
         "BrowserWorker",
         "launch_yandex",
@@ -38,7 +41,7 @@ def test_concrete_qt_browser_path_stays_attach_only_and_read_only() -> None:
         "showFleets()",
         "send_raid",
         "prepare_raid",
-        "request_spy",
+        "processSpy(",
         "delete_messages",
         "bring_to_front(",
     ):
