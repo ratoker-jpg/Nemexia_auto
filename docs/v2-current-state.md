@@ -1,11 +1,12 @@
 # Nemexia Raid Manager V2 — current state
 
-Current completed action-migration baseline:
+Current completed **action-migration** baseline:
 
-- `b5d57bf620a1567b63f15a29ac8ff382692fd943`
-- PR #92 / V2-58 — asteroid recovery/parity gate
+- `1077125a59a96274017ad09c9814431bdaeb614e`
+- PR #101 / V2-66 — debris/recycling parity gate
+- exact push-CI: run #206 — green on Windows Python 3.10, Windows Python 3.11 and PySide6 offscreen smoke
 
-The V2-51→V2-58 asteroid batch is fully merged and its exact squash SHA is pinned above. The next implementation batch is debris/recycling migration V2-59→V2-66 from `docs/plans/2026-08-08-v2-debris-action-batch.md`.
+V2-59→V2-66 debris/recycling migration is fully merged. The exact final action squash is pinned above. Automatic browser navigation and the legacy 3×40 debris traversal remain intentionally deferred.
 
 ## Completed V2 action batches
 
@@ -16,32 +17,27 @@ PR #62–#71 established:
 - typed raid commands;
 - attach-only raid preparation;
 - explicit `actions_enabled` gate;
-- exactly-one-attempt SendFleet;
+- exactly-one SendFleet attempt;
 - persistent raid journal/idempotency;
 - V2-owned raid queue;
 - manual Plan dispatch;
-- live reconciliation of pending/ambiguous raids;
+- reconciliation of pending/ambiguous raids;
 - typed AutoFarm state machine;
 - explicitly armed in-session scheduler.
 
-Code baseline after V2-40: `a3db5b277ecea3ef5358a9cd9b0e3f93eebb8dd9`.
+Final batch baseline: `a3db5b277ecea3ef5358a9cd9b0e3f93eebb8dd9`.
 
 ### Fresh reconnaissance / refill — V2-41→V2-50
 
 PR #73–#82 established:
 
-- effective legacy spy/report contract audit and sanitized fixtures;
-- attach-only rendered spy-report reader with typed fresh/stale/no-report/CAPTCHA/unavailable states;
-- exact-fleet typed `processSpy(fleet_id)` boundary;
-- persistent V2 spy journal and idempotency;
-- exactly-one-attempt verified fresh report acquisition;
-- V2-owned recon targets and immutable report snapshots;
-- deterministic manual-metal/manual-mineral/AutoFarm queue policy;
-- controlled verified recon → ingestion → queue refill;
-- persisted 25-minute successful-empty-scan cooldown separate from raid return-buffer;
-- continuous in-session recovery from `need_recon` using a user-supplied exact Spy fleet ID;
-- global safety blocking on pending/ambiguous raid or spy side effects;
-- final raid-loop parity/safety gate.
+- attach-only rendered spy-report reader;
+- exact `processSpy(fleet_id)`, never bulk `processSpy(0)`;
+- persistent spy journal and exactly-one verified report acquisition;
+- V2-owned recon targets/reports;
+- deterministic metal/mineral/AutoFarm refill;
+- 25-minute successful-empty-scan cooldown;
+- fail-closed recovery with no retry after ambiguity.
 
 Final batch squash: `4e147f7f51cae9f063fabf7ad069e0b0be48a4bc` / PR #82.
 
@@ -51,21 +47,33 @@ Detailed parity record: [`audits/2026-08-08-v2-raid-loop-parity-gate.md`](audits
 
 PR #84–#92 established:
 
-- effective asteroid movement/dispatch contract audit + sanitized fixtures;
-- attach-only current-system asteroid observation reader;
-- typed asteroid dispatch preparation/result boundary;
-- V2-owned persistent `asteroid_actions` journal and unresolved-trajectory idempotency;
-- exactly-one-attempt verified recycler SendFleet with fresh live re-check immediately before mutation;
-- V2-owned immutable `asteroid_observations` and deterministic current-coordinate candidate projection;
-- real Qt Asteroids page with explicit read, typed multi-selection, read-only preparation and confirmed bounded dispatch;
-- stop-on-first CAPTCHA/ambiguity/error semantics;
-- V2-58 manual Stop that blocks the next candidate without cancelling an already-started remote attempt;
-- restart recovery proving durable `pending`/`ambiguous` asteroid actions block duplicate side effects;
-- final asteroid parity gate covering movement, capacity, recyclers, exact new-flight verification and no-retry/no-scheduler boundaries.
+- asteroid movement/dispatch contract audit and sanitized fixtures;
+- attach-only current-system asteroid reader;
+- typed asteroid dispatch;
+- persistent `asteroid_actions` unresolved-trajectory idempotency;
+- exactly-one verified recycler SendFleet with fresh live re-check;
+- immutable `asteroid_observations` and deterministic candidate projection;
+- real Qt Asteroids page with bounded multi-selection, read-only preparation, explicit confirmation and manual Stop;
+- restart recovery, no retry and no scheduler.
 
-Final asteroid batch squash: `b5d57bf620a1567b63f15a29ac8ff382692fd943` / PR #92.
+Final batch squash: `b5d57bf620a1567b63f15a29ac8ff382692fd943` / PR #92.
 
 Detailed parity record: [`audits/2026-08-08-v2-asteroid-parity-gate.md`](audits/2026-08-08-v2-asteroid-parity-gate.md).
+
+### Debris / recycling migration — V2-59→V2-66
+
+PR #94–#101 established:
+
+- V2-59 / PR #94 / `7041ebcee0a96474de9800cf6b454c6e6c9fec6e` — exact `squareInfo` debris contract, sanitized fixtures, legacy scan completion/cancel semantics and proof that debris must reuse asteroid mutation;
+- V2-60 / PR #95 / `00784ede604a3d4674596b4b8fbe3aa1b620f74e` — attach-only current-system debris reader with distinct `no_debris`, CAPTCHA, unavailable and partial/unreadable states;
+- V2-61 / PR #96 / `84d22044d34c0122506217df6f23ead2b868fa03` — append-only V2-owned debris evidence, exact duplicate idempotency and deterministic current-coordinate candidates;
+- V2-62 / PR #97 / `c8aa2aa9582a107689112b28a48f2173bc900450` — typed debris → existing asteroid command mapping and proof that debris labels/request IDs cannot bypass the same unresolved trajectory guard;
+- V2-63 / PR #98 / `27d0b299cfae9a0ef5f0f4953a80baa8efa9b916` — bounded prepare → single-use explicit confirmation → dispatch workflow, stop-on-first failure/ambiguity/CAPTCHA/manual Stop, no retry/scheduler;
+- V2-64 / PR #99 / `1e6726d35f8da6e7dd3c73313028bf890c8080e6` — real Qt Debris page; review corrected the legacy default to debris-specific `debris_recyclers`;
+- V2-65 / PR #100 / `fb8628b0c38840936f95fee9d84703969d6e5c13` — restart/recovery/discovery/lifecycle hardening, including stale confirmation disarm on input/selection/page/window lifecycle;
+- V2-66 / PR #101 / `1077125a59a96274017ad09c9814431bdaeb614e` — final debris parity/recovery gate.
+
+Detailed parity record: [`audits/2026-08-08-v2-debris-parity-gate.md`](audits/2026-08-08-v2-debris-parity-gate.md).
 
 ## Safety baseline
 
@@ -75,7 +83,7 @@ Rollback refs remain untouched:
 - `archive/pre-pyside6-4e01bfda`
 - original stable Tkinter SHA `4e01bfda752c6383e48c0f6eb8be64d68676da67`
 
-Default launcher is still:
+Default launcher remains:
 
 ```text
 run_app.bat -> app_entry.py
@@ -87,11 +95,11 @@ PySide6 remains a separate opt-in entrypoint:
 app_qt.py
 ```
 
-No final Tkinter → Qt cutover has occurred.
+No Tkinter → Qt cutover has occurred.
 
 ## Storage boundary
 
-Legacy SQLite remains read-only:
+Legacy SQLite remains strictly read-only:
 
 - URI `mode=ro`;
 - `PRAGMA query_only=ON`;
@@ -99,9 +107,9 @@ Legacy SQLite remains read-only:
 
 V2-owned runtime storage remains under `%LOCALAPPDATA%/NemexiaRaidManagerV2/`.
 
-Current V2 SQLite schema version: **8**.
+Current core V2 SQLite schema version: **8**.
 
-V2-owned tables/state include:
+V2-owned state includes:
 
 - allow-listed typed settings;
 - `raid_actions`;
@@ -110,143 +118,88 @@ V2-owned tables/state include:
 - `recon_targets`;
 - immutable `recon_reports`;
 - `asteroid_actions`;
-- immutable `asteroid_observations`.
+- immutable `asteroid_observations`;
+- additive immutable `debris_observations` evidence.
 
-Legacy targets/queue may seed missing V2-owned state, but later legacy reads do not overwrite mutable V2 queue/recon/asteroid state.
+`debris_observations` is feature-local additive storage and does not modify legacy SQLite. A `no_debris` result from one currently opened system never deletes evidence learned from other systems.
 
 ## Browser boundary
 
-V2 is attach-only. It uses an existing Chromium/Yandex CDP session and does not launch the browser, create tabs, or navigate the account automatically.
+V2 remains attach-only. It uses an existing Chromium/Yandex CDP session and does not launch the browser, create tabs or navigate the account automatically.
 
 Current live prerequisites depend on the action:
 
-- already-open `fleets.php` for fleet/capacity/raid/spy/asteroid-send facts;
+- already-open `fleets.php` for fleet/capacity/raid/spy/asteroid/debris-send facts;
 - already-rendered System messages on `options.php` for spy-report verification;
-- already-open `galaxy.php` for explicit current-system asteroid observation.
+- already-open `galaxy.php` for explicit current-system asteroid/debris observation.
 
 V2 does **not** automatically switch galaxy systems or traverse 3×40 systems.
 
-CAPTCHA remains strict stop/fail-closed. V2 never solves, clicks, or bypasses CAPTCHA.
+CAPTCHA remains strict detect → STOP. V2 never solves, clicks or bypasses CAPTCHA.
 
 ## Raid mutation boundary
 
-Raid actions are disabled by default and require `actions_enabled=true`.
-
-Every raid mutation follows:
-
-1. typed validation;
-2. read-only preparation;
-3. exact source/target/ship facts;
-4. persistent immutable `request_id` before SendFleet;
-5. exactly one SendFleet attempt;
-6. exact new fleet ID + target + mission `Атака` verification;
-7. verified or ambiguous result;
-8. no automatic retry after ambiguity.
-
-Pending/ambiguous raids may be reconciled only from live fleet evidence; ambiguity never creates an automatic resend window.
+Raid actions require `actions_enabled=true` and preserve typed validation, read-only preparation, persistent request identity, exactly one SendFleet attempt, exact new-flight verification and no automatic retry after ambiguity.
 
 ## Spy / fresh-report mutation boundary
 
-V2 does **not** use bulk `processSpy(0)`.
-
-Supported mutation is one exact already-existing espionage row:
-
-```text
-processSpy(fleet_id)
-```
-
-The path is:
-
-1. caller supplies exact `fleet_id`;
-2. V2 proves the exact DOM row and derives source/target from it;
-3. rendered report source must already be available;
-4. persistent immutable spy request ID is written before mutation;
-5. exactly one `processSpy(fleet_id)` attempt;
-6. success requires a new report ID + exact target + fresh timestamp;
-7. ambiguous/unreadable/CAPTCHA results stop without automatic retry.
-
-V2 does not invent a target route and does not create a brand-new espionage flight when no processable spy row exists.
+V2 does not use `processSpy(0)`. Supported mutation remains exactly one already-existing espionage row via `processSpy(fleet_id)`, with persistent request identity, exact report verification and fail-closed ambiguity/CAPTCHA handling.
 
 ## Recon / queue contracts
 
-Nemexia report wall-clock is interpreted as server UTC+04 and normalized to UTC.
+Nemexia report wall-clock is interpreted as server UTC+04 and normalized to UTC. Default freshness window remains 24 hours. Missing timestamps are never replaced by current time.
 
-Default freshness window: **24 hours**. Missing timestamp is never replaced by current time.
-
-V2-owned recon preserves report ID, target, timestamp, energy, metal, minerals, gas and source/ingestion provenance. Stale or partial evidence is rejected.
-
-Queue policies remain distinct:
-
-- manual metal: `metal >= 480,000` after target/freshness filters;
-- manual minerals: any reported mineral value;
-- AutoFarm: `minerals >= 500,000`, ranking minerals desc → metal desc → coordinate.
-
-Fresh reports + zero eligible targets is a successful empty scan with a persisted **25-minute** cooldown. No reports/stale-only/CAPTCHA/live failure is a stop state, not that cooldown.
+Fresh reports + zero eligible targets remains a successful empty scan with a persisted 25-minute cooldown. Missing/stale/partial/CAPTCHA/live-unavailable evidence is a stop state, not that cooldown.
 
 ## AutoFarm V2
 
-Continuous mode:
+Continuous mode still starts disarmed on process launch and requires explicit manual Start. Scheduler arm and exact Spy fleet ID are session-only. Pending/ambiguous side effects, CAPTCHA, stale/no fresh evidence, live failure or wave failure disarm the cycle.
 
-- starts disarmed on every new process;
-- requires explicit manual Start;
-- checks live state every 30 seconds;
-- waits for farm-blocking attacks and configured return buffer;
-- blocks globally on unresolved raid or spy journal;
-- may recover an empty queue only through a user-supplied exact Spy fleet ID for the current session;
-- scheduler arm and Spy fleet ID are not persisted;
-- ambiguity, CAPTCHA, stale/no fresh evidence, live failure or wave failure disarms the cycle.
+## Shared asteroid / debris mutation boundary
 
-## Asteroid mutation boundary
+There is exactly **one authoritative recycler SendFleet boundary** for generic asteroid and debris execution.
 
-Asteroid/recycler execution is migrated, but automatic asteroid cycling is not.
+Controlled dispatch follows:
 
-A controlled asteroid dispatch follows:
-
-1. exact V2-owned `AsteroidObservationFact` / candidate;
-2. typed validation and `actions_enabled` gate;
+1. immutable proven `AsteroidObservationFact` — directly or wrapped by a proven `DebrisObservationFact`/candidate;
+2. typed validation + `actions_enabled`;
 3. read-only preparation;
 4. deterministic current-coordinate prediction from movement provenance;
-5. recycler availability / live fleet capacity / movement safety checks;
-6. persistent immutable `asteroid_actions` request identity before SendFleet;
+5. recycler availability / live fleet capacity / movement-margin checks;
+6. persistent `asteroid_actions` unresolved trajectory identity before SendFleet;
 7. fresh live trajectory + target + recycler + capacity + CAPTCHA re-check immediately before mutation;
 8. exactly one SendFleet attempt;
-9. exact new fleet ID + exact source + exact target + mission `Добыча газа` verification;
-10. verified / ambiguous / failed-safe journal state;
+9. exact new fleet ID + source + target + mission `Добыча газа` verification;
+10. `verified` / `ambiguous` / `failed_safe` journal result;
 11. no automatic retry after ambiguity.
 
-Crash/restart behavior is conservative: unresolved `pending` or `ambiguous` trajectory identity blocks a new attempt.
+Debris does **not** have a second browser SendFleet implementation and does **not** have a `debris_actions` journal. A different UI label, request ID or recycler count cannot create a retry namespace for the same unresolved trajectory.
 
-### V2-owned asteroid candidate state
+Crash/restart is conservative: unresolved `pending` or `ambiguous` `asteroid_actions` identity blocks another attempt after restart.
 
-`asteroid_observations` stores immutable movement evidence with provenance:
+## V2-owned debris discovery/evidence
 
-- origin galaxy/system/position;
-- last and next movement time;
-- period;
-- observation time;
-- evidence source.
+The accepted debris marker is the `squareInfo` evidence:
 
-Candidate projection is deterministic. Exact duplicate evidence is idempotent; multiple proven observations may remain for provenance while the current candidate view deduplicates by predicted current coordinate.
+```text
+Этот астероид содержит обломки
+```
 
-There is intentionally **no age-only TTL** for a proven movement trajectory because the accepted legacy contract did not establish one. Evidence remains usable until deterministic prediction leaves the supported coordinate range or newer live evidence contradicts it.
+V2 normalizes presentation markup but requires the same complete asteroid movement provenance used by the asteroid reader. A marker with partial/unreadable movement facts is `partial_evidence`, not `no_debris`.
 
-The accidental 5000-row projection cap found during V2-56 review was removed; valid persisted evidence is not silently truncated.
+A fully readable currently opened system with no marker is `no_debris` **for that system only**.
 
-### Controlled Qt asteroid workflow
+Evidence is append-only across manually opened systems. V2 never claims that reading one or several manually opened systems is a completed legacy 120-system scan.
 
-The real Asteroids page supports:
+## Controlled Qt asteroid and debris workflows
 
-- explicit read of the already-open current `galaxy.php` system;
-- V2-owned evidence ingestion/candidate preview;
-- typed multi-selection bounded to 200 candidates;
-- read-only preparation before confirmation;
-- explicit confirmed journaled dispatch;
-- stop at first CAPTCHA, ambiguity or error;
-- manual Stop between side effects.
+Both real pages support bounded typed multi-selection, read-only preparation, explicit confirmed journaled dispatch and manual Stop between side effects.
 
-Manual Stop never cancels an already-started remote attempt. It prevents allocation/start of the next request only after the current attempt has settled into its journaled result. Hiding the Asteroids page or closing its parent window also requests Stop before the next candidate.
+The Debris page additionally supports explicit `Прочитать открытую систему` current-system evidence ingestion. It exposes CAPTCHA/unavailable/partial/no-debris states rather than hiding them.
 
-There is no V2 asteroid scheduler or persisted asteroid auto-repeat arm.
+Manual Stop never cancels an already-started remote attempt. It prevents the next request only after the current attempt settles. Debris unconfirmed preparation is also disarmed when selection/config changes, the page is hidden or the context/window closes.
+
+There is no asteroid or debris auto-repeat scheduler.
 
 ## Qt surfaces
 
@@ -257,13 +210,12 @@ Real PySide6 application surfaces include:
 - Active;
 - AutoFarm;
 - Asteroids;
+- Debris;
 - Recon;
 - Targets;
 - History;
 - Settings;
 - Diagnostics.
-
-Debris remains a placeholder and is the next migration target.
 
 ## Explicitly deferred
 
@@ -272,29 +224,22 @@ Still not enabled in V2:
 - automatic message deletion;
 - automatic CAPTCHA interaction;
 - unattended browser launch/navigation;
-- automatic galaxy/system traversal;
+- automatic galaxy/system traversal, including legacy 3×40 debris scanning;
 - creation of a new espionage route when no exact processable spy fleet row exists;
 - asteroid auto-repeat / continuous asteroid scheduler;
-- debris/recycling V2 evidence + controlled execution surface;
+- debris auto-repeat / continuous debris scheduler;
 - default launcher cutover to Qt;
 - deletion of legacy Tkinter/patch modules.
 
-## Current implementation order
+## Next contract batch
 
-The next batch is [`plans/2026-08-08-v2-debris-action-batch.md`](plans/2026-08-08-v2-debris-action-batch.md):
+The next prepared batch is [`plans/2026-08-08-v2-browser-navigation-contract-batch.md`](plans/2026-08-08-v2-browser-navigation-contract-batch.md).
 
-1. V2-59 debris contract audit + sanitized fixtures;
-2. V2-60 attach-only current-system debris reader;
-3. V2-61 V2-owned debris evidence/candidate state;
-4. V2-62 prove/reuse the existing asteroid mutation boundary or stop if a real side-effect difference exists;
-5. V2-63 controlled bounded debris dispatch workflow;
-6. V2-64 real Qt Debris surface;
-7. V2-65 recovery/discovery hardening;
-8. V2-66 debris parity gate + handoff.
+Its purpose is **not** to turn on automatic 3×40 traversal. It first audits browser/tab/navigation ownership because the old Rest Mode concept and the legacy debris full scan both assume navigation that is currently forbidden by the attach-only baseline.
 
-The legacy automatic 3×40 debris scan is **not** part of this batch because automatic browser navigation remains deferred. Current-system reads may accumulate evidence but must never pretend to be a completed full scan.
+The next batch must start research-only and may introduce an explicit single-step navigation boundary only if the audit proves safe semantics. Automatic loops/full traversal remain deferred beyond that gate.
 
-Do not create a second SendFleet/journal implementation if V2-59/V2-62 prove that debris dispatch is the same migrated asteroid `Добыча газа` side effect.
+Do not implement the old Rest Mode plan literally until this navigation/read ownership contract is proven.
 
 ## Verification gate
 
