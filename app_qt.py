@@ -3,10 +3,10 @@ from __future__ import annotations
 import sys
 
 from v2.application.asteroid_actions import AsteroidActionService
-from v2.application.asteroid_context import AsteroidEnabledApplicationContext
-from v2.application.asteroid_source import V2AsteroidSource
 from v2.application.browser_read_service import V2BrowserFlightSource
 from v2.application.context import V2ApplicationContext
+from v2.application.debris_context import DebrisEnabledApplicationContext
+from v2.application.debris_source import V2DebrisSource
 from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
 from v2.application.raid_actions import RaidActionService
@@ -16,7 +16,9 @@ from v2.application.report_source import V2BrowserReportSource
 from v2.application.spy_actions import SpyActionService
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
+from v2.application.asteroid_source import V2AsteroidSource
 from v2.infrastructure.cdp_asteroid_backend import V2AsteroidCdpBackend
+from v2.infrastructure.cdp_debris_reader import ReadOnlyDebrisCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
 from v2.infrastructure.cdp_spy_backend import V2SpyCdpBackend
 from v2.persistence.database import V2Database
@@ -33,6 +35,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
     raid_actions: RaidActionService | None = None
     spy_actions: SpyActionService | None = None
     asteroid_actions: AsteroidActionService | None = None
+    debris_source: V2DebrisSource | None = None
     try:
         try:
             with ReadOnlyStore(source_path) as legacy:
@@ -48,6 +51,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
         flight_source = V2BrowserFlightSource(spy_backend)
         report_source = V2BrowserReportSource(spy_backend)
         asteroid_source = V2AsteroidSource(asteroid_backend)
+        debris_source = V2DebrisSource(ReadOnlyDebrisCdpBackend(endpoint.endpoint))
         raid_actions = RaidActionService(
             V2RaidCdpBackend(endpoint.endpoint),
             enabled=bool(settings.get("actions_enabled")),
@@ -60,7 +64,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             asteroid_backend,
             enabled=bool(settings.get("actions_enabled")),
         )
-        return AsteroidEnabledApplicationContext(
+        return DebrisEnabledApplicationContext(
             source_path,
             flight_source=flight_source,
             report_source=report_source,
@@ -72,8 +76,11 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             spy_actions=spy_actions,
             asteroid_source=asteroid_source,
             asteroid_actions=asteroid_actions,
+            debris_source=debris_source,
         )
     except Exception:
+        if debris_source is not None:
+            debris_source.close()
         if asteroid_actions is not None:
             asteroid_actions.close()
         if spy_actions is not None:
