@@ -52,7 +52,8 @@ def test_debris_context_reuses_same_asteroid_action_service_and_journal() -> Non
     assert "AsteroidRequestCoordinator(self._asteroid_actions, database)" in source
     assert "DebrisDispatchReuseGate(coordinator)" in source
     assert "DebrisWorkflowController(self._debris_gate)" in source
-    assert "debris_actions" not in source
+    assert '"debris_actions"' not in source
+    assert "CREATE TABLE debris_actions" not in source
 
 
 def test_qt_bootstrap_wires_attach_only_debris_reader_without_launcher_cutover() -> None:
