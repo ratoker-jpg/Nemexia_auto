@@ -14,7 +14,7 @@ def test_overview_and_diagnostics_replace_placeholders() -> None:
     assert "DiagnosticsPage(self.context, self.runtime_paths" in MAIN
 
 
-def test_overview_uses_only_persisted_application_snapshot() -> None:
+def test_overview_uses_persisted_and_cached_application_snapshots() -> None:
     assert "context.overview()" in OVERVIEW
     for field in (
         "targets_total",
@@ -30,10 +30,13 @@ def test_overview_uses_only_persisted_application_snapshot() -> None:
     assert "BrowserWorker" not in OVERVIEW
 
 
-def test_diagnostics_is_transparent_about_read_only_and_v2_paths() -> None:
+def test_diagnostics_is_transparent_about_legacy_readonly_and_v2_owned_paths() -> None:
     assert "context.status()" in DIAGNOSTICS
     assert "runtime_paths.root" in DIAGNOSTICS
     assert "runtime_paths.database" in DIAGNOSTICS
     assert "runtime_paths.browser_profile" in DIAGNOSTICS
-    assert '"read-only preview"' in DIAGNOSTICS
+    assert "Legacy SQLite режим" in DIAGNOSTICS
+    assert "V2 SQLite" in DIAGNOSTICS
+    assert "V2 settings" in DIAGNOSTICS
+    assert "V2 isolated writes + legacy/browser read-only" in DIAGNOSTICS
     assert "send_raid" not in DIAGNOSTICS
