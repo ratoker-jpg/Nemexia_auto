@@ -76,6 +76,31 @@ class V2Database:
         rows = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         return frozenset(str(row[0]) for row in rows)
 
+    def read_setting_raw(self, key: str) -> str | None:
+        if self._conn is None:
+            raise V2DatabaseError("V2 database is closed")
+        row = self._conn.execute("SELECT value FROM settings WHERE key=?", (str(key),)).fetchone()
+        return str(row[0]) if row is not None else None
+
+    def write_setting_raw(self, key: str, value: str) -> None:
+        if self._conn is None:
+            raise V2DatabaseError("V2 database is closed")
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                """,
+                (str(key), str(value), now),
+            )
+
+    def read_all_settings_raw(self) -> dict[str, str]:
+        if self._conn is None:
+            raise V2DatabaseError("V2 database is closed")
+        rows = self._conn.execute("SELECT key, value FROM settings ORDER BY key").fetchall()
+        return {str(row[0]): str(row[1]) for row in rows}
+
     def _migrate(self) -> None:
         current = self.schema_version()
         if current > V2_SCHEMA_VERSION:
