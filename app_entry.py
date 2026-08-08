@@ -12,6 +12,7 @@ from farm_flight_classification_fix import install_farm_flight_classification_fi
 from farm_runtime_reliability import install_farm_capacity_fix, install_farm_ui_fix
 from farm_wave_cooldown import install_farm_wave_cooldown
 from fleet_capacity_presentation import install_fleet_capacity_presentation
+from fleet_capacity_settings_fallback import install_fleet_capacity_settings_fallback
 from flight_time_provenance_fix import install_flight_time_provenance_fix
 from operational_variability import install_asteroid_scope_ui, install_raid_home_selection
 from queue_row_numbering import install_queue_row_numbering
@@ -74,6 +75,8 @@ install_farm_wave_cooldown(BaseRaidManagerApp)
 install_farm_ui_fix(BaseRaidManagerApp)
 # Sync/dashboard use the same live FleetsCount/MaxFleets values as the sender.
 install_fleet_capacity_presentation(BaseRaidManagerApp)
+# If Nemexia exposes a stale/zero max counter, fall back to the explicit app setting.
+install_fleet_capacity_settings_fallback(app_module.BrowserWorker, BaseRaidManagerApp)
 install_motion(BaseRaidManagerApp)
 # Patch only debris presentation helpers before the feature wrapper captures the shell.
 install_debris_layout(debris_module)
