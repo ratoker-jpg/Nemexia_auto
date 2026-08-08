@@ -9,7 +9,8 @@ def test_settings_page_is_real_and_writes_only_through_v2_context() -> None:
     assert 'if key == "settings"' in main
     assert "SettingsPage(self.context" in main
     assert "context.v2_settings_snapshot()" in page
-    assert "context.set_v2_setting" in page
+    assert "context.set_v2_settings(values)" in page
+    assert "context.set_v2_setting(" not in page
     assert "CDP port" in page
     assert "Планета автофарма" in page
     assert "Командная планета" in page
