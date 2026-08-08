@@ -9,6 +9,7 @@ from background_browser_fix import install_background_browser_fix
 from bound_tab_fix import install_bound_tab_fix
 from command_planet_exclusion import install_command_planet_exclusion
 from farm_flight_classification_fix import install_farm_flight_classification_fix
+from farm_no_target_retry import install_farm_no_target_retry
 from farm_runtime_reliability import install_farm_capacity_fix, install_farm_ui_fix
 from farm_wave_cooldown import install_farm_wave_cooldown
 from fleet_capacity_presentation import install_fleet_capacity_presentation
@@ -67,6 +68,8 @@ install_asteroid_scope_ui(BaseRaidManagerApp)
 install_tables_dpi(BaseRaidManagerApp)
 install_queue_row_numbering(BaseRaidManagerApp)
 install_resource_farm_auto(BaseRaidManagerApp)
+# Empty fresh scans always wait exactly 25 minutes before the next scan.
+install_farm_no_target_retry(BaseRaidManagerApp)
 install_farm_flight_classification_fix(BaseRaidManagerApp)
 # Capacity must wrap the classified send implementation before cooldown captures it.
 install_farm_capacity_fix(app_module.BrowserWorker, BaseRaidManagerApp)
