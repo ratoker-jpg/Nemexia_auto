@@ -8,11 +8,10 @@ from typing import Mapping
 from v2.application.flight_source import (
     ActiveFlightSnapshot, FleetCapacitySnapshot, FlightSource, FlightSourceStatus, OfflineFlightSource,
 )
-from v2.application.live_flight_semantics import (
-    ClassifiedActiveFlight, build_live_flight_policy, classify_active_flights,
-)
+from v2.application.live_flight_semantics import ClassifiedActiveFlight, build_live_flight_policy, classify_active_flights
 from v2.application.live_overview import LiveOverviewSnapshot, build_live_overview
-from v2.application.raid_actions import RaidActionService, RaidCommand, RaidPreparation
+from v2.application.raid_actions import RaidActionService, RaidCommand, RaidDispatchResult, RaidPreparation
+from v2.application.raid_journal import RaidActionRecord, RaidDispatchCoordinator
 from v2.application.read_store import (
     HistorySnapshot, OverviewSnapshot, QueueSnapshot, ReadOnlyStore, ReadStoreUnavailable,
     ReconSnapshot, TargetSnapshot,
@@ -75,17 +74,14 @@ class V2ApplicationContext:
 
     def close(self) -> None:
         if self._store is not None:
-            self._store.close()
-            self._store = None
+            self._store.close(); self._store = None
         closer = getattr(self._flight_source, "close", None)
         if callable(closer):
             closer()
         if self._raid_actions is not None:
-            self._raid_actions.close()
-            self._raid_actions = None
+            self._raid_actions.close(); self._raid_actions = None
         if self._v2_database is not None:
-            self._v2_database.close()
-            self._v2_database = None
+            self._v2_database.close(); self._v2_database = None
 
     def status(self) -> DataSourceStatus:
         if self._store is None:
@@ -141,11 +137,49 @@ class V2ApplicationContext:
     def raid_actions_enabled(self) -> bool:
         return bool(self._raid_actions is not None and self._raid_actions.enabled)
 
+    def _raid_command(self, target: str, player: str, ship_count: int) -> RaidCommand:
+        return RaidCommand(
+            target=target,
+            player=player,
+            ship_count=ship_count,
+            home=str(self.v2_setting("farm_home", "")),
+        )
+
     def prepare_raid(self, target: str, player: str, ship_count: int) -> RaidPreparation:
         if self._raid_actions is None:
             raise RuntimeError("V2 raid action service is unavailable")
-        home = str(self.v2_setting("farm_home", ""))
-        return self._raid_actions.prepare(RaidCommand(target=target, player=player, ship_count=ship_count, home=home))
+        return self._raid_actions.prepare(self._raid_command(target, player, ship_count))
+
+    def dispatch_plan_raid(
+        self, *, queue_id: int, target: str, player: str, ship_count: int, request_id: str,
+    ) -> RaidDispatchResult:
+        if self._raid_actions is None or self._v2_database is None or self._v2_queue is None:
+            raise RuntimeError("V2 raid dispatch services are unavailable")
+        item = next((row for row in self.plan() if row.id == int(queue_id)), None)
+        if item is None:
+            raise RuntimeError(f"Queue row not found: {queue_id}")
+        if item.coord != str(target):
+            raise RuntimeError("Selected queue row changed; refresh Plan before sending")
+        if item.state != "queued":
+            raise RuntimeError(f"Queue row is not queued: {item.state}")
+        coordinator = RaidDispatchCoordinator(self._raid_actions, self._v2_database)
+        try:
+            result = coordinator.dispatch(
+                self._raid_command(item.coord, item.player or player, ship_count),
+                request_id=request_id,
+            )
+        except Exception:
+            record = coordinator.record(request_id)
+            if record is not None and record.status == "ambiguous":
+                self._v2_queue.set_state(item.id, "ambiguous")
+            raise
+        self._v2_queue.set_state(item.id, "sent" if result.verified else "ambiguous")
+        return result
+
+    def recent_raid_actions(self, *, limit: int = 200) -> list[RaidActionRecord]:
+        if self._raid_actions is None or self._v2_database is None:
+            return []
+        return RaidDispatchCoordinator(self._raid_actions, self._v2_database).recent(limit=limit)
 
     def flight_status(self) -> FlightSourceStatus:
         self._last_flight_status = self._flight_source.status()
@@ -160,9 +194,7 @@ class V2ApplicationContext:
             refresher()
         status = self.flight_status()
         self._live_snapshot_ready = True
-        self._last_active_flights = ()
-        self._last_owned_planets = ()
-        self._last_capacity = None
+        self._last_active_flights = (); self._last_owned_planets = (); self._last_capacity = None
         if not status.available:
             return status
         try:
@@ -174,9 +206,7 @@ class V2ApplicationContext:
             if callable(capacity_reader):
                 self._last_capacity = capacity_reader()
         except Exception as exc:
-            self._last_active_flights = ()
-            self._last_owned_planets = ()
-            self._last_capacity = None
+            self._last_active_flights = (); self._last_owned_planets = (); self._last_capacity = None
             self._last_flight_status = FlightSourceStatus(False, f"Live-read остановлен: {exc}")
         return self._last_flight_status
 
@@ -191,8 +221,7 @@ class V2ApplicationContext:
 
     def _flight_policy(self):
         if self._v2_settings is not None:
-            farm_home = str(self._v2_settings.get("farm_home"))
-            parts = farm_home.split(":")
+            farm_home = str(self._v2_settings.get("farm_home")); parts = farm_home.split(":")
             settings = {"home_g": parts[0], "home_s": parts[1], "home_p": parts[2]} if len(parts) == 3 else {}
             command_planets = (str(self._v2_settings.get("command_planet")),)
         else:
@@ -204,9 +233,7 @@ class V2ApplicationContext:
         return list(classify_active_flights(self.active_flights(), self._flight_policy()))
 
     def cached_classified_active_flights(self) -> list[ClassifiedActiveFlight]:
-        if not self._live_snapshot_ready:
-            return []
-        return list(classify_active_flights(self._last_active_flights, self._flight_policy()))
+        return [] if not self._live_snapshot_ready else list(classify_active_flights(self._last_active_flights, self._flight_policy()))
 
     def farm_blocking_flights(self) -> list[ClassifiedActiveFlight]:
         return [item for item in self.classified_active_flights() if item.facts.blocks_farm_cycle]
