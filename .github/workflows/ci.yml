@@ -40,4 +40,4 @@ jobs:
         run: python -m pytest -q
 
       - name: Run legacy self-test
-        run: python self_test.py
+        run: python ci/run_legacy_self_test.py
