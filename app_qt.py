@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import sys
 
+from v2.application.asteroid_actions import AsteroidActionService
+from v2.application.asteroid_context import AsteroidEnabledApplicationContext
+from v2.application.asteroid_source import V2AsteroidSource
 from v2.application.browser_read_service import V2BrowserFlightSource
 from v2.application.context import V2ApplicationContext
 from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
 from v2.application.raid_actions import RaidActionService
 from v2.application.read_store import ReadOnlyStore, ReadStoreUnavailable
-from v2.application.recon_context import ReconOwnedApplicationContext
 from v2.application.recon_repository import V2ReconRepository
 from v2.application.report_source import V2BrowserReportSource
 from v2.application.spy_actions import SpyActionService
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
+from v2.infrastructure.cdp_asteroid_backend import V2AsteroidCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
 from v2.infrastructure.cdp_spy_backend import V2SpyCdpBackend
 from v2.persistence.database import V2Database
@@ -29,6 +32,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
     recon = V2ReconRepository(database)
     raid_actions: RaidActionService | None = None
     spy_actions: SpyActionService | None = None
+    asteroid_actions: AsteroidActionService | None = None
     try:
         try:
             with ReadOnlyStore(source_path) as legacy:
@@ -40,8 +44,10 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
 
         endpoint = resolve_cdp_endpoint(source_path, preferred_port=settings.get("cdp_port"))
         spy_backend = V2SpyCdpBackend(endpoint.endpoint)
+        asteroid_backend = V2AsteroidCdpBackend(endpoint.endpoint)
         flight_source = V2BrowserFlightSource(spy_backend)
         report_source = V2BrowserReportSource(spy_backend)
+        asteroid_source = V2AsteroidSource(asteroid_backend)
         raid_actions = RaidActionService(
             V2RaidCdpBackend(endpoint.endpoint),
             enabled=bool(settings.get("actions_enabled")),
@@ -50,7 +56,11 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             spy_backend,
             enabled=bool(settings.get("actions_enabled")),
         )
-        return ReconOwnedApplicationContext(
+        asteroid_actions = AsteroidActionService(
+            asteroid_backend,
+            enabled=bool(settings.get("actions_enabled")),
+        )
+        return AsteroidEnabledApplicationContext(
             source_path,
             flight_source=flight_source,
             report_source=report_source,
@@ -60,8 +70,12 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             v2_recon=recon,
             raid_actions=raid_actions,
             spy_actions=spy_actions,
+            asteroid_source=asteroid_source,
+            asteroid_actions=asteroid_actions,
         )
     except Exception:
+        if asteroid_actions is not None:
+            asteroid_actions.close()
         if spy_actions is not None:
             spy_actions.close()
         if raid_actions is not None:
