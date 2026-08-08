@@ -102,12 +102,24 @@ class PlanPage(FilterableReadOnlyTable):
             return None
         return self._items[source_index.row()]
 
-    def prepare_selected(self) -> None:
+    def _actionable_item(self, title: str) -> QueueSnapshot | None:
         item = self._selected_item()
         if item is None:
-            return
+            return None
         if item.state != "queued":
-            QMessageBox.warning(self, "Подготовка", f"Строка имеет состояние «{item.state}», а не queued.")
+            QMessageBox.warning(self, title, f"Строка имеет состояние «{item.state}», а не queued.")
+            return None
+        if not item.enabled:
+            QMessageBox.warning(self, title, f"Цель {item.coord} выключена и не может быть отправлена.")
+            return None
+        if item.blacklisted:
+            QMessageBox.warning(self, title, f"Цель {item.coord} находится в blacklist.")
+            return None
+        return item
+
+    def prepare_selected(self) -> None:
+        item = self._actionable_item("Подготовка")
+        if item is None:
             return
         self._set_busy(True, f"Подготовка {item.coord}…")
         try:
@@ -124,11 +136,8 @@ class PlanPage(FilterableReadOnlyTable):
             self._set_busy(False)
 
     def send_selected(self) -> None:
-        item = self._selected_item()
+        item = self._actionable_item("Отправка")
         if item is None:
-            return
-        if item.state != "queued":
-            QMessageBox.warning(self, "Отправка", f"Строка имеет состояние «{item.state}», а не queued.")
             return
         count = self.ship_count.value()
         home = str(self.context.v2_setting("farm_home", "—"))
