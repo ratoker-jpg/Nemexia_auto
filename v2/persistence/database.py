@@ -413,12 +413,18 @@ class V2Database:
         self._record_migration(4)
 
     def _migrate_to_5(self) -> None:
-        """Correct V2-43/44's unproven probe model to exact existing spy-fleet identity."""
-        self._require_conn().executescript(
-            """DROP INDEX IF EXISTS idx_spy_actions_target_status;
-            DROP INDEX IF EXISTS idx_spy_actions_unresolved_target;
-            ALTER TABLE spy_actions RENAME TO spy_actions_v4;
-            CREATE TABLE spy_actions (
+        """Atomically correct the unproven probe model to exact spy-fleet identity."""
+        conn = self._require_conn()
+        # executescript() would implicitly commit before running its script. Start
+        # one explicit transaction and use individual execute() calls so the table
+        # rebuild, migration record and caller's PRAGMA user_version=5 commit or
+        # roll back together.
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DROP INDEX IF EXISTS idx_spy_actions_target_status")
+        conn.execute("DROP INDEX IF EXISTS idx_spy_actions_unresolved_target")
+        conn.execute("ALTER TABLE spy_actions RENAME TO spy_actions_v4")
+        conn.execute(
+            """CREATE TABLE spy_actions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 request_id TEXT NOT NULL UNIQUE,
                 fleet_id TEXT,
@@ -431,8 +437,10 @@ class V2Database:
                 detail TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );
-            INSERT INTO spy_actions(
+            )"""
+        )
+        conn.execute(
+            """INSERT INTO spy_actions(
                 id, request_id, fleet_id, source, target, status, report_id,
                 requested_at, report_at, detail, created_at, updated_at
             )
@@ -443,15 +451,20 @@ class V2Database:
                      ELSE detail || ' | migrated from V2 schema 4: fleet_id was not recorded'
                    END,
                    created_at, updated_at
-              FROM spy_actions_v4;
-            DROP TABLE spy_actions_v4;
-            CREATE INDEX idx_spy_actions_target_status
-                ON spy_actions(source, target, status);
-            CREATE UNIQUE INDEX idx_spy_actions_unresolved_fleet
-                ON spy_actions(fleet_id)
-                WHERE fleet_id IS NOT NULL AND status IN ('pending','ambiguous');
-            CREATE UNIQUE INDEX idx_spy_actions_unresolved_target
-                ON spy_actions(source, target)
-                WHERE status IN ('pending','ambiguous');"""
+              FROM spy_actions_v4"""
+        )
+        conn.execute("DROP TABLE spy_actions_v4")
+        conn.execute(
+            "CREATE INDEX idx_spy_actions_target_status ON spy_actions(source, target, status)"
+        )
+        conn.execute(
+            """CREATE UNIQUE INDEX idx_spy_actions_unresolved_fleet
+               ON spy_actions(fleet_id)
+               WHERE fleet_id IS NOT NULL AND status IN ('pending','ambiguous')"""
+        )
+        conn.execute(
+            """CREATE UNIQUE INDEX idx_spy_actions_unresolved_target
+               ON spy_actions(source, target)
+               WHERE status IN ('pending','ambiguous')"""
         )
         self._record_migration(5)
