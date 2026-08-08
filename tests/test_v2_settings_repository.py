@@ -39,6 +39,26 @@ def test_invalid_or_unknown_settings_fail_before_write(tmp_path: Path) -> None:
         assert "password" not in db.read_all_settings_raw()
 
 
+def test_batch_validation_is_all_or_nothing(tmp_path: Path) -> None:
+    with V2Database(tmp_path / "batch.sqlite3") as db:
+        settings = V2SettingsRepository(db)
+        settings.set_many({
+            "cdp_port": 9333,
+            "farm_home": "3:39:11",
+            "command_planet": "2:5:6",
+            "farm_return_buffer_minutes": 5,
+        })
+        before = db.read_all_settings_raw()
+        with pytest.raises(V2SettingError):
+            settings.set_many({
+                "cdp_port": 9444,
+                "farm_home": "3:40:11",
+                "command_planet": "invalid",
+                "farm_return_buffer_minutes": 9,
+            })
+        assert db.read_all_settings_raw() == before
+
+
 def test_repository_has_small_explicit_non_secret_allowlist(tmp_path: Path) -> None:
     with V2Database(tmp_path / "allowlist.sqlite3") as db:
         keys = set(V2SettingsRepository(db).keys())
