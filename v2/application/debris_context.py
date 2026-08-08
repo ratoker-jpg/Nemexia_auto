@@ -100,7 +100,20 @@ class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext):
         if self._debris_workflow is not None:
             self._debris_workflow.request_stop()
 
+    def cancel_debris_preparation(self) -> None:
+        """Disarm an unconfirmed debris batch without touching browser/journal state."""
+        if self._debris_workflow is not None:
+            self._debris_workflow.cancel_prepared()
+
     def close(self) -> None:
+        workflow = getattr(self, "_debris_workflow", None)
+        if workflow is not None:
+            # Closing the window/context may happen after preparation or between
+            # verified attempts. Never cancel a started remote attempt; only stop
+            # the next one and disarm any still-unconfirmed batch.
+            workflow.request_stop()
+            workflow.cancel_prepared()
+
         source = getattr(self, "_debris_source", None)
         if source is not None:
             close = getattr(source, "close", None)

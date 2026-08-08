@@ -131,6 +131,8 @@ class DebrisPage(FilterableReadOnlyTable):
     def hideEvent(self, event) -> None:
         if self._series_running:
             self._request_manual_stop()
+        else:
+            self._invalidate_preparation()
         super().hideEvent(event)
 
     def _rows(self) -> list[tuple[object, ...]]:
@@ -251,6 +253,9 @@ class DebrisPage(FilterableReadOnlyTable):
         if self._series_running:
             return
         self._prepared_batch = None
+        cancel = getattr(self.context, "cancel_debris_preparation", None)
+        if callable(cancel):
+            cancel()
         if hasattr(self, "confirm_button"):
             self.confirm_button.setEnabled(False)
 
