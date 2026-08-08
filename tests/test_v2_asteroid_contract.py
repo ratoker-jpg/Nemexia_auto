@@ -72,8 +72,9 @@ def test_saved_tooltip_schedule_rolls_forward_after_announced_boundary() -> None
         position=8,
         observed_server_at=datetime(2026, 8, 6, 22, 50, 0),
     )
-    assert observation.last_move_at == datetime(2026, 8, 6, 17, 46, 8, tzinfo=timezone.utc)
-    assert observation.next_move_at == datetime(2026, 8, 6, 18, 47, 8, tzinfo=timezone.utc)
+    # 22:50 server time has crossed both 21:46:08 and 22:47:08 boundaries.
+    assert observation.last_move_at == datetime(2026, 8, 6, 18, 47, 8, tzinfo=timezone.utc)
+    assert observation.next_move_at == datetime(2026, 8, 6, 19, 48, 8, tzinfo=timezone.utc)
 
 
 def test_tooltip_parser_rejects_partial_or_non_asteroid_evidence() -> None:
