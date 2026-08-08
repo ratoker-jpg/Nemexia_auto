@@ -25,7 +25,7 @@ def create_legacy(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(LEGACY_SCHEMA)
         conn.execute(
-            "INSERT INTO targets VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO targets VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             ("3:1:2", "Alpha", 0, 3, 1, 2, 1, 0, "", 10, 20, 30,
              "2026-08-08T10:00:00+00:00", 0, None, None),
         )
@@ -36,7 +36,6 @@ def test_queue_import_is_one_time_and_legacy_remains_byte_identical(tmp_path: Pa
     legacy_path = tmp_path / "legacy.sqlite3"
     create_legacy(legacy_path)
     before = legacy_path.read_bytes()
-
     with V2Database(tmp_path / "v2.sqlite3") as db:
         assert db.schema_version() == V2_SCHEMA_VERSION == 3
         queue = V2QueueRepository(db)
@@ -51,7 +50,6 @@ def test_queue_import_is_one_time_and_legacy_remains_byte_identical(tmp_path: Pa
         assert (rows[0].metal, rows[0].minerals, rows[0].gas) == (10, 20, 30)
         queue.set_state(rows[0].id, "sending")
         assert queue.list()[0].state == "sending"
-
     assert legacy_path.read_bytes() == before
 
 
