@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SAVED_FLEETS = ROOT / "saved_pages" / "2026-08-08_08-54-11-072" / "page.html"
 CDP = (ROOT / "v2" / "infrastructure" / "cdp_read_backend.py").read_text(encoding="utf-8")
+ACCOUNT_CDP = (ROOT / "v2" / "infrastructure" / "cdp_account_reader.py").read_text(encoding="utf-8")
 APP_QT = (ROOT / "app_qt.py").read_text(encoding="utf-8")
 ACTIVE = (ROOT / "v2" / "ui" / "pages" / "active.py").read_text(encoding="utf-8")
 LEGACY_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
@@ -18,13 +19,14 @@ def test_v2_capacity_selectors_are_grounded_in_saved_real_fleets_page() -> None:
 
 
 def test_concrete_qt_browser_path_stays_attach_only_and_read_only() -> None:
-    assert "ReadOnlyCdpBackend" in APP_QT
+    assert "ReadOnlyAccountCdpBackend" in APP_QT
+    assert "ReadOnlyCdpBackend" in ACCOUNT_CDP
     assert "connect_over_cdp" in CDP
     assert "fleets.php" in CDP
     assert "#fleetHandler tbody tr" in CDP
     assert "refresh_live_source()" in ACTIVE
 
-    combined = APP_QT + CDP + ACTIVE
+    combined = APP_QT + CDP + ACCOUNT_CDP + ACTIVE
     for forbidden in (
         "BrowserWorker",
         "launch_yandex",
