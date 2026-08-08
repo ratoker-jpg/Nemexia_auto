@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from v2.application.context import V2ApplicationContext
 from v2.runtime_paths import RuntimePaths
+from v2.ui.pages.read_tables import HistoryPage, TargetsPage
 from v2.ui.theme import ORBITAL_COMMAND_QSS
 
 
@@ -58,11 +60,12 @@ def _iter_pages() -> Iterable[tuple[str, str, str]]:
 
 
 class MainWindow(QMainWindow):
-    """Side-by-side V2 shell. It performs no Nemexia actions yet."""
+    """Side-by-side V2 shell with read-only legacy data access."""
 
-    def __init__(self, runtime_paths: RuntimePaths) -> None:
+    def __init__(self, runtime_paths: RuntimePaths, context: V2ApplicationContext) -> None:
         super().__init__()
         self.runtime_paths = runtime_paths
+        self.context = context
         self.setWindowTitle("Nemexia Raid Manager V2")
         self.setMinimumSize(1180, 720)
         self.resize(1440, 900)
@@ -91,7 +94,7 @@ class MainWindow(QMainWindow):
 
         self._page_index: dict[str, int] = {}
         for key, title, description in _iter_pages():
-            index = self.stack.addWidget(self._placeholder_page(title, description))
+            index = self.stack.addWidget(self._build_page(key, title, description))
             self._page_index[key] = index
 
         first = self._nav_buttons["overview"]
@@ -159,11 +162,21 @@ class MainWindow(QMainWindow):
         title_block.addWidget(self.page_description)
         layout.addLayout(title_block, 1)
 
-        status = QLabel("V2 · изолированные данные", topbar)
+        data_status = self.context.status()
+        text = "Рабочая БД · только чтение" if data_status.available else "Данные недоступны · preview"
+        status = QLabel(text, topbar)
         status.setObjectName("StatusBadge")
+        status.setToolTip(f"{data_status.path}\n{data_status.detail}")
         status.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         layout.addWidget(status)
         return topbar
+
+    def _build_page(self, key: str, title: str, description: str) -> QWidget:
+        if key == "targets":
+            return TargetsPage(self.context, self)
+        if key == "history":
+            return HistoryPage(self.context, self)
+        return self._placeholder_page(title, description)
 
     def _placeholder_page(self, title: str, description: str) -> QWidget:
         page = QWidget(self)
@@ -203,10 +216,10 @@ class MainWindow(QMainWindow):
             button.setChecked(True)
 
 
-def run_qt_app(runtime_paths: RuntimePaths) -> int:
+def run_qt_app(runtime_paths: RuntimePaths, context: V2ApplicationContext) -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Nemexia Raid Manager V2")
     app.setStyleSheet(ORBITAL_COMMAND_QSS)
-    window = MainWindow(runtime_paths)
+    window = MainWindow(runtime_paths, context)
     window.show()
     return app.exec()
