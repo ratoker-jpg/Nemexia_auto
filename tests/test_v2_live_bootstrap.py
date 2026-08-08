@@ -64,10 +64,11 @@ def test_context_close_propagates_to_browser_source(tmp_path: Path) -> None:
     assert backend.closed is True
 
 
-def test_qt_bootstrap_wires_isolated_settings_spy_recon_and_asteroid_context() -> None:
+def test_qt_bootstrap_wires_isolated_settings_spy_recon_asteroid_and_debris_context() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "app_qt.py").read_text(encoding="utf-8")
     asteroid_context = (root / "v2/application/asteroid_context.py").read_text(encoding="utf-8")
+    debris_context = (root / "v2/application/debris_context.py").read_text(encoding="utf-8")
     assert "V2Database(paths.database)" in source
     assert "V2SettingsRepository(database)" in source
     assert "LegacySettingsImporter" in source
@@ -76,10 +77,12 @@ def test_qt_bootstrap_wires_isolated_settings_spy_recon_and_asteroid_context() -
     assert "SpyActionService" in source
     assert "V2ReconRepository(database)" in source
     assert "recon.import_legacy_targets(legacy)" in source
-    assert "AsteroidEnabledApplicationContext(" in source
+    assert "DebrisEnabledApplicationContext(" in source
+    assert "class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext)" in debris_context
     assert "class AsteroidEnabledApplicationContext(ReconOwnedApplicationContext)" in asteroid_context
     assert "V2BrowserFlightSource" in source and "V2BrowserReportSource" in source
     assert "report_source=report_source" in source and "spy_actions=spy_actions" in source
     assert "v2_recon=recon" in source
+    assert "V2DebrisSource(ReadOnlyDebrisCdpBackend(endpoint.endpoint))" in source
     for forbidden in ("BrowserWorker", "launch_yandex", "delete_messages", "app_entry.py"):
         assert forbidden not in source
