@@ -18,6 +18,7 @@ from v2.application.live_flight_semantics import (
     classify_active_flights,
 )
 from v2.application.live_overview import LiveOverviewSnapshot, build_live_overview
+from v2.application.raid_actions import RaidActionService, RaidCommand, RaidPreparation
 from v2.application.read_store import (
     HistorySnapshot,
     OverviewSnapshot,
@@ -59,6 +60,7 @@ class V2ApplicationContext:
         flight_source: FlightSource | None = None,
         v2_settings: V2SettingsRepository | None = None,
         v2_database: V2Database | None = None,
+        raid_actions: RaidActionService | None = None,
     ) -> None:
         self.source_path = Path(source_path)
         self._store: ReadOnlyStore | None = None
@@ -66,6 +68,7 @@ class V2ApplicationContext:
         self._flight_source: FlightSource = flight_source or OfflineFlightSource()
         self._v2_settings = v2_settings
         self._v2_database = v2_database
+        self._raid_actions = raid_actions
         self._last_flight_status: FlightSourceStatus | None = None
         self._live_snapshot_ready = False
         self._last_active_flights: tuple[ActiveFlightSnapshot, ...] = ()
@@ -89,6 +92,9 @@ class V2ApplicationContext:
         closer = getattr(self._flight_source, "close", None)
         if callable(closer):
             closer()
+        if self._raid_actions is not None:
+            self._raid_actions.close()
+            self._raid_actions = None
         if self._v2_database is not None:
             self._v2_database.close()
             self._v2_database = None
@@ -124,17 +130,29 @@ class V2ApplicationContext:
         return default if self._v2_settings is None else self._v2_settings.get(key)
 
     def set_v2_setting(self, key: str, value: object) -> object:
-        if self._v2_settings is None:
-            raise RuntimeError("V2 settings storage is unavailable")
-        return self._v2_settings.set(key, value)
+        return self.set_v2_settings({key: value})[str(key)]
 
     def set_v2_settings(self, values: Mapping[str, object]) -> dict[str, object]:
         if self._v2_settings is None:
             raise RuntimeError("V2 settings storage is unavailable")
-        return self._v2_settings.set_many(values)
+        parsed = self._v2_settings.set_many(values)
+        if self._raid_actions is not None and "actions_enabled" in parsed:
+            self._raid_actions.set_enabled(bool(parsed["actions_enabled"]))
+        return parsed
 
     def v2_settings_snapshot(self) -> dict[str, object]:
         return {} if self._v2_settings is None else self._v2_settings.snapshot()
+
+    def raid_actions_enabled(self) -> bool:
+        return bool(self._raid_actions is not None and self._raid_actions.enabled)
+
+    def prepare_raid(self, target: str, player: str, ship_count: int) -> RaidPreparation:
+        if self._raid_actions is None:
+            raise RuntimeError("V2 raid action service is unavailable")
+        home = str(self.v2_setting("farm_home", ""))
+        return self._raid_actions.prepare(
+            RaidCommand(target=target, player=player, ship_count=ship_count, home=home)
+        )
 
     def flight_status(self) -> FlightSourceStatus:
         self._last_flight_status = self._flight_source.status()
