@@ -162,6 +162,15 @@ class V2ApplicationContext:
             raise RuntimeError("Selected queue row changed; refresh Plan before sending")
         if item.state != "queued":
             raise RuntimeError(f"Queue row is not queued: {item.state}")
+        if not item.enabled:
+            raise RuntimeError(f"Target is disabled: {item.coord}")
+        if item.blacklisted:
+            raise RuntimeError(f"Target is blacklisted: {item.coord}")
+
+        # Move to a non-retryable state before entering SendFleet. If the process
+        # dies after the game accepted the fleet but before our final state write,
+        # the row remains `sending` instead of becoming eligible for a duplicate.
+        self._v2_queue.set_state(item.id, "sending")
         coordinator = RaidDispatchCoordinator(self._raid_actions, self._v2_database)
         try:
             result = coordinator.dispatch(
@@ -170,8 +179,13 @@ class V2ApplicationContext:
             )
         except Exception:
             record = coordinator.record(request_id)
-            if record is not None and record.status == "ambiguous":
+            if record is None:
+                # The failure happened before a journaled SendFleet attempt.
+                self._v2_queue.set_state(item.id, "queued")
+            elif record.status == "ambiguous":
                 self._v2_queue.set_state(item.id, "ambiguous")
+            # pending/verified are deliberately left non-retryable as `sending`;
+            # reconciliation must decide them after a crash or persistence fault.
             raise
         self._v2_queue.set_state(item.id, "sent" if result.verified else "ambiguous")
         return result
