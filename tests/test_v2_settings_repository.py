@@ -14,10 +14,14 @@ def test_defaults_and_roundtrip_are_typed(tmp_path: Path) -> None:
         assert settings.get("ui_scale_percent") == 100
         assert settings.get("command_planet") == "2:5:6"
         assert settings.get("actions_enabled") is False
+        assert settings.get("farm_no_target_cooldown_until") == ""
         assert settings.set("ui_reduce_motion", "true") is True
         assert settings.set("ui_scale_percent", "125") == 125
         assert settings.set("farm_home", " 3 : 39 : 11 ") == "3:39:11"
         assert settings.set("actions_enabled", "true") is True
+        assert settings.set(
+            "farm_no_target_cooldown_until", "2026-08-08T20:25:00+04:00"
+        ) == "2026-08-08T16:25:00+00:00"
 
     with V2Database(path) as db:
         settings = V2SettingsRepository(db)
@@ -25,6 +29,7 @@ def test_defaults_and_roundtrip_are_typed(tmp_path: Path) -> None:
         assert settings.get("ui_scale_percent") == 125
         assert settings.get("farm_home") == "3:39:11"
         assert settings.get("actions_enabled") is True
+        assert settings.get("farm_no_target_cooldown_until") == "2026-08-08T16:25:00+00:00"
 
 
 def test_invalid_or_unknown_settings_fail_before_write(tmp_path: Path) -> None:
@@ -38,6 +43,8 @@ def test_invalid_or_unknown_settings_fail_before_write(tmp_path: Path) -> None:
             settings.set("password", "secret")
         with pytest.raises(V2SettingError):
             settings.set("command_planet", "bad")
+        with pytest.raises(V2SettingError):
+            settings.set("farm_no_target_cooldown_until", "2026-08-08T16:25:00")
         assert db.read_all_settings_raw() == before
         assert "password" not in db.read_all_settings_raw()
 
@@ -74,6 +81,7 @@ def test_repository_has_small_explicit_non_secret_allowlist(tmp_path: Path) -> N
             "farm_home",
             "command_planet",
             "farm_return_buffer_minutes",
+            "farm_no_target_cooldown_until",
             "actions_enabled",
         }
         assert not any(
