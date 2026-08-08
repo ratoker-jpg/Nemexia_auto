@@ -11,10 +11,13 @@ def test_qt_preview_bootstraps_through_isolated_v2_and_readonly_legacy_context()
     assert "build_context(paths)" in APP_QT
     assert "V2Database(paths.database)" in APP_QT
     assert "LegacySettingsImporter" in APP_QT
-    assert "V2ApplicationContext(" in APP_QT
+    # V2-45 uses a subclass so the existing V2ApplicationContext read contract
+    # remains the base while manual spy actions are added explicitly.
+    assert "SpyEnabledApplicationContext(" in APP_QT
+    assert "V2ApplicationContext" in APP_QT
     assert "v2_settings=settings" in APP_QT
     assert "v2_database=database" in APP_QT
-    assert "ReadOnlyAccountCdpBackend" in APP_QT
+    assert "V2SpyCdpBackend" in APP_QT
     assert "V2BrowserFlightSource" in APP_QT
     assert "context.close()" in APP_QT
     assert "run_qt_app(paths, context)" in APP_QT
