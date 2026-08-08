@@ -19,25 +19,24 @@ def test_verification_requires_new_exact_target_fresh_report() -> None:
         _report("stale-new", "2:22:19", requested - timedelta(minutes=5)),
         _report("verified", "2:22:19", requested + timedelta(seconds=8)),
     )
-    selected = select_verified_report(
-        reports, before_ids=frozenset({"old"}), target="2:22:19", requested_at=requested,
-    )
+    selected = select_verified_report(reports, before_ids=frozenset({"old"}), target="2:22:19", requested_at=requested)
     assert selected is not None and selected.report_id == "verified"
 
 
 def test_verification_returns_none_for_ambiguous_evidence() -> None:
     requested = datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc)
     assert select_verified_report(
-        (_report("old", "2:22:19", requested),),
-        before_ids=frozenset({"old"}), target="2:22:19", requested_at=requested,
+        (_report("old", "2:22:19", requested),), before_ids=frozenset({"old"}),
+        target="2:22:19", requested_at=requested,
     ) is None
 
 
 def test_spy_backend_has_one_mutation_call_and_no_navigation_or_message_deletion() -> None:
     source = (Path(__file__).resolve().parents[1] / "v2/infrastructure/cdp_spy_backend.py").read_text(encoding="utf-8")
     assert source.count("window.processSpy(Number(fleetId))") == 1
-    assert "tr.espionageClass" in source
     assert "spy1Link-${fleetId}" in source
+    assert "link.closest('tr')" in source
+    assert "tr.espionageClass" not in source
     assert "loadTabContent('TabAdministrative', 2, 0)" in source
     for forbidden in (
         ".goto(", "new_page(", "bring_to_front(", ".click(", ".fill(",
