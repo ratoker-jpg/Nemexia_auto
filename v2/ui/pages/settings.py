@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFormLayout,
     QFrame,
     QLabel,
@@ -56,7 +57,20 @@ class SettingsPage(QWidget):
         self.return_buffer.setRange(0, 60)
         self.return_buffer.setSuffix(" мин")
         form.addRow("Буфер после возврата", self.return_buffer)
+        self.actions_enabled = QCheckBox("Разрешить действия V2", card)
+        self.actions_enabled.setToolTip(
+            "По умолчанию выключено. Разрешает V2 изменять форму флота; отправка будет добавлена отдельным этапом."
+        )
+        form.addRow("Игровые действия", self.actions_enabled)
         card_layout.addLayout(form)
+
+        warning = QLabel(
+            "⚠ Включай действия только когда открыт нужный аккаунт и fleets.php. CAPTCHA всегда останавливает V2.",
+            card,
+        )
+        warning.setObjectName("Muted")
+        warning.setWordWrap(True)
+        card_layout.addWidget(warning)
 
         self.save_button = QPushButton("Сохранить", card)
         self.save_button.setObjectName("PrimaryButton")
@@ -80,9 +94,11 @@ class SettingsPage(QWidget):
         self.farm_home.setText(str(values["farm_home"]))
         self.command_planet.setText(str(values["command_planet"]))
         self.return_buffer.setValue(int(values["farm_return_buffer_minutes"]))
+        self.actions_enabled.setChecked(bool(values["actions_enabled"]))
         self.save_button.setEnabled(True)
         if not self.status_label.text():
-            self.status_label.setText("Настройки загружены из V2 SQLite.")
+            state = "разрешены" if self.context.raid_actions_enabled() else "выключены"
+            self.status_label.setText(f"Настройки загружены из V2 SQLite · действия {state}.")
 
     def save_settings(self) -> None:
         self.save_button.setEnabled(False)
@@ -91,6 +107,7 @@ class SettingsPage(QWidget):
             "farm_home": self.farm_home.text(),
             "command_planet": self.command_planet.text(),
             "farm_return_buffer_minutes": self.return_buffer.value(),
+            "actions_enabled": self.actions_enabled.isChecked(),
         }
         try:
             self.context.set_v2_settings(values)
@@ -98,9 +115,10 @@ class SettingsPage(QWidget):
             self.status_label.setText(f"Не сохранено: {exc}")
         else:
             self.reload_view()
+            action_state = "разрешены" if self.context.raid_actions_enabled() else "выключены"
             self.status_label.setText(
                 "Сохранено в V2. CDP port применяется после перезапуска app_qt.py; "
-                "планеты и буфер используются новым V2 policy сразу."
+                f"действия V2 сейчас {action_state}."
             )
         finally:
             self.save_button.setEnabled(self.context.v2_settings_available())
