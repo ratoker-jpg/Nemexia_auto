@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 jobs:
   test:
     name: Windows Python ${{ matrix.python-version }}
