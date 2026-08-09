@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from v2.application.context import V2ApplicationContext
 from v2.runtime_paths import RuntimePaths
+from v2.ui.components import StatusPill
 from v2.ui.pages.active import ActivePage
 from v2.ui.pages.asteroids import AsteroidsPage
 from v2.ui.pages.debris import DebrisPage
@@ -21,7 +22,7 @@ from v2.ui.pages.plan import PlanPage
 from v2.ui.pages.read_tables import HistoryPage, TargetsPage
 from v2.ui.pages.recon import ReconPage
 from v2.ui.pages.settings import SettingsPage
-from v2.ui.theme import ORBITAL_COMMAND_QSS
+from v2.ui.theme import ORBITAL_COMMAND_QSS, SIZES, SPACING
 
 
 NAV_GROUPS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
@@ -51,7 +52,7 @@ def _iter_pages() -> Iterable[tuple[str, str, str]]:
 
 
 class MainWindow(QMainWindow):
-    """Side-by-side V2 shell with explicit service boundaries."""
+    """Orbital Command V2 shell; routing only, never a browser/action boundary."""
 
     def __init__(self, runtime_paths: RuntimePaths, context: V2ApplicationContext) -> None:
         super().__init__()
@@ -80,7 +81,7 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.topbar)
 
         self.stack = QStackedWidget(content)
-        self.stack.setContentsMargins(24, 24, 24, 24)
+        self.stack.setContentsMargins(0, 0, 0, 0)
         content_layout.addWidget(self.stack, 1)
 
         self._page_index: dict[str, int] = {}
@@ -95,10 +96,10 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QFrame:
         sidebar = QFrame(self)
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(216)
+        sidebar.setFixedWidth(SIZES["sidebar"])
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(12, 20, 12, 16)
-        layout.setSpacing(4)
+        layout.setContentsMargins(SPACING["md"], SPACING["xl"], SPACING["md"], SPACING["lg"])
+        layout.setSpacing(SPACING["xs"])
 
         brand = QLabel("NEMEXIA", sidebar)
         brand.setObjectName("Brand")
@@ -106,7 +107,7 @@ class MainWindow(QMainWindow):
         accent = QLabel("ORBITAL COMMAND · V2", sidebar)
         accent.setObjectName("BrandAccent")
         layout.addWidget(accent)
-        layout.addSpacing(18)
+        layout.addSpacing(SPACING["lg"])
 
         self._button_group = QButtonGroup(sidebar)
         self._button_group.setExclusive(True)
@@ -115,7 +116,7 @@ class MainWindow(QMainWindow):
         for group_name, pages in NAV_GROUPS:
             group_label = QLabel(group_name, sidebar)
             group_label.setObjectName("SectionLabel")
-            layout.addSpacing(8)
+            layout.addSpacing(SPACING["sm"])
             layout.addWidget(group_label)
             for key, title, description in pages:
                 button = QPushButton(title, sidebar)
@@ -130,8 +131,12 @@ class MainWindow(QMainWindow):
                 layout.addWidget(button)
 
         layout.addStretch(1)
-        version = QLabel("V2 preview · legacy runtime untouched", sidebar)
-        version.setObjectName("Muted")
+        boundary = QLabel("ATTACH-ONLY · SAFETY CONTRACT", sidebar)
+        boundary.setObjectName("SidebarMeta")
+        boundary.setWordWrap(True)
+        layout.addWidget(boundary)
+        version = QLabel("Qt V2 opt-in\nlegacy launcher unchanged", sidebar)
+        version.setObjectName("SidebarMeta")
         version.setWordWrap(True)
         layout.addWidget(version)
         return sidebar
@@ -139,9 +144,10 @@ class MainWindow(QMainWindow):
     def _build_topbar(self) -> QFrame:
         topbar = QFrame(self)
         topbar.setObjectName("Topbar")
-        topbar.setFixedHeight(76)
+        topbar.setFixedHeight(SIZES["topbar"])
         layout = QHBoxLayout(topbar)
-        layout.setContentsMargins(24, 10, 24, 10)
+        layout.setContentsMargins(SPACING["xl"], SPACING["sm"], SPACING["xl"], SPACING["sm"])
+        layout.setSpacing(SPACING["sm"])
 
         title_block = QVBoxLayout()
         title_block.setSpacing(1)
@@ -153,10 +159,20 @@ class MainWindow(QMainWindow):
         title_block.addWidget(self.page_description)
         layout.addLayout(title_block, 1)
 
+        v2_status = StatusPill("V2 · QT", "info", topbar)
+        v2_status.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        layout.addWidget(v2_status)
+        attach_status = StatusPill("ATTACH-ONLY", "neutral", topbar)
+        attach_status.setToolTip("V2 не запускает браузер и не владеет browser navigation boundary")
+        attach_status.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        layout.addWidget(attach_status)
+
         data_status = self.context.status()
-        text = "Рабочая БД · только чтение" if data_status.available else "Данные недоступны · preview"
-        status = QLabel(text, topbar)
-        status.setObjectName("StatusBadge")
+        if data_status.available:
+            text, tone = "LEGACY DB · RO", "success"
+        else:
+            text, tone = "DATA · UNAVAILABLE", "warning"
+        status = StatusPill(text, tone, topbar)
         status.setToolTip(f"{data_status.path}\n{data_status.detail}")
         status.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         layout.addWidget(status)
@@ -190,13 +206,13 @@ class MainWindow(QMainWindow):
     def _placeholder_page(self, title: str, description: str) -> QWidget:
         page = QWidget(self)
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setContentsMargins(SPACING["xl"], SPACING["xl"], SPACING["xl"], SPACING["xl"])
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         card = QFrame(page)
         card.setObjectName("PlaceholderCard")
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 18, 20, 18)
-        card_layout.setSpacing(6)
+        card_layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        card_layout.setSpacing(SPACING["sm"])
         title_label = QLabel(title, card)
         title_label.setObjectName("PlaceholderTitle")
         description_label = QLabel(description, card)
@@ -207,7 +223,6 @@ class MainWindow(QMainWindow):
         note.setWordWrap(True)
         card_layout.addWidget(title_label)
         card_layout.addWidget(description_label)
-        card_layout.addSpacing(8)
         card_layout.addWidget(note)
         layout.addWidget(card)
         return page
