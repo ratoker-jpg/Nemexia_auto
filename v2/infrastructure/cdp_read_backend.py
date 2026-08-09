@@ -127,9 +127,9 @@ class ReadOnlyCdpBackend:
             loop.close()
 
     def _should_passthrough_submit_exception(self, exc: Exception) -> bool:
-        """Allow specialized subclasses to preserve typed mutation provenance."""
+        """Preserve explicit mutation-attempt provenance across the sync boundary."""
 
-        return False
+        return hasattr(exc, "remote_attempted")
 
     def _submit(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         if self._closed or self._loop is None:
