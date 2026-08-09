@@ -9,7 +9,7 @@ WORKFLOW = (ROOT / "v2/application/asteroid_workflow.py").read_text(encoding="ut
 
 
 def test_asteroid_navigation_uses_real_v2_page_not_placeholder() -> None:
-    assert "from v2.ui.pages.asteroids import AsteroidsPage" in WINDOW
+    assert "from v2.ui.pages.asteroids_autorenew import AsteroidsPage" in WINDOW
     assert 'if key == "asteroids":' in WINDOW
     assert "return AsteroidsPage(self.context, self)" in WINDOW
 
