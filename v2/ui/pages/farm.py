@@ -4,22 +4,13 @@ import uuid
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import (
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QSpinBox,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox, QWidget
 
 from v2.application.context import V2ApplicationContext
 from v2.application.farm_controller import FarmSnapshot, FarmState
 from v2.application.recon_refill import ReconRefillState
+from v2.ui.components import SectionCard, StateBanner, StatusPill, command_button, page_layout
+from v2.ui.theme import SPACING
 
 
 SCHEDULER_INTERVAL_MS = 30_000
@@ -51,105 +42,133 @@ class FarmPage(QWidget):
         self._timer.setInterval(SCHEDULER_INTERVAL_MS)
         self._timer.timeout.connect(self._scheduler_tick)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(14)
+        layout = page_layout(self)
 
-        status_card = QFrame(self)
-        status_card.setObjectName("InfoCard")
-        grid = QGridLayout(status_card)
-        grid.setContentsMargins(18, 16, 18, 16)
-        grid.setHorizontalSpacing(20)
-        grid.setVerticalSpacing(8)
-        title = QLabel("Состояние автофарма V2", status_card)
-        title.setObjectName("SectionTitle")
-        grid.addWidget(title, 0, 0, 1, 2)
-        self.state_value = QLabel("Не проверено", status_card)
-        self.state_value.setObjectName("StatusBadge")
-        self.detail_value = QLabel("Нажми «Проверить готовность».", status_card)
+        hero = SectionCard(
+            "AutoFarm command",
+            "Главный операционный экран V2. Цикл всегда стартует разоружённым и требует явного запуска в текущей сессии.",
+            object_name="CommandCard",
+            parent=self,
+        )
+        hero_row = QHBoxLayout()
+        hero_row.setSpacing(SPACING["md"])
+        state_label = QLabel("STATE", hero)
+        state_label.setObjectName("MetricLabel")
+        hero_row.addWidget(state_label)
+        self.state_value = StatusPill("Не проверено", "neutral", hero)
+        hero_row.addWidget(self.state_value)
+        hero_row.addStretch(1)
+        self.scheduler_value = QLabel("Цикл: выключен", hero)
+        self.scheduler_value.setObjectName("BodyStrong")
+        hero_row.addWidget(self.scheduler_value)
+        hero.content_layout.addLayout(hero_row)
+
+        self.detail_value = QLabel("Нажми «Проверить готовность».", hero)
         self.detail_value.setObjectName("Muted")
         self.detail_value.setWordWrap(True)
-        self.metrics_value = QLabel("Цели — · slots — · blocking — · unresolved —", status_card)
-        self.metrics_value.setObjectName("Muted")
-        self.scheduler_value = QLabel("Цикл: выключен", status_card)
-        self.scheduler_value.setObjectName("Muted")
-        grid.addWidget(QLabel("State", status_card), 1, 0)
-        grid.addWidget(self.state_value, 1, 1)
-        grid.addWidget(self.detail_value, 2, 0, 1, 2)
-        grid.addWidget(self.metrics_value, 3, 0, 1, 2)
-        grid.addWidget(self.scheduler_value, 4, 0, 1, 2)
-        layout.addWidget(status_card)
+        hero.content_layout.addWidget(self.detail_value)
+        self.metrics_value = QLabel("Цели — · slots — · blocking — · unresolved —", hero)
+        self.metrics_value.setObjectName("Mono")
+        self.metrics_value.setWordWrap(True)
+        hero.content_layout.addWidget(self.metrics_value)
+        layout.addWidget(hero)
 
-        controls = QFrame(self)
-        controls.setObjectName("InfoCard")
-        controls_layout = QVBoxLayout(controls)
-        controls_layout.setContentsMargins(18, 16, 18, 16)
-        controls_layout.setSpacing(10)
-        controls_title = QLabel("Параметры волны", controls)
-        controls_title.setObjectName("SectionTitle")
-        controls_layout.addWidget(controls_title)
-
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Мегатранспортировщиков", controls))
-        self.ship_count = QSpinBox(controls)
+        operations = SectionCard(
+            "Операции волны",
+            "Проверка — read-only. Одна волна и непрерывный цикл используют уже существующий journaled dispatch и safety-stop правила.",
+            object_name="CommandCard",
+            parent=self,
+        )
+        fields = QGridLayout()
+        fields.setHorizontalSpacing(SPACING["md"])
+        fields.setVerticalSpacing(SPACING["xs"])
+        ship_label = QLabel("МЕГАТРАНСПОРТИРОВЩИКИ / ЦЕЛЬ", operations)
+        ship_label.setObjectName("MetricLabel")
+        target_label = QLabel("МАКС. ЦЕЛЕЙ / ВОЛНУ", operations)
+        target_label.setObjectName("MetricLabel")
+        fields.addWidget(ship_label, 0, 0)
+        fields.addWidget(target_label, 0, 1)
+        self.ship_count = QSpinBox(operations)
         self.ship_count.setRange(1, 100000)
         self.ship_count.setValue(25)
-        row.addWidget(self.ship_count)
-        row.addWidget(QLabel("Макс. целей", controls))
-        self.max_targets = QSpinBox(controls)
+        self.max_targets = QSpinBox(operations)
         self.max_targets.setRange(1, 1000)
         self.max_targets.setValue(15)
-        row.addWidget(self.max_targets)
-        self.check_button = QPushButton("Проверить готовность", controls)
+        fields.addWidget(self.ship_count, 1, 0)
+        fields.addWidget(self.max_targets, 1, 1)
+        fields.setColumnStretch(2, 1)
+        operations.content_layout.addLayout(fields)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(SPACING["sm"])
+        self.check_button = command_button("Проверить готовность", tone="secondary", parent=operations)
         self.check_button.setObjectName("SecondaryButton")
         self.check_button.clicked.connect(self.check_ready)
-        row.addWidget(self.check_button)
-        self.wave_button = QPushButton("Выполнить одну волну", controls)
+        action_row.addWidget(self.check_button)
+        self.wave_button = command_button("Выполнить одну волну", tone="warning", parent=operations)
         self.wave_button.setObjectName("PrimaryButton")
+        self.wave_button.setProperty("tone", "warning")
         self.wave_button.clicked.connect(self.run_wave)
-        row.addWidget(self.wave_button)
-        controls_layout.addLayout(row)
+        action_row.addWidget(self.wave_button)
+        action_row.addStretch(1)
+        operations.content_layout.addLayout(action_row)
+        layout.addWidget(operations)
 
+        recovery = SectionCard(
+            "Recon recovery · текущая сессия",
+            "Exact Spy fleet ID существующей строки fleets.php. Поле не сохраняется и не создаёт новый espionage route.",
+            parent=self,
+        )
         recon_row = QHBoxLayout()
-        recon_row.addWidget(QLabel("Spy fleet ID для восстановления очереди", controls))
-        self.spy_fleet_id = QLineEdit(controls)
+        recon_row.setSpacing(SPACING["sm"])
+        self.spy_fleet_id = QLineEdit(recovery)
         self.spy_fleet_id.setObjectName("FarmSpyFleetId")
         self.spy_fleet_id.setPlaceholderText("Exact fleet ID, например 152272")
-        self.spy_fleet_id.setMaximumWidth(240)
+        self.spy_fleet_id.setMaximumWidth(280)
         recon_row.addWidget(self.spy_fleet_id)
         recon_row.addStretch(1)
-        controls_layout.addLayout(recon_row)
+        recovery.content_layout.addLayout(recon_row)
+        layout.addWidget(recovery)
 
+        cycle = SectionCard(
+            "Непрерывный цикл",
+            "Arm существует только в памяти текущего app_qt.py. Stop предотвращает следующий шаг; ambiguous/CAPTCHA/live failure разоружают цикл.",
+            object_name="CommandCard",
+            parent=self,
+        )
         cycle_row = QHBoxLayout()
-        self.start_button = QPushButton("Запустить цикл", controls)
+        cycle_row.setSpacing(SPACING["sm"])
+        self.start_button = command_button("Запустить цикл", tone="warning", parent=cycle)
         self.start_button.setObjectName("PrimaryButton")
+        self.start_button.setProperty("tone", "warning")
         self.start_button.clicked.connect(self.start_cycle)
         cycle_row.addWidget(self.start_button)
-        self.stop_button = QPushButton("Остановить цикл", controls)
+        self.stop_button = command_button("Остановить цикл", tone="danger", parent=cycle)
         self.stop_button.setObjectName("SecondaryButton")
+        self.stop_button.setProperty("tone", "danger")
         self.stop_button.clicked.connect(lambda: self._disarm("остановлен вручную"))
         self.stop_button.setEnabled(False)
         cycle_row.addWidget(self.stop_button)
         cycle_row.addStretch(1)
-        controls_layout.addLayout(cycle_row)
+        cycle.content_layout.addLayout(cycle_row)
 
-        note = QLabel(
+        safety = StateBanner(
+            "Safety contract",
             "Цикл живёт только в текущем запуске app_qt.py и после перезапуска всегда выключен. "
             "Spy fleet ID тоже не сохраняется: пользователь задаёт exact ID существующей строки fleets.php для текущей сессии. "
             "Каждые 30 секунд цикл перечитывает live state. При исчерпании очереди он может выполнить только один journaled "
             "processSpy по этому exact ID, принять exact fresh report и сделать deterministic AutoFarm refill. "
             "Fresh scan без eligible целей включает отдельный persisted cooldown 25 минут. CAPTCHA, stale/no fresh evidence, "
             "pending/ambiguous raid/spy journal, live error или неоднозначный side effect разоружают цикл без автоматического повтора.",
-            controls,
+            tone="warning",
+            parent=cycle,
         )
-        note.setObjectName("Muted")
-        note.setWordWrap(True)
-        controls_layout.addWidget(note)
-        self.result_label = QLabel("", controls)
+        cycle.content_layout.addWidget(safety)
+        self.result_label = QLabel("", cycle)
         self.result_label.setObjectName("Muted")
         self.result_label.setWordWrap(True)
-        controls_layout.addWidget(self.result_label)
-        layout.addWidget(controls)
+        cycle.content_layout.addWidget(self.result_label)
+        layout.addWidget(cycle)
         layout.addStretch(1)
         self.reload_view()
 
