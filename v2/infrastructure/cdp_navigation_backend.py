@@ -184,15 +184,10 @@ class V2NavigationCdpBackend(ReadOnlyAccountCdpBackend):
         expected_account_fingerprint: str,
     ) -> NavigationObservation:
         try:
-            page = await self._validate_expected_context(
-                expected_planet_id=(await self._read_browser_identity()).current_planet.planet_id
-                if (await self._read_browser_identity()).current_planet is not None
-                else "",
-                expected_coord=(await self._read_browser_identity()).current_planet.coord
-                if (await self._read_browser_identity()).current_planet is not None
-                else "",
-                expected_account_fingerprint=expected_account_fingerprint,
-            )
+            page = await self._existing_bound_page()
+            identity = await self._read_browser_identity()
+            if identity.account.ownership_fingerprint != str(expected_account_fingerprint):
+                raise CdpReadError("Account ownership evidence changed before planet switch")
             href = await page.evaluate(
                 r"""args => {
                     const [planetId, coord, host] = args;
