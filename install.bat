@@ -35,11 +35,13 @@ call :message upgrade_pip
 "%VENV_PY%" -m pip install --upgrade pip
 if errorlevel 1 goto :pip_upgrade_error
 call :message install_requirements
-"%VENV_PY%" -m pip install -r requirements.txt
+"%VENV_PY%" -m pip install -r requirements-v2.txt
 if errorlevel 1 goto :requirements_error
 call :message compile_sources
-"%VENV_PY%" -m py_compile app.py browser.py asteroids.py models.py reports.py storage.py self_test.py
+"%VENV_PY%" -m compileall -q app.py app_entry.py app_qt.py browser.py asteroids.py models.py reports.py storage.py self_test.py v2
 if errorlevel 1 goto :compile_error
+"%VENV_PY%" -c "import PySide6, app_qt"
+if errorlevel 1 goto :qt_import_error
 call :message run_self_test
 "%VENV_PY%" self_test.py
 if errorlevel 1 goto :self_test_error
@@ -61,6 +63,9 @@ set "ERROR_KEY=requirements_error"
 goto :command_error
 :compile_error
 set "ERROR_KEY=compile_error"
+goto :command_error
+:qt_import_error
+set "ERROR_KEY=qt_import_error"
 goto :command_error
 :self_test_error
 set "ERROR_KEY=self_test_error"
