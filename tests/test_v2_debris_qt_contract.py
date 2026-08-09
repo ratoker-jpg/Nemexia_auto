@@ -62,12 +62,15 @@ def test_debris_context_reuses_same_asteroid_action_service_and_journal() -> Non
     assert "CREATE TABLE debris_actions" not in source
 
 
-def test_qt_bootstrap_wires_attach_only_debris_reader_without_launcher_cutover() -> None:
+def test_qt_bootstrap_wires_attach_only_debris_reader_after_authorized_cutover() -> None:
     source = text("app_qt.py")
     assert "ReadOnlyDebrisCdpBackend(endpoint.endpoint)" in source
     assert "V2DebrisSource" in source
     assert "DebrisEnabledApplicationContext" in source
 
-    launcher = text("run_app.bat")
-    assert "app_entry.py" in launcher
-    assert "app_qt.py" not in launcher
+    default_launcher = text("run_app.bat")
+    legacy_launcher = text("run_legacy.bat")
+    assert "app_qt.py" in default_launcher
+    assert "app_entry.py" not in default_launcher
+    assert "app_entry.py" in legacy_launcher
+    assert "app_qt.py" not in legacy_launcher
