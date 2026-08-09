@@ -8,15 +8,21 @@ from v2.infrastructure.cdp_read_backend import CdpReadError
 
 
 class V2NavigationCdpBackend(ReadOnlyAccountCdpBackend):
-    """Own exactly one already-open Nemexia page for future coordinator mutations.
+    """Own one Nemexia page and expose only coordinator-authorized navigation."""
 
-    AUTO-03 is still read-only: this backend binds and observes one runtime Page
-    object, but never navigates or invokes any game action. Once bound, page loss
-    fails closed instead of silently selecting another tab in the same process.
-    """
-
-    def __init__(self, endpoint: str, *, game_host: str = "game.ares.nemexia.com", timeout_seconds: float = 5.0) -> None:
-        super().__init__(endpoint, game_host=game_host, timeout_seconds=timeout_seconds, cache_seconds=0.0)
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        game_host: str = "game.ares.nemexia.com",
+        timeout_seconds: float = 30.0,
+    ) -> None:
+        super().__init__(
+            endpoint,
+            game_host=game_host,
+            timeout_seconds=timeout_seconds,
+            cache_seconds=0.0,
+        )
         self._bound_page: Page | None = None
 
     async def _bind_existing_fleets_page(self) -> Page:
@@ -37,6 +43,13 @@ class V2NavigationCdpBackend(ReadOnlyAccountCdpBackend):
         return candidates[0]
 
     async def _existing_fleets_page(self) -> Page:
+        """Return the navigation-owned page.
+
+        Initial binding still requires fleets.php. After the coordinator performs a
+        verified navigation the same Page object may legitimately have another
+        Nemexia URL, so ownership is page-object + game-host, not path equality.
+        """
+
         if self._bound_page is None:
             return await self._bind_existing_fleets_page()
         browser = await self._ensure_browser()
@@ -46,9 +59,9 @@ class V2NavigationCdpBackend(ReadOnlyAccountCdpBackend):
             raise CdpReadError(
                 "Привязанная Nemexia-вкладка потеряна; автоматическое переподключение к другой вкладке запрещено"
             )
-        if self.game_host not in str(page.url) or "fleets.php" not in str(page.url):
+        if self.game_host not in str(page.url):
             raise CdpReadError(
-                "Привязанная вкладка изменила контекст; до AUTO-05 ожидается fleets.php"
+                "Привязанная вкладка покинула Nemexia; автоматическое продолжение запрещено"
             )
         return page
 
@@ -62,3 +75,71 @@ class V2NavigationCdpBackend(ReadOnlyAccountCdpBackend):
 
     def observe(self) -> NavigationObservation:
         return self._submit(self._observe())
+
+    async def _switch_planet(
+        self,
+        *,
+        planet_id: str,
+        expected_coord: str,
+        expected_account_fingerprint: str,
+    ) -> NavigationObservation:
+        page = await self._existing_fleets_page()
+        href = await page.evaluate(
+            r"""args => {
+                const [planetId, coord, host] = args;
+                for (const a of Array.from(document.querySelectorAll('#planetsListHolder a'))) {
+                    let url;
+                    try { url = new URL(a.getAttribute('href') || '', location.href); }
+                    catch (_) { continue; }
+                    if (url.hostname !== host) continue;
+                    if (!url.pathname.endsWith('/change_planet.php')) continue;
+                    if ((url.searchParams.get('id') || '') !== String(planetId)) continue;
+                    const text=(a.textContent||'').replace(/\s+/g,'');
+                    if (!text.includes('[' + coord + ']')) continue;
+                    return url.href;
+                }
+                return '';
+            }""",
+            [str(planet_id), str(expected_coord), self.game_host],
+        )
+        if not href:
+            raise CdpReadError(
+                "PlanetIdentity no longer matches an owned change_planet.php anchor; mutation not attempted"
+            )
+
+        # Exactly one remote navigation attempt. Any exception after this point is
+        # surfaced to NavigationCoordinator as potentially ambiguous; no retry here.
+        await page.goto(
+            href,
+            wait_until="domcontentloaded",
+            timeout=int(self.timeout_seconds * 1000),
+        )
+        await page.locator("#planetSwitch").wait_for(
+            state="attached",
+            timeout=int(self.timeout_seconds * 1000),
+        )
+        identity = await self._read_browser_identity()
+        if identity.account.ownership_fingerprint != str(expected_account_fingerprint):
+            raise CdpReadError("Account ownership evidence changed after planet switch")
+        current = identity.current_planet
+        if current is None or current.planet_id != str(planet_id) or current.coord != str(expected_coord):
+            raise CdpReadError("Selected planet proof does not match the requested PlanetIdentity")
+        return NavigationObservation(
+            page_token=f"runtime-page:{id(page)}",
+            identity=identity,
+        )
+
+    def switch_planet(
+        self,
+        *,
+        planet_id: str,
+        expected_coord: str,
+        expected_account_fingerprint: str,
+    ) -> NavigationObservation:
+        return self._submit(
+            self._switch_planet(
+                planet_id=planet_id,
+                expected_coord=expected_coord,
+                expected_account_fingerprint=expected_account_fingerprint,
+            )
+        )
