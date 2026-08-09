@@ -28,17 +28,17 @@ class _NoAutoReconnectMixin:
         return browser
 
 
-class MutationNavigationCdpBackend(_NoAutoReconnectMixin, V2NavigationCdpBackend):
+class V2NavigationCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2NavigationCdpBackend):
     """Production NavigationCoordinator backend with auto_reconnect=False."""
 
 
-class MutationRaidCdpBackend(_NoAutoReconnectMixin, V2RaidCdpBackend):
+class V2RaidCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2RaidCdpBackend):
     """Production raid action backend with auto_reconnect=False."""
 
 
-class MutationSpyCdpBackend(_NoAutoReconnectMixin, V2SpyCdpBackend):
+class V2SpyCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2SpyCdpBackend):
     """Production spy action/read backend with auto_reconnect=False."""
 
 
-class MutationAsteroidCdpBackend(_NoAutoReconnectMixin, V2AsteroidCdpBackend):
+class V2AsteroidCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2AsteroidCdpBackend):
     """Production asteroid action/read backend with auto_reconnect=False."""
