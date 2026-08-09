@@ -19,7 +19,11 @@ def test_qt_smoke_covers_both_supported_geometries_and_all_pages() -> None:
     ):
         assert f'"{key}":' in SMOKE
     assert "window.stack.setCurrentIndex(index)" in SMOKE
-    assert "minimumSizeHint()" in SMOKE
+    assert "page.minimumWidth()" in SMOKE
+    assert "page.minimumHeight()" in SMOKE
+    assert "page.width()" in SMOKE
+    assert "page.height()" in SMOKE
+    assert "AutoFarm must scroll at the 1180x720 minimum height" in SMOKE
     assert "Settings must scroll instead of forcing the main window larger" in SMOKE
     assert "Diagnostics must scroll instead of forcing the main window larger" in SMOKE
     assert "farm._armed is False" in SMOKE
