@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from v2.application.context import V2ApplicationContext
+from v2.ui.theme import SIZES, SPACING
 
 
 def _display(value: object) -> str:
@@ -24,6 +25,20 @@ def _display(value: object) -> str:
     if isinstance(value, int):
         return f"{value:,}".replace(",", " ")
     return str(value)
+
+
+def _column_alignment(header: str, value: object) -> Qt.AlignmentFlag:
+    numeric_headers = {"Энергия", "Металл", "Минералы", "Газ", "Кораблей", "#"}
+    centered_headers = {
+        "Координаты", "Откуда", "Куда", "Цель", "Разведка", "Возврат", "Отправлен",
+        "Fleet ID", "Report ID", "Состояние", "Состояние очереди", "Направление",
+        "Scope", "В расчётах", "Таймер фарма",
+    }
+    if header in numeric_headers or isinstance(value, int):
+        return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+    if header in centered_headers:
+        return Qt.AlignmentFlag.AlignCenter
+    return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
 
 
 class ReadOnlyRowsModel(QAbstractTableModel):
@@ -39,9 +54,14 @@ class ReadOnlyRowsModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(self.headers)
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
-        if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
+        if not index.isValid():
             return None
-        return _display(self.rows[index.row()][index.column()])
+        value = self.rows[index.row()][index.column()]
+        if role == Qt.ItemDataRole.DisplayRole:
+            return _display(value)
+        if role == Qt.ItemDataRole.TextAlignmentRole:
+            return _column_alignment(self.headers[index.column()], value)
+        return None
 
     def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):  # noqa: N802
         if role != Qt.ItemDataRole.DisplayRole:
@@ -61,8 +81,8 @@ class FilterableReadOnlyTable(QWidget):
     def __init__(self, headers: Sequence[str], rows: Sequence[Sequence[object]], *, placeholder: str, parent=None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(12)
+        layout.setContentsMargins(SPACING["xl"], SPACING["xl"], SPACING["xl"], SPACING["xl"])
+        layout.setSpacing(SPACING["md"])
 
         search = QLineEdit(self)
         search.setObjectName("TableSearch")
@@ -90,8 +110,12 @@ class FilterableReadOnlyTable(QWidget):
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         table.verticalHeader().setVisible(False)
-        table.horizontalHeader().setStretchLastSection(True)
+        table.verticalHeader().setDefaultSectionSize(SIZES["table_row"])
+        table.horizontalHeader().setStretchLastSection(False)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         table.horizontalHeader().setMinimumSectionSize(76)
         card_layout.addWidget(table)

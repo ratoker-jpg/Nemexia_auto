@@ -4,17 +4,18 @@ import uuid
 
 from PySide6.QtWidgets import (
     QComboBox,
-    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QPushButton,
     QSpinBox,
 )
 
 from v2.application.context import V2ApplicationContext
 from v2.application.read_store import QueueSnapshot
+from v2.ui.components import SectionCard, StateBanner, command_button
 from v2.ui.pages.read_tables import FilterableReadOnlyTable
+from v2.ui.theme import SPACING
 
 
 class PlanPage(FilterableReadOnlyTable):
@@ -35,71 +36,91 @@ class PlanPage(FilterableReadOnlyTable):
             parent=parent,
         )
 
-        builder = QFrame(self)
-        builder.setObjectName("InfoCard")
-        builder_layout = QHBoxLayout(builder)
-        builder_layout.setContentsMargins(12, 10, 12, 10)
-        builder_layout.setSpacing(10)
-        builder_layout.addWidget(QLabel("Сборка очереди", builder))
+        builder = SectionCard(
+            "Сборка V2-очереди",
+            "Локальная deterministic policy: browser не вызывается; protected sending/sent/ambiguous строки сохраняются.",
+            object_name="CommandCard",
+            parent=self,
+        )
+        builder_grid = QGridLayout()
+        builder_grid.setHorizontalSpacing(SPACING["md"])
+        builder_grid.setVerticalSpacing(SPACING["sm"])
 
+        builder_grid.addWidget(QLabel("РЕЖИМ", builder), 0, 0)
         self.queue_mode = QComboBox(builder)
         self.queue_mode.addItem("Металл", "metal")
         self.queue_mode.addItem("Минералы", "minerals")
         self.queue_mode.addItem("AutoFarm ≥500k", "autofarm")
-        builder_layout.addWidget(self.queue_mode)
+        builder_grid.addWidget(self.queue_mode, 1, 0)
 
-        builder_layout.addWidget(QLabel("Целей", builder))
+        builder_grid.addWidget(QLabel("ЦЕЛЕЙ", builder), 0, 1)
         self.queue_size = QSpinBox(builder)
         self.queue_size.setRange(1, 5000)
         self.queue_size.setValue(45)
-        builder_layout.addWidget(self.queue_size)
+        builder_grid.addWidget(self.queue_size, 1, 1)
 
-        builder_layout.addWidget(QLabel("Мин. металл", builder))
+        builder_grid.addWidget(QLabel("МИН. МЕТАЛЛ", builder), 0, 2)
         self.minimum_metal = QSpinBox(builder)
         self.minimum_metal.setRange(0, 2_000_000_000)
         self.minimum_metal.setSingleStep(10_000)
         self.minimum_metal.setValue(480_000)
-        builder_layout.addWidget(self.minimum_metal)
+        builder_grid.addWidget(self.minimum_metal, 1, 2)
 
-        self.preview_refill_button = QPushButton("Предпросмотр", builder)
+        builder_actions = QHBoxLayout()
+        self.preview_refill_button = command_button("Предпросмотр", tone="secondary", compact=True, parent=builder)
         self.preview_refill_button.clicked.connect(self.preview_refill)
-        builder_layout.addWidget(self.preview_refill_button)
-
-        self.apply_refill_button = QPushButton("Пересобрать V2-очередь", builder)
+        builder_actions.addWidget(self.preview_refill_button)
+        self.apply_refill_button = command_button("Пересобрать V2-очередь", tone="primary", compact=True, parent=builder)
         self.apply_refill_button.clicked.connect(self.apply_refill)
-        builder_layout.addWidget(self.apply_refill_button)
+        builder_actions.addWidget(self.apply_refill_button)
+        builder_actions.addStretch(1)
+        builder_grid.addLayout(builder_actions, 1, 3)
+        builder_grid.setColumnStretch(3, 1)
+        builder.content_layout.addLayout(builder_grid)
 
         self.refill_status = QLabel("Pure policy: browser не вызывается.", builder)
         self.refill_status.setObjectName("Muted")
         self.refill_status.setWordWrap(True)
-        builder_layout.addWidget(self.refill_status, 1)
+        builder.content_layout.addWidget(self.refill_status)
         self.layout().insertWidget(1, builder)
 
-        controls = QFrame(self)
-        controls.setObjectName("InfoCard")
-        controls_layout = QHBoxLayout(controls)
-        controls_layout.setContentsMargins(12, 10, 12, 10)
-        controls_layout.setSpacing(10)
-
-        controls_layout.addWidget(QLabel("Мегатранспортировщиков", controls))
+        controls = SectionCard(
+            "Контролируемая отправка",
+            "Подготовка остаётся read-only. «Отправить выбранную» — подтверждаемая удалённая мутация с одной попыткой SendFleet.",
+            object_name="CommandCard",
+            parent=self,
+        )
+        controls_row = QHBoxLayout()
+        controls_row.setSpacing(SPACING["sm"])
+        ship_label = QLabel("МЕГАТРАНСПОРТИРОВЩИКИ", controls)
+        ship_label.setObjectName("MetricLabel")
+        controls_row.addWidget(ship_label)
         self.ship_count = QSpinBox(controls)
         self.ship_count.setRange(1, 100000)
         self.ship_count.setValue(25)
-        controls_layout.addWidget(self.ship_count)
+        controls_row.addWidget(self.ship_count)
 
-        self.prepare_button = QPushButton("Подготовить выбранную", controls)
+        self.prepare_button = command_button("Подготовить выбранную", tone="primary", parent=controls)
         self.prepare_button.clicked.connect(self.prepare_selected)
-        controls_layout.addWidget(self.prepare_button)
+        controls_row.addWidget(self.prepare_button)
 
-        self.send_button = QPushButton("Отправить выбранную", controls)
+        self.send_button = command_button("Отправить выбранную", tone="warning", parent=controls)
         self.send_button.setObjectName("PrimaryButton")
+        self.send_button.setProperty("tone", "warning")
         self.send_button.clicked.connect(self.send_selected)
-        controls_layout.addWidget(self.send_button)
+        controls_row.addWidget(self.send_button)
+        controls_row.addStretch(1)
+        controls.content_layout.addLayout(controls_row)
 
-        self.action_status = QLabel("Выбери строку очереди.", controls)
-        self.action_status.setObjectName("Muted")
-        self.action_status.setWordWrap(True)
-        controls_layout.addWidget(self.action_status, 1)
+        self.action_banner = StateBanner(
+            "Ожидание выбора",
+            "Выбери queued-строку. Действия доступны только при включённом V2 action gate.",
+            tone="info",
+            parent=controls,
+        )
+        self.action_status = self.action_banner.detail
+        self.action_status.setText("Выбери строку очереди.")
+        controls.content_layout.addWidget(self.action_banner)
         self.layout().insertWidget(2, controls)
         self._update_action_gate()
 

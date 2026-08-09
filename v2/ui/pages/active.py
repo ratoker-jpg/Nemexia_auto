@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from v2.application.context import V2ApplicationContext
+from v2.ui.components import SectionCard, StateBanner, command_button, page_layout
 from v2.ui.pages.read_tables import FilterableReadOnlyTable
+from v2.ui.theme import SPACING
 
 
 class ActivePage(QWidget):
@@ -14,41 +16,40 @@ class ActivePage(QWidget):
         self.context = context
         self.capacity = None
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(12)
+        layout = page_layout(self)
 
-        banner = QFrame(self)
-        banner.setObjectName("InfoCard")
-        banner_layout = QVBoxLayout(banner)
-        banner_layout.setContentsMargins(18, 14, 18, 14)
-
-        heading = QHBoxLayout()
-        self.status_title = QLabel("Live-полёты не проверены", banner)
-        self.status_title.setObjectName("SectionTitle")
-        heading.addWidget(self.status_title, 1)
-        self.refresh_button = QPushButton("Обновить", banner)
-        self.refresh_button.setObjectName("SecondaryButton")
-        self.refresh_button.clicked.connect(self.reload_view)
-        heading.addWidget(self.refresh_button)
-        banner_layout.addLayout(heading)
-
-        self.status_detail = QLabel(
-            "Открой fleets.php в браузере с CDP и нажми «Обновить».",
-            banner,
+        self.status_banner = StateBanner(
+            "Live-полёты не проверены",
+            "Открой fleets.php в браузере с CDP и нажми «Обновить». Чтение остаётся attach-only.",
+            tone="info",
+            parent=self,
         )
-        self.status_detail.setObjectName("Muted")
-        self.status_detail.setWordWrap(True)
-        self.capacity_label = QLabel("Лимит флота: —", banner)
-        self.capacity_label.setObjectName("Muted")
+        self.status_title = self.status_banner.title
+        self.status_detail = self.status_banner.detail
+        layout.addWidget(self.status_banner)
+
+        summary = SectionCard(
+            "Live control",
+            "Фактическая ёмкость флота и unresolved V2 journal показываются отдельно от строк полётов.",
+            object_name="CommandCard",
+            parent=self,
+        )
+        summary_row = QHBoxLayout()
+        summary_row.setSpacing(SPACING["md"])
+        self.capacity_label = QLabel("Лимит флота: —", summary)
+        self.capacity_label.setObjectName("BodyStrong")
         self.capacity_label.setToolTip("Лимит не вычисляется по строкам таблицы")
-        self.journal_label = QLabel("Журнал V2: —", banner)
+        summary_row.addWidget(self.capacity_label, 1)
+        self.refresh_button = command_button("Обновить", tone="secondary", compact=True, parent=summary)
+        self.refresh_button.clicked.connect(self.reload_view)
+        summary_row.addWidget(self.refresh_button)
+        summary.content_layout.addLayout(summary_row)
+
+        self.journal_label = QLabel("Журнал V2: —", summary)
         self.journal_label.setObjectName("Muted")
         self.journal_label.setWordWrap(True)
-        banner_layout.addWidget(self.status_detail)
-        banner_layout.addWidget(self.capacity_label)
-        banner_layout.addWidget(self.journal_label)
-        layout.addWidget(banner)
+        summary.content_layout.addWidget(self.journal_label)
+        layout.addWidget(summary)
 
         self.flight_table = FilterableReadOnlyTable(
             (
@@ -59,6 +60,7 @@ class ActivePage(QWidget):
             placeholder="Поиск по активным полётам…",
             parent=self,
         )
+        self.flight_table.layout().setContentsMargins(0, 0, 0, 0)
         self.model = self.flight_table.model
         layout.addWidget(self.flight_table, 1)
 
