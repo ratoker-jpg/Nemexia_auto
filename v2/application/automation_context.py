@@ -74,8 +74,13 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
         try:
             self.ensure_messages_ready()
         except BrowserReadinessError as exc:
+            state = (
+                ReportReadState.CAPTCHA
+                if "captcha" in str(exc).casefold()
+                else ReportReadState.LIVE_UNAVAILABLE
+            )
             return ReconReadSnapshot(
-                ReportReadState.LIVE_UNAVAILABLE,
+                state,
                 (),
                 (),
                 (),
@@ -88,6 +93,23 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
         self.ensure_fleets_ready(planet_coord=home or None)
         return super().prepare_raid(target, player, ship_count)
 
+    def _validate_plan_raid_before_readiness(self, *, queue_id: int, target: str) -> None:
+        """Reject commands guaranteed to fail locally before changing browser context."""
+
+        if self._raid_actions is None or self._v2_database is None or self._v2_queue is None:
+            raise RuntimeError("V2 raid dispatch services are unavailable")
+        item = next((row for row in self.plan() if row.id == int(queue_id)), None)
+        if item is None:
+            raise RuntimeError(f"Queue row not found: {queue_id}")
+        if item.coord != str(target):
+            raise RuntimeError("Selected queue row changed; refresh Plan before sending")
+        if item.state != "queued":
+            raise RuntimeError(f"Queue row is not queued: {item.state}")
+        if not item.enabled:
+            raise RuntimeError(f"Target is disabled: {item.coord}")
+        if item.blacklisted:
+            raise RuntimeError(f"Target is blacklisted: {item.coord}")
+
     def dispatch_plan_raid(
         self,
         *,
@@ -97,6 +119,9 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
         ship_count: int,
         request_id: str,
     ):
+        # Preserve the superclass validation again after readiness too, but do the
+        # same local gate first so a stale/blocked command cannot switch planet or page.
+        self._validate_plan_raid_before_readiness(queue_id=queue_id, target=target)
         home = str(self.v2_setting("farm_home", "") or "").strip()
         self.ensure_fleets_ready(planet_coord=home or None)
         return super().dispatch_plan_raid(
