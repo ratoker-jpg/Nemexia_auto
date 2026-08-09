@@ -98,6 +98,17 @@ def test_transient_typed_failure_keeps_last_error_but_reconciles_controls() -> N
     assert "authoritative state:" in PAGE
 
 
+def test_progress_failure_does_not_discard_authoritative_scheduler_state() -> None:
+    state_read = PAGE.index("state = self._typed_autorenew_state()")
+    scan_read = PAGE.index("scan = self._typed_discovery_scan")
+    assert state_read < scan_read
+    assert 'scan_error = ""' in PAGE
+    assert 'self._autorenew_values["AutorenewProgress"].setText("—/120")' in PAGE
+    assert "A discovery progress read is ancillary" in PAGE
+    assert "self._sync_control_interlock(state, state_unknown=False)" in PAGE
+    assert "Autorenew state подтверждён" in PAGE
+
+
 def test_zero_minute_return_buffer_is_not_replaced_by_default() -> None:
     assert 'int(self.context.v2_setting("farm_return_buffer_minutes", 5))' in PAGE
     assert 'v2_setting("farm_return_buffer_minutes", 5) or 5' not in PAGE
