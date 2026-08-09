@@ -46,10 +46,25 @@ def test_recon_ui_exposes_report_provenance() -> None:
     assert "item.source" in RECON
 
 
-def test_recon_ui_exposes_one_explicit_controlled_refill_without_direct_browser_logic() -> None:
+def test_recon_ui_uses_auto07_without_manual_fleet_id_or_direct_browser_logic() -> None:
     assert "ReconRefillState" in RECON
-    assert "run_controlled_recon_refill" in RECON
+    assert 'getattr(self.context, "run_automatic_recon", None)' in RECON
+    assert 'getattr(self.context, "run_automatic_recon_refill", None)' in RECON
+    assert "auto-recon-" in RECON
     assert "recon-refill-" in RECON
-    assert "Разведка → AutoFarm refill" in RECON
-    for forbidden in ("playwright", "BrowserWorker", "ajax_fleets.php", "sqlite3"):
+    assert "Получить свежий отчёт" in RECON
+    assert "Авторазведка → AutoFarm refill" in RECON
+    assert "QLineEdit" not in RECON
+    assert "SpyFleetId" not in RECON
+    assert "EXACT SPY FLEET ID" not in RECON
+    assert "run_controlled_recon_refill" not in RECON
+    for forbidden in (
+        "playwright",
+        "BrowserWorker",
+        "ajax_fleets.php",
+        "sqlite3",
+        "processSpy(",
+        "#spy1Link-",
+        "#spy1Time-",
+    ):
         assert forbidden not in RECON
