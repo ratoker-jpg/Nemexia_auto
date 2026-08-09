@@ -43,6 +43,14 @@ def test_default_and_rollback_entrypoints_remain_strictly_separate() -> None:
     assert "run_app.bat" not in fallback
 
 
+def test_rollback_setup_and_error_paths_retain_shared_message_script() -> None:
+    fallback = text("run_legacy.bat")
+    install = text("install.bat")
+    assert (ROOT / "launcher_messages.ps1").is_file()
+    assert "launcher_messages.ps1" in fallback
+    assert "launcher_messages.ps1" in install
+
+
 def test_packaged_rollback_and_black_box_gate_remain_live() -> None:
     spec = text("NemexiaRaidManagerLegacy.spec")
     builder = text("build_legacy_exe.bat")
