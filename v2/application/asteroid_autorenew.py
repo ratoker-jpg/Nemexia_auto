@@ -21,7 +21,7 @@ from v2.application.asteroid_repository import V2AsteroidRepository
 from v2.application.browser_readiness import BrowserReadinessManager
 from v2.application.discovery_scan import ControlledDiscoveryScan, DiscoverySystemEvidence
 from v2.application.navigation import NavigationObservation
-from v2.domain.asteroid_candidates import AsteroidCandidate, build_candidate_preview, observation_identity
+from v2.domain.asteroid_candidates import AsteroidCandidate, build_candidate_preview
 from v2.domain.asteroids import predict_coordinate
 from v2.persistence.asteroid_autorenew import AsteroidAutorenewRepository, AsteroidAutorenewState
 from v2.persistence.asteroid_autorenew_guard import AsteroidAutorenewGuardRepository
@@ -104,9 +104,19 @@ class AsteroidAutorenewService:
         self._cycle_candidates: tuple[AsteroidCandidate, ...] = ()
         self._candidate_index = 0
         self._cycle_results: dict[str, AsteroidDispatchResult] = {}
-        self._scan_before_ids: frozenset[tuple[object, ...]] = frozenset()
         self._last_captcha_probe: datetime | None = None
-        # Persisted armed=true is crash evidence only. A new process cannot inherit authority.
+
+        # Persisted armed=true is crash evidence only. Stop any DB-only discovery
+        # continuation before clearing scheduler authority so the next explicit
+        # Start is not poisoned by a stale running AUTO-10 scan row.
+        persisted = self.repository.read()
+        if persisted.armed and persisted.active_scan_id:
+            scan = self.discovery.repository.read(persisted.active_scan_id)
+            if scan is not None and scan.status == "running":
+                self.discovery.stop(
+                    scan.scan_id,
+                    detail="Process restarted; autorenew startup is disarmed",
+                )
         self.repository.disarm_on_startup()
 
     @staticmethod
@@ -218,7 +228,6 @@ class AsteroidAutorenewService:
             self._cycle_candidates = ()
             self._candidate_index = 0
             self._cycle_results = {}
-            self._scan_before_ids = frozenset()
             self._last_captcha_probe = None
         if start_immediately:
             return self.tick(force=True)
@@ -237,7 +246,6 @@ class AsteroidAutorenewService:
             self._cycle_candidates = ()
             self._candidate_index = 0
             self._cycle_results = {}
-            self._scan_before_ids = frozenset()
             return self.repository.stop(status="stopped_manual", detail=detail)
 
     def _stop(self, status: str, detail: str) -> AsteroidAutorenewTick:
@@ -255,7 +263,6 @@ class AsteroidAutorenewService:
         observed = self.navigation.observe()
         self._require_expected_context(state, observed, page_kind="galaxy")
         scan_id = f"autorenew-scan:{state.session_id}:{self._request_id()}"
-        self._scan_before_ids = frozenset(self.discovery.asteroid_storage.identities())
         scan = self.discovery.start(scan_id=scan_id, planet_coord=state.source_coord)
         updated = self.repository.transition(
             status="running_discovery",
@@ -270,12 +277,13 @@ class AsteroidAutorenewService:
         self._cycle_results = {}
         return AsteroidAutorenewTick(updated, detail=updated.detail)
 
-    def _current_scan_candidates(self, now: datetime) -> tuple[AsteroidCandidate, ...]:
-        observations = tuple(
-            fact
-            for fact in self.asteroid_repository.observations()
-            if observation_identity(fact) not in self._scan_before_ids
-        )
+    def _current_scan_candidates(
+        self,
+        scan_id: str,
+        now: datetime,
+    ) -> tuple[AsteroidCandidate, ...]:
+        observation_ids = self.repository.scan_observation_ids(scan_id)
+        observations = self.asteroid_repository.observations_by_ids(observation_ids)
         if not observations:
             return ()
         return build_candidate_preview(
@@ -290,6 +298,12 @@ class AsteroidAutorenewService:
         self._require_navigation_clear()
         result = self.discovery.step(state.active_scan_id)
         scan = result.scan
+        if result.processed and result.asteroid_observation_ids:
+            self.repository.record_scan_observations(
+                scan_id=scan.scan_id,
+                sequence_index=max(0, scan.cursor_index - 1),
+                observation_ids=result.asteroid_observation_ids,
+            )
         if scan.status == "ambiguous":
             return self._stop("stopped_ambiguous", scan.detail or "Discovery navigation became ambiguous")
         if scan.status not in {"running", "completed"}:
@@ -307,11 +321,11 @@ class AsteroidAutorenewService:
                 detail=f"Discovery progress {scan.cursor_index}/120",
             )
 
-        candidates = self._current_scan_candidates(now)
+        candidates = self._current_scan_candidates(scan.scan_id, now)
         if not candidates:
             return self._stop(
                 "stopped_no_asteroids",
-                "Current completed discovery produced no new usable asteroid evidence",
+                "Current completed discovery produced no scan-proven usable asteroid evidence",
             )
         self._cycle_candidates = candidates
         self._candidate_index = 0
@@ -440,7 +454,6 @@ class AsteroidAutorenewService:
         )
         self._cycle_candidates = ()
         self._candidate_index = 0
-        self._scan_before_ids = frozenset()
         return AsteroidAutorenewTick(updated, detail=updated.detail)
 
     @staticmethod
