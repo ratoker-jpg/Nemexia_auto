@@ -56,6 +56,7 @@ class FarmRuntime(Protocol):
     def plan(self, *, limit: int = 5000) -> list[QueueSnapshot]: ...
     def recent_raid_actions(self, *, limit: int = 200) -> list[RaidActionRecord]: ...
     def recent_spy_actions(self, *, limit: int = 200) -> list[object]: ...
+    def recent_automatic_recon_actions(self, *, limit: int = 200) -> list[object]: ...
     def dispatch_plan_raid(
         self, *, queue_id: int, target: str, player: str, ship_count: int, request_id: str,
     ) -> RaidDispatchResult: ...
@@ -101,18 +102,18 @@ def _journal_ready_at(actions: Sequence[RaidActionRecord], *, buffer_minutes: in
     return max(deadlines, default=None)
 
 
-def _recent_spy_actions(runtime: FarmRuntime, *, limit: int = 500) -> list[object]:
-    reader = getattr(runtime, "recent_spy_actions", None)
+def _recent_action_records(runtime: FarmRuntime, method: str, *, limit: int = 500) -> list[object]:
+    reader = getattr(runtime, method, None)
     if not callable(reader):
         return []
     try:
         return list(reader(limit=limit))
     except Exception:
-        # Losing access to the persisted spy journal must not create a new send window.
-        return [_UnreadableSpyJournal()]
+        # Losing access to a persisted action journal must never create a new mutation window.
+        return [_UnreadableActionJournal()]
 
 
-class _UnreadableSpyJournal:
+class _UnreadableActionJournal:
     status = "pending"
 
 
@@ -128,12 +129,23 @@ class FarmController:
         overview = runtime.live_overview_snapshot() if status is not None and status.available else None
         actions = runtime.recent_raid_actions(limit=500)
         unresolved_raid = [item for item in actions if item.status in {"pending", "ambiguous"}]
-        spy_actions = _recent_spy_actions(runtime, limit=500)
+        spy_actions = _recent_action_records(runtime, "recent_spy_actions", limit=500)
+        automatic_recon_actions = _recent_action_records(
+            runtime, "recent_automatic_recon_actions", limit=500
+        )
         unresolved_spy = [
             item for item in spy_actions
             if str(getattr(item, "status", "")) in {"pending", "ambiguous"}
         ]
-        unresolved_count = len(unresolved_raid) + len(unresolved_spy)
+        unresolved_automatic_recon = [
+            item for item in automatic_recon_actions
+            if str(getattr(item, "status", "")) in {"pending", "ambiguous"}
+        ]
+        unresolved_count = (
+            len(unresolved_raid)
+            + len(unresolved_spy)
+            + len(unresolved_automatic_recon)
+        )
 
         live_ready = _parse_dt(overview.inferred_farm_ready_at) if overview is not None else None
         journal_ready = _journal_ready_at(actions, buffer_minutes=_return_buffer_minutes(runtime))
@@ -149,7 +161,9 @@ class FarmController:
             return FarmSnapshot(FarmState.LIVE_UNAVAILABLE, status.detail or "Live-полёты или capacity недоступны.", len(items), 0, 0, unresolved_count, ready_at)
         if unresolved_count:
             detail = (
-                f"Есть unresolved side effects: raid={len(unresolved_raid)}, spy={len(unresolved_spy)}. "
+                "Есть unresolved side effects: "
+                f"raid={len(unresolved_raid)}, spy={len(unresolved_spy)}, "
+                f"automatic_recon={len(unresolved_automatic_recon)}. "
                 "Новый raid/recon цикл заблокирован до ручной сверки."
             )
             return FarmSnapshot(FarmState.BLOCKED_UNRESOLVED, detail, len(items), free_slots, blocking, unresolved_count, ready_at)
