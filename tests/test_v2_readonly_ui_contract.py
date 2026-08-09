@@ -15,7 +15,7 @@ def test_qt_preview_bootstraps_through_isolated_v2_and_readonly_legacy_context()
     assert "with V2ProductionSession(paths, build_context) as context:" in APP_QT
     assert "V2Database(paths.database)" in APP_QT
     assert "LegacySettingsImporter" in APP_QT
-    assert "DebrisEnabledApplicationContext(" in APP_QT
+    assert "DebrisEnabledApplicationContextWithReadiness(" in APP_QT
     assert "class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext)" in DEBRIS_CONTEXT
     assert "class AsteroidEnabledApplicationContext(ReconOwnedApplicationContext)" in ASTEROID_CONTEXT
     assert "V2ApplicationContext" in APP_QT
