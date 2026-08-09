@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from v2.application.automation_context import DebrisEnabledApplicationContextWithReadiness
 from v2.application.browser_identity import PlanetDomFact, build_browser_identity
+from v2.application.debris_context import DebrisEnabledApplicationContext
 from v2.application.galaxy_navigation import VerifiedGalaxyNavigationCoordinator
 from v2.application.navigation import (
     NavigationMutationError,
@@ -136,6 +138,25 @@ def test_post_attempt_error_is_ambiguous_without_retry(tmp_path: Path) -> None:
     assert backend.calls == [(1, 1)]
     assert "automatic retry forbidden" in record.detail
     database.close()
+
+
+def test_readiness_context_leaves_navigation_shutdown_to_debris_superclass(monkeypatch) -> None:
+    context = object.__new__(DebrisEnabledApplicationContextWithReadiness)
+    sentinel = object()
+    context._navigation_coordinator = sentinel
+    context._automatic_recon = object()
+    seen: list[object] = []
+
+    def fake_super_close(self) -> None:
+        seen.append(self._navigation_coordinator)
+        self._navigation_coordinator = None
+
+    monkeypatch.setattr(DebrisEnabledApplicationContext, "close", fake_super_close)
+    context.close()
+
+    assert seen == [sentinel]
+    assert context._navigation_coordinator is None
+    assert context._automatic_recon is None
 
 
 def test_auto09_source_contract_has_one_refresh_effect_and_no_ui_browser_boundary() -> None:
