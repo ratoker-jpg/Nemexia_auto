@@ -11,11 +11,11 @@ def text(path: str) -> str:
 def test_qt_bootstrap_wires_one_shared_asteroid_backend_without_ui_trigger() -> None:
     app = text("app_qt.py")
     debris_context = text("v2/application/debris_context.py")
-    assert "V2AsteroidCdpBackend" in app
-    assert app.count("V2AsteroidCdpBackend(endpoint.endpoint)") == 1
+    assert "V2AsteroidCdpBackendNoAutoReconnect" in app
+    assert app.count("V2AsteroidCdpBackendNoAutoReconnect(endpoint.endpoint)") == 1
     assert "V2AsteroidSource(asteroid_backend)" in app
     assert "AsteroidActionService(" in app
-    assert "DebrisEnabledApplicationContext(" in app
+    assert "DebrisEnabledApplicationContextWithReadiness(" in app
     assert "class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext)" in debris_context
     assert "AsteroidRequestCoordinator(self._asteroid_actions, database)" in debris_context
     assert 'enabled=bool(settings.get("actions_enabled"))' in app
