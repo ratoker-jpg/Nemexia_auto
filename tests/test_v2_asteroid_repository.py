@@ -31,12 +31,12 @@ def fact(
     )
 
 
-def test_schema_v8_and_restart_preserve_immutable_observations(tmp_path: Path) -> None:
+def test_schema_v9_and_restart_preserve_immutable_observations(tmp_path: Path) -> None:
     path = tmp_path / "v2.sqlite3"
     now = datetime(2026, 8, 8, 10, 30, tzinfo=timezone.utc)
     item = fact()
     with V2Database(path) as db:
-        assert db.schema_version() == V2_SCHEMA_VERSION == 8
+        assert db.schema_version() == V2_SCHEMA_VERSION == 9
         assert "asteroid_observations" in db.table_names()
         result = V2AsteroidRepository(db).ingest((item,), now=now)
         assert result.inserted == 1
