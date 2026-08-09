@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from v2.application.browser_identity import PlanetDomFact, build_browser_identity
-from v2.application.navigation import NavigationCoordinator, NavigationObservation
+from v2.application.navigation import (
+    NavigationCoordinator,
+    NavigationMutationError,
+    NavigationObservation,
+)
 from v2.persistence.database import V2Database, V2DatabaseError
 from v2.persistence.navigation_journal import NavigationJournalRepository
 
@@ -27,9 +31,16 @@ def _observation(selected_id: str) -> NavigationObservation:
 
 
 class _SwitchBackend:
-    def __init__(self, *, fail: bool = False, reconcile_after_failure: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        fail_before_attempt: bool = False,
+        reconcile_after_failure: bool = False,
+    ) -> None:
         self.current = _observation("101")
         self.fail = fail
+        self.fail_before_attempt = fail_before_attempt
         self.reconcile_after_failure = reconcile_after_failure
         self.switch_calls = 0
         self.closed = False
@@ -42,6 +53,8 @@ class _SwitchBackend:
         assert planet_id == "202"
         assert expected_coord == "3:39:8"
         assert expected_account_fingerprint == self.current.identity.account.ownership_fingerprint
+        if self.fail_before_attempt:
+            raise NavigationMutationError("owned anchor disappeared", remote_attempted=False)
         if self.fail:
             if self.reconcile_after_failure:
                 self.current = _observation("202")
@@ -101,6 +114,20 @@ def test_unowned_planet_fails_safe_without_remote_attempt(tmp_path: Path) -> Non
         database.close()
 
 
+def test_known_pre_attempt_backend_failure_is_failed_safe(tmp_path: Path) -> None:
+    backend = _SwitchBackend(fail_before_attempt=True)
+    database, coordinator = _coordinator(tmp_path, backend)
+    try:
+        record = coordinator.switch_planet(request_id="preflight-1", planet_id="202")
+        assert record.status == "failed_safe"
+        assert backend.switch_calls == 1
+        assert "before remote mutation" in record.detail
+        assert coordinator.unresolved() == ()
+    finally:
+        coordinator.close()
+        database.close()
+
+
 def test_uncertain_remote_effect_becomes_ambiguous_and_is_never_retried(tmp_path: Path) -> None:
     backend = _SwitchBackend(fail=True)
     database, coordinator = _coordinator(tmp_path, backend)
@@ -139,6 +166,8 @@ def test_auto04_is_the_only_v2_planet_navigation_path() -> None:
     assert "change_planet.php" in source
     assert "searchParams.get('id')" in source
     assert "expected_account_fingerprint" in source
+    assert "remote_attempted=False" in source
+    assert "remote_attempted=True" in source
     assert "automatic retry forbidden" in coordinator
     assert "_switch_verified" in coordinator
     assert "current.planet_id == target.planet_id" in coordinator
