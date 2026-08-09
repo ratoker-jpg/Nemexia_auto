@@ -1,18 +1,10 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QFormLayout,
-    QFrame,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QSpinBox,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QCheckBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QVBoxLayout, QWidget
 
 from v2.application.context import V2ApplicationContext
+from v2.ui.components import SectionCard, StateBanner, command_button, scrollable_page
+from v2.ui.theme import SPACING
 
 
 class SettingsPage(QWidget):
@@ -22,65 +14,100 @@ class SettingsPage(QWidget):
         super().__init__(parent)
         self.context = context
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
-        card = QFrame(self)
-        card.setObjectName("InfoCard")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(18, 16, 18, 16)
-        card_layout.setSpacing(12)
-        title = QLabel("Параметры V2", card)
-        title.setObjectName("SectionTitle")
-        card_layout.addWidget(title)
-        note = QLabel(
-            "Сохраняются только в изолированной V2 SQLite. Рабочая legacy-база остаётся только для чтения.",
-            card,
-        )
-        note.setObjectName("Muted")
-        note.setWordWrap(True)
-        card_layout.addWidget(note)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        scroll, _content, layout = scrollable_page(self)
+        outer.addWidget(scroll)
 
+        isolation = StateBanner(
+            "V2-owned settings only",
+            "Сохраняются только в изолированной V2 SQLite. Рабочая legacy-база остаётся только для чтения.",
+            tone="info",
+            parent=self,
+        )
+        layout.addWidget(isolation)
+
+        connection = SectionCard(
+            "Connection",
+            "CDP endpoint применяется только к opt-in app_qt.py и не запускает браузер автоматически.",
+            parent=self,
+        )
         form = QFormLayout()
-        form.setHorizontalSpacing(18)
-        form.setVerticalSpacing(10)
-        self.cdp_port = QSpinBox(card)
+        form.setHorizontalSpacing(SPACING["lg"])
+        form.setVerticalSpacing(SPACING["sm"])
+        self.cdp_port = QSpinBox(connection)
         self.cdp_port.setRange(1, 65535)
         form.addRow("CDP port", self.cdp_port)
-        self.farm_home = QLineEdit(card)
+        connection.content_layout.addLayout(form)
+        layout.addWidget(connection)
+
+        account = SectionCard(
+            "Account context",
+            "Координаты используются существующими V2 application contracts; UI не переключает планеты и вкладки.",
+            parent=self,
+        )
+        account_form = QFormLayout()
+        account_form.setHorizontalSpacing(SPACING["lg"])
+        account_form.setVerticalSpacing(SPACING["sm"])
+        self.farm_home = QLineEdit(account)
         self.farm_home.setPlaceholderText("3:39:11")
-        form.addRow("Планета автофарма", self.farm_home)
-        self.command_planet = QLineEdit(card)
+        account_form.addRow("Планета автофарма", self.farm_home)
+        self.command_planet = QLineEdit(account)
         self.command_planet.setPlaceholderText("2:5:6")
-        form.addRow("Командная планета", self.command_planet)
-        self.return_buffer = QSpinBox(card)
+        account_form.addRow("Командная планета", self.command_planet)
+        account.content_layout.addLayout(account_form)
+        layout.addWidget(account)
+
+        timing = SectionCard(
+            "Farm timing",
+            "Буфер применяется к существующему typed farm readiness contract.",
+            parent=self,
+        )
+        timing_form = QFormLayout()
+        timing_form.setHorizontalSpacing(SPACING["lg"])
+        timing_form.setVerticalSpacing(SPACING["sm"])
+        self.return_buffer = QSpinBox(timing)
         self.return_buffer.setRange(0, 60)
         self.return_buffer.setSuffix(" мин")
-        form.addRow("Буфер после возврата", self.return_buffer)
-        self.actions_enabled = QCheckBox("Разрешить действия V2", card)
+        timing_form.addRow("Буфер после возврата", self.return_buffer)
+        timing.content_layout.addLayout(timing_form)
+        layout.addWidget(timing)
+
+        safety = SectionCard(
+            "Safety gate",
+            "actions_enabled разрешает только уже существующие V2 mutation contracts; новые маршруты этим переключателем не создаются.",
+            object_name="CommandCard",
+            parent=self,
+        )
+        self.actions_enabled = QCheckBox("Разрешить действия V2", safety)
         self.actions_enabled.setToolTip(
-            "По умолчанию выключено. Разрешает V2 изменять форму флота; отправка будет добавлена отдельным этапом."
+            "По умолчанию выключено. Разрешает только уже реализованные и подтверждаемые V2 action boundaries."
         )
-        form.addRow("Игровые действия", self.actions_enabled)
-        card_layout.addLayout(form)
-
-        warning = QLabel(
-            "⚠ Включай действия только когда открыт нужный аккаунт и fleets.php. CAPTCHA всегда останавливает V2.",
-            card,
+        safety.content_layout.addWidget(self.actions_enabled)
+        warning = StateBanner(
+            "⚠ Игровые действия",
+            "Включай действия только когда открыт нужный аккаунт и требуемая страница. CAPTCHA всегда останавливает V2. "
+            "Browser navigation остаётся запрещённой отдельным NO NAVIGATION BOUNDARY.",
+            tone="warning",
+            parent=safety,
         )
-        warning.setObjectName("Muted")
-        warning.setWordWrap(True)
-        card_layout.addWidget(warning)
+        safety.content_layout.addWidget(warning)
+        layout.addWidget(safety)
 
-        self.save_button = QPushButton("Сохранить", card)
+        save_card = SectionCard("Применение", "Изменения записываются одной allow-listed V2 settings операцией.", parent=self)
+        row = QHBoxLayout()
+        self.save_button = command_button("Сохранить", tone="primary", parent=save_card)
         self.save_button.setObjectName("PrimaryButton")
         self.save_button.clicked.connect(self.save_settings)
-        card_layout.addWidget(self.save_button)
-        self.status_label = QLabel("", card)
+        row.addWidget(self.save_button)
+        row.addStretch(1)
+        save_card.content_layout.addLayout(row)
+        self.status_label = QLabel("", save_card)
         self.status_label.setObjectName("Muted")
         self.status_label.setWordWrap(True)
-        card_layout.addWidget(self.status_label)
-        layout.addWidget(card)
+        save_card.content_layout.addWidget(self.status_label)
+        layout.addWidget(save_card)
         layout.addStretch(1)
         self.reload_view()
 
