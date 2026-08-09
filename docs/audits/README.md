@@ -1,5 +1,11 @@
 # Аудиты проекта
 
+## AUTO-08 — espionage route parity gate — 2026-08-09
+
+[`2026-08-09-v2-auto08-espionage-route-parity.md`](2026-08-09-v2-auto08-espionage-route-parity.md) фиксирует no-op решение после AUTO-07: effective legacy доказывает обработку уже существующих spy fleets через `processSpy`, но не доказывает создание нового mission-2 espionage route через `SendFleet`.
+
+Ключевой результат: наличие option `mission=2` в game DOM не является доказательством legacy automation contract. V2 не должна придумывать ship/probe count, новую spy-dispatch мутацию или bulk `processSpy(0)`. Следующий automation этап — AUTO-09 verified galaxy/system step.
+
 ## Текущий full-automation parity audit — AUTO-01 — 2026-08-09
 
 [`2026-08-09-v2-auto01-effective-legacy-automation-parity.md`](2026-08-09-v2-auto01-effective-legacy-automation-parity.md) фиксирует research-only матрицу effective legacy automation → current V2 → missing contract → risk → implementation order.
