@@ -43,6 +43,7 @@ NemexiaRaidManagerLegacy.spec
 build_legacy_exe.bat
 requirements.txt
 requirements-v2.txt
+launcher_messages.ps1
 install.bat
 self_test.py
 ci/run_legacy_self_test.py
