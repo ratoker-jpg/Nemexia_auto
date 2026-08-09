@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_QT = (ROOT / "app_qt.py").read_text(encoding="utf-8")
+LIFECYCLE = (ROOT / "v2" / "release_lifecycle.py").read_text(encoding="utf-8")
 MAIN = (ROOT / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
 TABLES = (ROOT / "v2" / "ui" / "pages" / "read_tables.py").read_text(encoding="utf-8")
 RECON = (ROOT / "v2" / "ui" / "pages" / "recon.py").read_text(encoding="utf-8")
@@ -11,7 +12,7 @@ DEBRIS_CONTEXT = (ROOT / "v2" / "application" / "debris_context.py").read_text(e
 
 
 def test_qt_preview_bootstraps_through_isolated_v2_and_readonly_legacy_context() -> None:
-    assert "build_context(paths)" in APP_QT
+    assert "with V2ProductionSession(paths, build_context) as context:" in APP_QT
     assert "V2Database(paths.database)" in APP_QT
     assert "LegacySettingsImporter" in APP_QT
     assert "DebrisEnabledApplicationContext(" in APP_QT
@@ -23,7 +24,7 @@ def test_qt_preview_bootstraps_through_isolated_v2_and_readonly_legacy_context()
     assert "v2_recon=recon" in APP_QT
     assert "V2SpyCdpBackend" in APP_QT
     assert "V2BrowserFlightSource" in APP_QT
-    assert "context.close()" in APP_QT
+    assert "context.close()" in LIFECYCLE
     assert "run_qt_app(paths, context)" in APP_QT
 
 
