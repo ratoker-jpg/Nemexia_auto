@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -12,8 +13,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from storage import Database
-from v2.application.v2_settings import V2SettingsRepository
-from v2.persistence.database import V2Database
 
 
 SEED = ROOT / "targets_seed.json"
@@ -44,10 +43,19 @@ def _run_entry(entry: str, profile: Path) -> None:
     )
 
 
+def _connect_v2(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def _assert_v2_integrity(path: Path) -> None:
-    with V2Database(path) as database:
-        assert database.schema_version() == 9
-        assert database.integrity_check() == "ok"
+    conn = _connect_v2(path)
+    try:
+        assert int(conn.execute("PRAGMA user_version").fetchone()[0]) == 9
+        assert str(conn.execute("PRAGMA integrity_check").fetchone()[0]) == "ok"
+    finally:
+        conn.close()
 
 
 def _assert_db_unlocked(path: Path, *, timeout_seconds: float = 5.0) -> None:
@@ -75,24 +83,18 @@ def _clean_install(profile: Path) -> None:
 
     assert not legacy_root.exists() and not v2_root.exists()
 
-    # Qt must be able to bootstrap an empty user profile without creating or
-    # mutating the legacy storage root.
     _run_entry("app_qt.py", profile)
     assert v2_db.is_file()
     assert not legacy_db.exists()
     _assert_v2_integrity(v2_db)
     assert len(list((v2_root / "backups").glob("nemexia_v2_*.sqlite3"))) >= 2
 
-    # The legacy smoke then creates only its own root. It must not touch the
-    # already-created V2 database.
     v2_before_legacy = v2_db.read_bytes()
     _run_entry("app_entry.py", profile)
     assert legacy_db.is_file()
     assert v2_db.read_bytes() == v2_before_legacy
     assert list((legacy_root / "backups").glob("nemexia_*.sqlite3"))
 
-    # Once both roots exist, Qt can start again and remain isolated from the
-    # legacy database bytes even while importing accepted facts read-only.
     legacy_before_qt = legacy_db.read_bytes()
     _run_entry("app_qt.py", profile)
     assert legacy_db.read_bytes() == legacy_before_qt
@@ -124,6 +126,34 @@ def _seed_existing_user(profile: Path) -> tuple[Path, bytes]:
     return legacy_db, legacy_db.read_bytes()
 
 
+def _read_v2_release_facts(path: Path) -> tuple[dict[str, str], int, int]:
+    conn = _connect_v2(path)
+    try:
+        assert int(conn.execute("PRAGMA user_version").fetchone()[0]) == 9
+        assert str(conn.execute("PRAGMA integrity_check").fetchone()[0]) == "ok"
+        settings = {
+            str(row["key"]): str(row["value"])
+            for row in conn.execute("SELECT key, value FROM settings").fetchall()
+        }
+        queue_count = int(conn.execute("SELECT COUNT(*) FROM raid_queue").fetchone()[0])
+        recon_count = int(conn.execute("SELECT COUNT(*) FROM recon_targets").fetchone()[0])
+        return settings, queue_count, recon_count
+    finally:
+        conn.close()
+
+
+def _set_v2_return_buffer(path: Path, value: int) -> None:
+    conn = _connect_v2(path)
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE settings SET value=? WHERE key='farm_return_buffer_minutes'",
+                (str(value),),
+            )
+    finally:
+        conn.close()
+
+
 def _existing_user_upgrade(profile: Path) -> None:
     legacy_db, legacy_before_qt = _seed_existing_user(profile)
     v2_root = _v2_root(profile)
@@ -132,32 +162,22 @@ def _existing_user_upgrade(profile: Path) -> None:
     assert not v2_db.exists()
     _run_entry("app_qt.py", profile)
 
-    # V2 imports through mode=ro/query_only; the source database must stay
-    # byte-for-byte identical.
     assert legacy_db.read_bytes() == legacy_before_qt
     assert v2_db.is_file()
-    with V2Database(v2_db) as database:
-        assert database.schema_version() == 9
-        assert database.integrity_check() == "ok"
-        settings = V2SettingsRepository(database)
-        assert settings.get("cdp_port") == 9333
-        assert settings.get("farm_home") == "3:39:11"
-        assert settings.get("farm_return_buffer_minutes") == 7
-        assert len(database.list_raid_queue_rows()) == 5
-        assert len(database.list_recon_target_rows()) > 0
-        settings.set("farm_return_buffer_minutes", 9)
+    settings, queue_count, recon_count = _read_v2_release_facts(v2_db)
+    assert settings["cdp_port"] == "9333"
+    assert settings["farm_home"] == "3:39:11"
+    assert settings["farm_return_buffer_minutes"] == "7"
+    assert queue_count == 5
+    assert recon_count > 0
+    _set_v2_return_buffer(v2_db, 9)
 
-    # Restart preserves V2-owned state and must still leave legacy bytes alone.
     _run_entry("app_qt.py", profile)
     assert legacy_db.read_bytes() == legacy_before_qt
-    with V2Database(v2_db) as database:
-        settings = V2SettingsRepository(database)
-        assert settings.get("farm_return_buffer_minutes") == 9
-        assert len(database.list_raid_queue_rows()) == 5
-        assert database.integrity_check() == "ok"
+    settings, queue_count, _ = _read_v2_release_facts(v2_db)
+    assert settings["farm_return_buffer_minutes"] == "9"
+    assert queue_count == 5
 
-    # The original Tkinter runtime remains independently startable against its
-    # own primary DB after the Qt upgrade path exists.
     _run_entry("app_entry.py", profile)
     assert legacy_db.is_file()
     assert v2_db.is_file()
