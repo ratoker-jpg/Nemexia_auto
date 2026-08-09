@@ -19,6 +19,9 @@ def test_qt_smoke_covers_both_supported_geometries_and_all_pages() -> None:
     ):
         assert f'"{key}":' in SMOKE
     assert "window.stack.setCurrentIndex(index)" in SMOKE
+    assert "active.reload_view()" in SMOKE
+    assert "active.model.rowCount() == 2" in SMOKE
+    assert "active.capacity is not None and active.capacity.free == 2" in SMOKE
     assert "page.minimumWidth()" in SMOKE
     assert "page.minimumHeight()" in SMOKE
     assert "page.width()" in SMOKE
