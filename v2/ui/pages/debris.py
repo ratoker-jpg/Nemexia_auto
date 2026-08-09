@@ -3,21 +3,21 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPushButton,
     QSpinBox,
-    QVBoxLayout,
-    QWidget,
 )
 
 from v2.application.context import V2ApplicationContext
 from v2.application.debris_workflow import DebrisPreparationBatch, DebrisWorkflowState
 from v2.domain.debris import DebrisReadState
 from v2.domain.debris_candidates import DebrisCandidate
+from v2.ui.components import SectionCard, StateBanner, command_button
 from v2.ui.pages.read_tables import FilterableReadOnlyTable
+from v2.ui.theme import SPACING
 
 
 class DebrisPage(FilterableReadOnlyTable):
@@ -41,27 +41,35 @@ class DebrisPage(FilterableReadOnlyTable):
             ),
             (),
             placeholder="Поиск по debris candidates…",
+            empty_title="Debris evidence пока отсутствует",
+            empty_detail="Открой нужную galaxy.php систему вручную и прочитай только текущую систему. Автоматический обход 3×40 не выполняется.",
             parent=parent,
         )
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
-        controls = QWidget(self)
+        controls = SectionCard(
+            "Debris command",
+            "Current-system evidence → read-only preparation token → отдельное явное подтверждение bounded dispatch.",
+            object_name="CommandCard",
+            parent=self,
+        )
         controls.setObjectName("DebrisControls")
-        controls_layout = QVBoxLayout(controls)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(8)
 
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
-        action_row.addWidget(QLabel("Источник", controls))
+        fields = QGridLayout()
+        fields.setHorizontalSpacing(SPACING["md"])
+        fields.setVerticalSpacing(SPACING["xs"])
+        for column, text in enumerate(("SOURCE", "RECYCLERS / TARGET", "SAFETY · SEC")):
+            label = QLabel(text, controls)
+            label.setObjectName("MetricLabel")
+            fields.addWidget(label, 0, column)
+
         self.source_coord = QLineEdit(controls)
         self.source_coord.setObjectName("DebrisSourceCoord")
         self.source_coord.setPlaceholderText("g:s:p")
-        self.source_coord.setMaximumWidth(110)
+        self.source_coord.setMaximumWidth(150)
         self.source_coord.setText(str(context.v2_setting("farm_home", "")))
-        action_row.addWidget(self.source_coord)
+        fields.addWidget(self.source_coord, 1, 0)
 
-        action_row.addWidget(QLabel("Переработчиков", controls))
         self.recycler_count = QSpinBox(controls)
         self.recycler_count.setObjectName("DebrisRecyclerCount")
         self.recycler_count.setRange(1, 100000)
@@ -72,9 +80,8 @@ class DebrisPage(FilterableReadOnlyTable):
         except ValueError:
             legacy_recyclers = 100
         self.recycler_count.setValue(max(1, legacy_recyclers))
-        action_row.addWidget(self.recycler_count)
+        fields.addWidget(self.recycler_count, 1, 1)
 
-        action_row.addWidget(QLabel("Safety, сек", controls))
         self.safety_seconds = QSpinBox(controls)
         self.safety_seconds.setObjectName("DebrisSafetySeconds")
         self.safety_seconds.setRange(0, 3600)
@@ -85,32 +92,40 @@ class DebrisPage(FilterableReadOnlyTable):
         except ValueError:
             legacy_safety = 10
         self.safety_seconds.setValue(max(0, legacy_safety))
-        action_row.addWidget(self.safety_seconds)
+        fields.addWidget(self.safety_seconds, 1, 2)
+        fields.setColumnStretch(3, 1)
+        controls.content_layout.addLayout(fields)
 
-        self.read_button = QPushButton("Прочитать открытую систему", controls)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(SPACING["sm"])
+        self.read_button = command_button("Прочитать открытую систему", tone="secondary", parent=controls)
         self.read_button.setObjectName("ReadDebrisButton")
-        self.prepare_button = QPushButton("Подготовить выбранные", controls)
+        self.prepare_button = command_button("Подготовить выбранные", tone="primary", parent=controls)
         self.prepare_button.setObjectName("PrepareDebrisButton")
-        self.confirm_button = QPushButton("Подтвердить отправку", controls)
+        self.confirm_button = command_button("Подтвердить отправку", tone="warning", parent=controls)
         self.confirm_button.setObjectName("ConfirmDebrisButton")
+        self.confirm_button.setProperty("tone", "warning")
         self.confirm_button.setEnabled(False)
-        self.stop_button = QPushButton("Остановить серию", controls)
+        self.stop_button = command_button("Остановить серию", tone="danger", parent=controls)
         self.stop_button.setObjectName("StopDebrisButton")
+        self.stop_button.setProperty("tone", "danger")
         self.stop_button.setEnabled(False)
         action_row.addWidget(self.read_button)
         action_row.addWidget(self.prepare_button)
         action_row.addWidget(self.confirm_button)
-        action_row.addWidget(self.stop_button)
         action_row.addStretch(1)
-        controls_layout.addLayout(action_row)
+        action_row.addWidget(self.stop_button)
+        controls.content_layout.addLayout(action_row)
 
-        self.status_label = QLabel(
+        self.status_banner = StateBanner(
+            "ATTACH-ONLY · CURRENT SYSTEM",
             "Открой нужную galaxy.php систему вручную. V2 читает только её и не выполняет автоматический обход 3×40.",
-            controls,
+            tone="info",
+            parent=controls,
         )
+        self.status_label = self.status_banner.detail
         self.status_label.setObjectName("DebrisStatus")
-        self.status_label.setWordWrap(True)
-        controls_layout.addWidget(self.status_label)
+        controls.content_layout.addWidget(self.status_banner)
 
         layout = self.layout()
         if layout is not None:
