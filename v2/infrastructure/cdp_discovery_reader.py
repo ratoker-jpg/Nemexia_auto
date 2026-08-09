@@ -8,6 +8,50 @@ from v2.infrastructure.cdp_asteroid_reader import AsteroidReadError, observation
 from v2.infrastructure.cdp_debris_reader import DebrisReadError, snapshot_from_raw
 
 
+def _validated_visible_asteroid_coords(
+    raw: dict[str, Any],
+    *,
+    expected_galaxy: int,
+    expected_solar: int,
+) -> list[dict[str, int]]:
+    """Reject any visible asteroid candidate whose coordinate is not fully proven."""
+
+    visible = int(raw.get("visible_asteroids") or 0)
+    unparseable = int(raw.get("unparseable_asteroids") or 0)
+    candidates = tuple(raw.get("coords") or ())
+    if visible < 0 or unparseable < 0 or unparseable > visible:
+        raise AsteroidReadError("Invalid visible asteroid evidence counters")
+    if unparseable or len(candidates) + unparseable < visible:
+        raise AsteroidReadError(
+            "Visible asteroid candidate has missing or unparseable coordinates"
+        )
+
+    unique: list[dict[str, int]] = []
+    seen: set[tuple[int, int, int]] = set()
+    for item in candidates:
+        try:
+            coord = (
+                int(item.get("g") or 0),
+                int(item.get("s") or 0),
+                int(item.get("p") or 0),
+            )
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise AsteroidReadError("Visible asteroid coordinate evidence is malformed") from exc
+        if (
+            coord[0] != int(expected_galaxy)
+            or coord[1] != int(expected_solar)
+            or coord[2] <= 0
+        ):
+            raise AsteroidReadError(
+                "Visible asteroid coordinate does not match the requested discovery system"
+            )
+        if coord in seen:
+            continue
+        seen.add(coord)
+        unique.append({"g": coord[0], "s": coord[1], "p": coord[2]})
+    return unique
+
+
 class OwnedDiscoveryReadMixin:
     """Read asteroid/debris evidence only from NavigationCoordinator's bound page."""
 
@@ -48,12 +92,15 @@ class OwnedDiscoveryReadMixin:
                     const g=Number(document.querySelector('#c1')?.value || 0);
                     const s=Number(document.querySelector('#c2')?.value || 0);
                     const coords=[];
+                    let visibleAsteroids=0;
+                    let unparseableAsteroids=0;
                     if(holder) {
                         holder.querySelectorAll('a').forEach(a => {
                             const asteroid=Array.from(a.querySelectorAll('img')).some(img =>
                                 (img.getAttribute('src')||'').toLowerCase().includes('asteroid')
                             );
                             if(!asteroid) return;
+                            visibleAsteroids += 1;
                             let c1=0,c2=0,c3=0;
                             try {
                                 const href=new URL(a.getAttribute('href')||'', location.href);
@@ -67,7 +114,11 @@ class OwnedDiscoveryReadMixin:
                                 );
                                 if(m) { c1=Number(m[1]); c2=Number(m[2]); c3=Number(m[3]); }
                             }
-                            if(c1&&c2&&c3) coords.push({g:c1,s:c2,p:c3});
+                            if(c1&&c2&&c3) {
+                                coords.push({g:c1,s:c2,p:c3});
+                            } else {
+                                unparseableAsteroids += 1;
+                            }
                         });
                     }
                     return {
@@ -79,6 +130,8 @@ class OwnedDiscoveryReadMixin:
                             d.getFullYear(),d.getMonth()+1,d.getDate(),
                             d.getHours(),d.getMinutes(),d.getSeconds()
                         ] : null,
+                        visible_asteroids:visibleAsteroids,
+                        unparseable_asteroids:unparseableAsteroids,
                         coords
                     };
                 }"""
@@ -93,23 +146,11 @@ class OwnedDiscoveryReadMixin:
         ):
             raise AsteroidReadError("Owned galaxy discovery DOM is not ready for requested system")
 
-        unique: list[dict[str, int]] = []
-        seen: set[tuple[int, int, int]] = set()
-        for item in raw.get("coords") or ():
-            coord = (
-                int(item.get("g") or 0),
-                int(item.get("s") or 0),
-                int(item.get("p") or 0),
-            )
-            if (
-                coord in seen
-                or coord[0] != int(expected_galaxy)
-                or coord[1] != int(expected_solar)
-                or coord[2] <= 0
-            ):
-                continue
-            seen.add(coord)
-            unique.append({"g": coord[0], "s": coord[1], "p": coord[2]})
+        unique = _validated_visible_asteroid_coords(
+            raw,
+            expected_galaxy=int(expected_galaxy),
+            expected_solar=int(expected_solar),
+        )
 
         asteroids: list[dict[str, Any]] = []
         for coord in unique:
