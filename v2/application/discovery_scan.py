@@ -109,6 +109,54 @@ class ControlledDiscoveryScan:
         reader = getattr(self.navigation, "unresolved", None)
         return tuple(reader()) if callable(reader) else ()
 
+    @staticmethod
+    def _asteroid_row(item: AsteroidObservationFact) -> dict[str, object]:
+        return {
+            "galaxy": item.galaxy,
+            "system": item.system,
+            "position": item.position,
+            "last_move_at": item.last_move_at.isoformat(),
+            "next_move_at": item.next_move_at.isoformat(),
+            "period_seconds": item.period_seconds,
+            "observed_at": item.observed_at.isoformat(),
+            "source": item.source,
+        }
+
+    def _persist_asteroids(self, items: tuple[AsteroidObservationFact, ...]) -> int:
+        """Append new exact observations while making cursor replay idempotent."""
+
+        existing = {
+            (
+                int(row["galaxy"]),
+                int(row["system"]),
+                int(row["position"]),
+                str(row["last_move_at"]),
+                str(row["next_move_at"]),
+                int(row["period_seconds"]),
+                str(row["observed_at"]),
+                str(row["source"]),
+            )
+            for row in self.asteroid_storage.list()
+        }
+        rows: list[dict[str, object]] = []
+        for item in items:
+            row = self._asteroid_row(item)
+            identity = (
+                int(row["galaxy"]),
+                int(row["system"]),
+                int(row["position"]),
+                str(row["last_move_at"]),
+                str(row["next_move_at"]),
+                int(row["period_seconds"]),
+                str(row["observed_at"]),
+                str(row["source"]),
+            )
+            if identity in existing:
+                continue
+            existing.add(identity)
+            rows.append(row)
+        return self.asteroid_storage.insert(rows)
+
     def start(self, *, scan_id: str, planet_coord: str | None = None) -> DiscoveryScanRecord:
         """Persist a new scan only after the caller has prepared verified galaxy state."""
 
@@ -254,21 +302,7 @@ class ControlledDiscoveryScan:
             )
             return DiscoveryStepResult(failed, processed=False, galaxy=galaxy, solar=solar)
 
-        self.asteroid_storage.insert(
-            [
-                {
-                    "galaxy": item.galaxy,
-                    "system": item.system,
-                    "position": item.position,
-                    "last_move_at": item.last_move_at.isoformat(),
-                    "next_move_at": item.next_move_at.isoformat(),
-                    "period_seconds": item.period_seconds,
-                    "observed_at": item.observed_at.isoformat(),
-                    "source": item.source,
-                }
-                for item in evidence.asteroids
-            ]
-        )
+        self._persist_asteroids(evidence.asteroids)
         observed_at = evidence.observed_server_at
         if observed_at.tzinfo is None:
             observed_at = observed_at.replace(tzinfo=timezone.utc)
