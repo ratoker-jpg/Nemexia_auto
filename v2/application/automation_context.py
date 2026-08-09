@@ -32,6 +32,7 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
             navigation_coordinator=navigation_coordinator,
             **kwargs,
         )
+        self._navigation_coordinator = navigation_coordinator
         self._browser_readiness = (
             BrowserReadinessManager(navigation_coordinator)
             if navigation_coordinator is not None
@@ -81,6 +82,27 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
         if self._browser_readiness is None:
             raise BrowserReadinessError("Browser readiness manager is unavailable")
         return self._browser_readiness.ensure_galaxy(planet_coord=planet_coord)
+
+    def navigate_galaxy_system(
+        self,
+        *,
+        galaxy: int,
+        solar: int,
+        request_id: str,
+        planet_coord: str | None = None,
+    ):
+        """Prepare galaxy.php, then perform one journaled verified AUTO-09 system step."""
+
+        self.ensure_galaxy_ready(planet_coord=planet_coord)
+        navigation = self._navigation_coordinator
+        mutate = getattr(navigation, "navigate_galaxy_system", None)
+        if not callable(mutate):
+            raise RuntimeError("Verified galaxy/system navigation is unavailable")
+        return mutate(
+            request_id=str(request_id),
+            galaxy=int(galaxy),
+            solar=int(solar),
+        )
 
     def refresh_live_source(self) -> FlightSourceStatus:
         """Normal live-flight refresh now prepares fleets.php automatically when safe."""
@@ -153,8 +175,6 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
         ship_count: int,
         request_id: str,
     ):
-        # Preserve the superclass validation again after readiness too, but do the
-        # same local gate first so a stale/blocked command cannot switch planet or page.
         self._validate_plan_raid_before_readiness(queue_id=queue_id, target=target)
         home = str(self.v2_setting("farm_home", "") or "").strip()
         self.ensure_fleets_ready(planet_coord=home or None)
@@ -167,8 +187,6 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
         )
 
     def live_asteroids(self):
-        """Observation reads prepare galaxy.php; system selection remains AUTO-09."""
-
         self.ensure_galaxy_ready()
         return super().live_asteroids()
 
@@ -178,4 +196,5 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
 
     def close(self) -> None:
         self._automatic_recon = None
+        self._navigation_coordinator = None
         super().close()
