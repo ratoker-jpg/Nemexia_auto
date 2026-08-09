@@ -10,9 +10,11 @@ WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8
 CONFIG = (ROOT / "config.py").read_text(encoding="utf-8")
 
 
-def test_rel05_keeps_current_default_legacy_until_cutover() -> None:
-    assert '"%VENV_PY%" app_entry.py' in RUN_DEFAULT
-    assert "app_qt.py" not in RUN_DEFAULT
+def test_authorized_cutover_changes_default_without_changing_legacy_fallback() -> None:
+    assert '"%VENV_PY%" app_qt.py %*' in RUN_DEFAULT
+    assert "app_entry.py" not in RUN_DEFAULT
+    assert '"%VENV_PY%" app_entry.py %*' in RUN_LEGACY
+    assert "app_qt.py" not in RUN_LEGACY
 
 
 def test_explicit_legacy_fallback_is_independent_and_forwards_smoke_args() -> None:
