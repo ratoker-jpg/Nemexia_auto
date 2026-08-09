@@ -56,10 +56,14 @@ def test_saved_fleets_fixture_proves_exact_and_bulk_process_spy_modes() -> None:
     assert '>2:22:19</a>' in html
 
 
-def test_recon_ui_is_manual_and_requires_confirmation() -> None:
+def test_recon_ui_uses_auto07_and_still_requires_explicit_confirmation() -> None:
     source = (Path(__file__).resolve().parents[1] / "v2/ui/pages/recon.py").read_text(encoding="utf-8")
-    assert "ProcessSpyButton" in source
+    assert "AutomaticReconButton" in source
+    assert "AutomaticReconRefillButton" in source
     assert "QMessageBox.question" in source
-    assert "request_id = f\"spy-" in source
-    assert "process(facts.fleet_id, request_id=request_id)" in source
+    assert 'request_id = f"auto-recon-' in source
+    assert 'getattr(self.context, "run_automatic_recon", None)' in source
+    assert "ProcessSpyButton" not in source
+    assert "SpyFleetId" not in source
+    assert "QLineEdit" not in source
     assert "QTimer" not in source
