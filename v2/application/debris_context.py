@@ -13,7 +13,9 @@ from v2.application.debris_workflow import (
     DebrisPreparationBatch,
     DebrisWorkflowController,
 )
+from v2.application.navigation import NavigationCoordinator, NavigationObservation
 from v2.domain.debris_candidates import DebrisCandidate, DebrisCandidatePreview
+from v2.persistence.navigation_journal import NavigationJournalRecord
 
 
 class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext):
@@ -24,10 +26,12 @@ class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext):
         *args,
         debris_source: V2DebrisSource,
         debris_repository: V2DebrisRepository | None = None,
+        navigation_coordinator: NavigationCoordinator | None = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._debris_source = debris_source
+        self._navigation_coordinator = navigation_coordinator
         database = getattr(self, "_v2_database", None)
         self._debris_repository = debris_repository or (
             V2DebrisRepository(database) if database is not None else None
@@ -41,6 +45,21 @@ class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext):
             coordinator = AsteroidRequestCoordinator(self._asteroid_actions, database)
             self._debris_gate = DebrisDispatchReuseGate(coordinator)
             self._debris_workflow = DebrisWorkflowController(self._debris_gate)
+
+    def navigation_observation(self) -> NavigationObservation | None:
+        if self._navigation_coordinator is None:
+            return None
+        return self._navigation_coordinator.observe()
+
+    def recent_navigation_actions(self, *, limit: int = 200) -> tuple[NavigationJournalRecord, ...]:
+        if self._navigation_coordinator is None:
+            return ()
+        return self._navigation_coordinator.recent(limit=limit)
+
+    def unresolved_navigation_actions(self) -> tuple[NavigationJournalRecord, ...]:
+        if self._navigation_coordinator is None:
+            return ()
+        return self._navigation_coordinator.unresolved()
 
     def debris_actions_enabled(self) -> bool:
         return self.asteroid_actions_enabled()
@@ -120,6 +139,10 @@ class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext):
             if callable(close):
                 close()
             self._debris_source = None
+        navigation = getattr(self, "_navigation_coordinator", None)
+        if navigation is not None:
+            navigation.close()
+            self._navigation_coordinator = None
         self._debris_repository = None
         self._debris_workflow = None
         self._debris_gate = None

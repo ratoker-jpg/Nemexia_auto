@@ -9,6 +9,7 @@ from v2.application.debris_context import DebrisEnabledApplicationContext
 from v2.application.debris_source import V2DebrisSource
 from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
+from v2.application.navigation import NavigationCoordinator
 from v2.application.raid_actions import RaidActionService
 from v2.application.read_store import ReadOnlyStore, ReadStoreUnavailable
 from v2.application.recon_repository import V2ReconRepository
@@ -19,9 +20,11 @@ from v2.application.v2_settings import V2SettingsRepository
 from v2.application.asteroid_source import V2AsteroidSource
 from v2.infrastructure.cdp_asteroid_backend import V2AsteroidCdpBackend
 from v2.infrastructure.cdp_debris_reader import ReadOnlyDebrisCdpBackend
+from v2.infrastructure.cdp_navigation_backend import V2NavigationCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
 from v2.infrastructure.cdp_spy_backend import V2SpyCdpBackend
 from v2.persistence.database import V2Database
+from v2.persistence.navigation_journal import NavigationJournalRepository
 from v2.release_lifecycle import ReleaseLifecycleError, V2ProductionSession
 from v2.runtime_paths import RuntimePaths, build_runtime_paths, ensure_runtime_paths
 
@@ -37,6 +40,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
     spy_actions: SpyActionService | None = None
     asteroid_actions: AsteroidActionService | None = None
     debris_source: V2DebrisSource | None = None
+    navigation: NavigationCoordinator | None = None
     try:
         try:
             with ReadOnlyStore(source_path) as legacy:
@@ -47,6 +51,10 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             pass
 
         endpoint = resolve_cdp_endpoint(source_path, preferred_port=settings.get("cdp_port"))
+        navigation = NavigationCoordinator(
+            V2NavigationCdpBackend(endpoint.endpoint),
+            NavigationJournalRepository(database),
+        )
         spy_backend = V2SpyCdpBackend(endpoint.endpoint)
         asteroid_backend = V2AsteroidCdpBackend(endpoint.endpoint)
         flight_source = V2BrowserFlightSource(spy_backend)
@@ -78,8 +86,11 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             asteroid_source=asteroid_source,
             asteroid_actions=asteroid_actions,
             debris_source=debris_source,
+            navigation_coordinator=navigation,
         )
     except Exception:
+        if navigation is not None:
+            navigation.close()
         if debris_source is not None:
             debris_source.close()
         if asteroid_actions is not None:
