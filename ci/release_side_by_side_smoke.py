@@ -6,12 +6,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from storage import Database
 from v2.application.v2_settings import V2SettingsRepository
 from v2.persistence.database import V2Database
 
 
-ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "targets_seed.json"
 
 
