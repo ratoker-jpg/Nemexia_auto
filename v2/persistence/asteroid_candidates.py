@@ -89,6 +89,19 @@ class AsteroidObservationRepository:
             source,
         )
 
+    @staticmethod
+    def _select_id(conn: sqlite3.Connection, canonical: tuple[object, ...]) -> int:
+        row = conn.execute(
+            """SELECT id FROM asteroid_observations
+               WHERE galaxy=? AND system=? AND position=?
+                 AND last_move_at=? AND next_move_at=? AND period_seconds=?
+                 AND observed_at=? AND source=?""",
+            canonical,
+        ).fetchone()
+        if row is None:  # pragma: no cover - insert/select share one transaction
+            raise V2DatabaseError("Asteroid observation disappeared after persistence")
+        return int(row[0])
+
     def insert(self, rows: Sequence[Mapping[str, object]]) -> int:
         if not rows:
             return 0
@@ -107,6 +120,31 @@ class AsteroidObservationRepository:
             )
             return conn.total_changes - before
 
+    def ensure_with_ids(self, rows: Sequence[Mapping[str, object]]) -> tuple[int, ...]:
+        """Persist exact rows idempotently and return their authoritative DB IDs.
+
+        This is used by controlled discovery provenance. IDs are returned for both
+        newly inserted rows and exact crash-replay duplicates, so callers can link
+        evidence to the scan that actually observed it without global time-window
+        inference.
+        """
+
+        if not rows:
+            return ()
+        canonical = [self.canonical_row(row) for row in rows]
+        ingested_at = self._now()
+        conn = self.database._require_conn()
+        with conn:
+            conn.executemany(
+                """INSERT OR IGNORE INTO asteroid_observations(
+                    galaxy, system, position,
+                    last_move_at, next_move_at, period_seconds,
+                    observed_at, source, ingested_at
+                ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                [tuple(row) + (ingested_at,) for row in canonical],
+            )
+            return tuple(self._select_id(conn, tuple(row)) for row in canonical)
+
     def list(self, *, limit: int | None = None) -> list[dict[str, object]]:
         conn = self.database._require_conn()
         base = """SELECT id, galaxy, system, position,
@@ -118,6 +156,22 @@ class AsteroidObservationRepository:
             rows = conn.execute(base).fetchall()
         else:
             rows = conn.execute(base + " LIMIT ?", (max(1, int(limit)),)).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_by_ids(self, observation_ids: Sequence[int]) -> list[dict[str, object]]:
+        ids = tuple(dict.fromkeys(int(value) for value in observation_ids if int(value) > 0))
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        rows = self.database._require_conn().execute(
+            f"""SELECT id, galaxy, system, position,
+                       last_move_at, next_move_at, period_seconds,
+                       observed_at, source, ingested_at
+                  FROM asteroid_observations
+                 WHERE id IN ({placeholders})
+                 ORDER BY observed_at DESC, id DESC""",
+            ids,
+        ).fetchall()
         return [dict(row) for row in rows]
 
     def identities(self) -> frozenset[tuple[object, ...]]:
