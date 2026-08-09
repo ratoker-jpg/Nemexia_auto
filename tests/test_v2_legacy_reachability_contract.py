@@ -37,6 +37,38 @@ DIRECT_ROLLBACK_MODULES = (
     "page_capture",
 )
 
+REQUIRED_INSTALLATION_CALLS = (
+    "install_bound_tab_fix()",
+    "install_ship_retry_fix()",
+    "install_raid_verification_fix()",
+    "install_background_browser_fix()",
+    "install_tk_layout_compat()",
+    "prepare_visual_system(app_module)",
+    "install_all_flight_slot_fix(BaseRaidManagerApp)",
+    "install_command_planet_exclusion()",
+    "install_report_time_freshness_fix(BaseRaidManagerApp)",
+    "install_flight_time_provenance_fix()",
+    "install_raid_home_selection(app_module.BrowserWorker)",
+    "install_visual_system(app_module, BaseRaidManagerApp)",
+    "install_typography(BaseRaidManagerApp)",
+    "install_visual_layout(BaseRaidManagerApp)",
+    "install_resource_queue_modes(BaseRaidManagerApp)",
+    "install_asteroid_scope_ui(BaseRaidManagerApp)",
+    "install_tables_dpi(BaseRaidManagerApp)",
+    "install_queue_row_numbering(BaseRaidManagerApp)",
+    "install_resource_farm_auto(BaseRaidManagerApp)",
+    "install_farm_no_target_retry(BaseRaidManagerApp)",
+    "install_farm_flight_classification_fix(BaseRaidManagerApp)",
+    "install_farm_capacity_fix(app_module.BrowserWorker, BaseRaidManagerApp)",
+    "install_farm_wave_cooldown(BaseRaidManagerApp)",
+    "install_farm_ui_fix(BaseRaidManagerApp)",
+    "install_fleet_capacity_presentation(BaseRaidManagerApp)",
+    "install_fleet_capacity_settings_fallback(app_module.BrowserWorker, BaseRaidManagerApp)",
+    "install_motion(BaseRaidManagerApp)",
+    "install_debris_layout(debris_module)",
+    "debris_module.install_debris_asteroid_feature(BaseRaidManagerApp)",
+)
+
 
 def test_legacy_runtime_has_two_explicit_source_roots_and_qt_stays_default() -> None:
     default = text("run_app.bat")
@@ -49,22 +81,14 @@ def test_legacy_runtime_has_two_explicit_source_roots_and_qt_stays_default() -> 
     assert '"%VENV_PY%" app_entry.py' in console
 
 
-def test_every_direct_app_entry_patch_module_is_present_and_still_imported() -> None:
+def test_every_direct_app_entry_patch_module_is_present_imported_and_installed() -> None:
     entry = text("app_entry.py")
     for module in DIRECT_ROLLBACK_MODULES:
         assert (ROOT / f"{module}.py").is_file(), f"retained rollback module missing: {module}.py"
         assert module in entry, f"app_entry.py no longer reaches retained rollback module: {module}"
 
-    for eager_installer in (
-        "install_bound_tab_fix()",
-        "install_ship_retry_fix()",
-        "install_raid_verification_fix()",
-        "install_background_browser_fix()",
-        "install_tk_layout_compat()",
-        "prepare_visual_system(app_module)",
-        "install_debris_asteroid_feature(BaseRaidManagerApp)",
-    ):
-        assert eager_installer in entry
+    for installation_call in REQUIRED_INSTALLATION_CALLS:
+        assert installation_call in entry, f"rollback installer invocation missing: {installation_call}"
 
 
 def test_legacy_core_transitive_modules_remain_available_for_fallback_and_self_test() -> None:
