@@ -3,11 +3,12 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Sequence
 
 from v2.persistence.database import V2Database, V2DatabaseError
 
 
-ASTEROID_AUTORENEW_SCHEMA_VERSION = 1
+ASTEROID_AUTORENEW_SCHEMA_VERSION = 2
 ASTEROID_AUTORENEW_STATUSES = frozenset(
     {
         "disarmed",
@@ -80,6 +81,24 @@ def install_asteroid_autorenew_schema(conn: sqlite3.Connection) -> None:
             "INSERT INTO asteroid_autorenew_schema_migrations(version, applied_at) VALUES(1, ?)",
             (_now(),),
         )
+        current = 1
+    if current < 2:
+        conn.executescript(
+            """CREATE TABLE IF NOT EXISTS asteroid_autorenew_scan_observations (
+                scan_id TEXT NOT NULL,
+                sequence_index INTEGER NOT NULL CHECK(sequence_index BETWEEN 0 AND 119),
+                observation_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(scan_id, observation_id),
+                FOREIGN KEY(observation_id) REFERENCES asteroid_observations(id) ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS idx_autorenew_scan_observations_sequence
+                ON asteroid_autorenew_scan_observations(scan_id, sequence_index, observation_id);"""
+        )
+        conn.execute(
+            "INSERT INTO asteroid_autorenew_schema_migrations(version, applied_at) VALUES(2, ?)",
+            (_now(),),
+        )
 
 
 @dataclass(frozen=True)
@@ -113,11 +132,11 @@ class AsteroidAutorenewState:
 
 
 class AsteroidAutorenewRepository:
-    """Component-versioned V2-owned scheduler state.
+    """Component-versioned V2-owned scheduler state and scan provenance.
 
     `armed` is persisted only for crash diagnostics. Service construction always
-    calls `disarm_on_startup()`, so persisted armed state can never authorize a
-    new browser mutation in a later process.
+    disarms stale authority, so persisted armed state can never authorize a new
+    browser mutation in a later process.
     """
 
     def __init__(self, database: V2Database) -> None:
@@ -155,6 +174,36 @@ class AsteroidAutorenewRepository:
         if row is None:  # pragma: no cover - schema installation guarantees the row
             raise V2DatabaseError("Asteroid autorenew singleton state is missing")
         return self._state(row)
+
+    def record_scan_observations(
+        self,
+        *,
+        scan_id: str,
+        sequence_index: int,
+        observation_ids: Sequence[int],
+    ) -> None:
+        ids = tuple(dict.fromkeys(int(value) for value in observation_ids if int(value) > 0))
+        if not ids:
+            return
+        if not 0 <= int(sequence_index) < 120:
+            raise V2DatabaseError(f"Invalid autorenew discovery sequence index: {sequence_index}")
+        now = _now()
+        conn = self.database._require_conn()
+        with conn:
+            conn.executemany(
+                """INSERT OR IGNORE INTO asteroid_autorenew_scan_observations(
+                    scan_id,sequence_index,observation_id,created_at
+                ) VALUES(?,?,?,?)""",
+                [(str(scan_id), int(sequence_index), value, now) for value in ids],
+            )
+
+    def scan_observation_ids(self, scan_id: str) -> tuple[int, ...]:
+        rows = self.database._require_conn().execute(
+            """SELECT observation_id FROM asteroid_autorenew_scan_observations
+               WHERE scan_id=? ORDER BY sequence_index, observation_id""",
+            (str(scan_id),),
+        ).fetchall()
+        return tuple(int(row[0]) for row in rows)
 
     def disarm_on_startup(self) -> AsteroidAutorenewState:
         current = self.read()
