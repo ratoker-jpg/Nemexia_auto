@@ -120,6 +120,12 @@ class AsteroidsPage(ManualAsteroidsPage):
             return "ARMED", "success"
         return "STOPPED", "info"
 
+    @classmethod
+    def _start_allowed(cls, state) -> bool:
+        if state is None or bool(state.armed):
+            return False
+        return str(state.status) not in (cls._BLOCKED_STATUSES | cls._AMBIGUOUS_STATUSES)
+
     @staticmethod
     def _current_system(scan) -> str:
         if scan is None:
@@ -155,18 +161,24 @@ class AsteroidsPage(ManualAsteroidsPage):
             scan = None
             self._autorenew_ui_error = str(exc) or exc.__class__.__name__
 
+        progress = int(scan.cursor_index) if scan is not None else 0
+        self._autorenew_values["AutorenewProgress"].setText(f"{progress}/120")
+        self._autorenew_values["AutorenewCurrentSystem"].setText(self._current_system(scan))
+        self._autorenew_values["AutorenewNextCycle"].setText(
+            self._display_time(None if state is None else state.next_cycle_at)
+        )
+        self._autorenew_values["AutorenewLastReturn"].setText(
+            self._display_time(None if state is None else state.last_return_at)
+        )
+
         if self._autorenew_ui_error:
             self.autorenew_banner.set_state(
                 "ERROR",
                 "Typed autorenew state/action завершился ошибкой; UI не выполняет blind retry.",
                 "danger",
             )
-            self.autorenew_start_button.setEnabled(False)
-            self.autorenew_stop_button.setEnabled(False)
-            self._autorenew_values["AutorenewProgress"].setText("—/120")
-            self._autorenew_values["AutorenewCurrentSystem"].setText("—")
-            self._autorenew_values["AutorenewNextCycle"].setText("—")
-            self._autorenew_values["AutorenewLastReturn"].setText("—")
+            self.autorenew_start_button.setEnabled(self._start_allowed(state))
+            self.autorenew_stop_button.setEnabled(bool(state is not None and state.armed))
             self.autorenew_result_value.setText(self._autorenew_ui_error)
             return
 
@@ -186,20 +198,9 @@ class AsteroidsPage(ManualAsteroidsPage):
                 f"{state.status} · session={state.session_id or '—'} · source={state.source_coord or '—'}",
                 tone,
             )
-            blocked = str(state.status) in (self._BLOCKED_STATUSES | self._AMBIGUOUS_STATUSES)
-            self.autorenew_start_button.setEnabled(not bool(state.armed) and not blocked)
+            self.autorenew_start_button.setEnabled(self._start_allowed(state))
             self.autorenew_stop_button.setEnabled(bool(state.armed))
             detail = state.detail or "—"
-
-        progress = int(scan.cursor_index) if scan is not None else 0
-        self._autorenew_values["AutorenewProgress"].setText(f"{progress}/120")
-        self._autorenew_values["AutorenewCurrentSystem"].setText(self._current_system(scan))
-        self._autorenew_values["AutorenewNextCycle"].setText(
-            self._display_time(None if state is None else state.next_cycle_at)
-        )
-        self._autorenew_values["AutorenewLastReturn"].setText(
-            self._display_time(None if state is None else state.last_return_at)
-        )
         self.autorenew_result_value.setText(detail)
 
     def _start_autorenew(self) -> None:
