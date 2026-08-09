@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Mapping
 
+from v2.application.automatic_recon import AutomaticReconService
 from v2.application.browser_readiness import (
     BrowserReadinessError,
     BrowserReadinessManager,
@@ -10,13 +12,21 @@ from v2.application.browser_readiness import (
 from v2.application.debris_context import DebrisEnabledApplicationContext
 from v2.application.flight_source import FlightSourceStatus
 from v2.application.report_source import ReconReadSnapshot
+from v2.application.spy_actions import SpyRequestResult
 from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
+from v2.persistence.automatic_recon_journal import AutomaticReconJournalRecord
 
 
 class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationContext):
     """V2 context that prepares recoverable browser state through NavigationCoordinator."""
 
-    def __init__(self, *args, navigation_coordinator=None, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        navigation_coordinator=None,
+        automatic_recon: AutomaticReconService | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(
             *args,
             navigation_coordinator=navigation_coordinator,
@@ -27,6 +37,30 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
             if navigation_coordinator is not None
             else None
         )
+        self._automatic_recon = automatic_recon
+
+    def set_v2_settings(self, values: Mapping[str, object]) -> dict[str, object]:
+        parsed = super().set_v2_settings(values)
+        if self._automatic_recon is not None and "actions_enabled" in parsed:
+            self._automatic_recon.set_enabled(bool(parsed["actions_enabled"]))
+        return parsed
+
+    def automatic_recon_enabled(self) -> bool:
+        return bool(self._automatic_recon is not None and self._automatic_recon.enabled)
+
+    def run_automatic_recon(self, *, request_id: str) -> SpyRequestResult:
+        if self._automatic_recon is None:
+            raise RuntimeError("V2 automatic recon service is unavailable")
+        return self._automatic_recon.run(request_id=str(request_id))
+
+    def recent_automatic_recon_actions(
+        self,
+        *,
+        limit: int = 200,
+    ) -> tuple[AutomaticReconJournalRecord, ...]:
+        if self._automatic_recon is None:
+            return ()
+        return self._automatic_recon.journal.recent(limit=limit)
 
     def browser_readiness(self) -> BrowserReadinessSnapshot | None:
         if self._browser_readiness is None:
@@ -141,3 +175,7 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
     def live_debris(self):
         self.ensure_galaxy_ready()
         return super().live_debris()
+
+    def close(self) -> None:
+        self._automatic_recon = None
+        super().close()

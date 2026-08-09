@@ -87,17 +87,31 @@ class ReconOwnedApplicationContext(SpyEnabledApplicationContext):
 
     def run_controlled_recon_refill(
         self,
-        fleet_id: str,
+        fleet_id: str | None = None,
         *,
         request_id: str,
         now: datetime | None = None,
         queue_size: int = 45,
     ) -> ReconRefillResult:
-        """Run one explicit exact-fleet recon → verified ingest → AutoFarm refill cycle."""
+        """Run one manual exact-fleet or AUTO-07 automatic recon/refill cycle."""
         return ControlledReconRefill().run(
             self,
-            fleet_id=str(fleet_id),
+            fleet_id=None if fleet_id is None else str(fleet_id),
             request_id=str(request_id),
+            now=now,
+            queue_size=queue_size,
+        )
+
+    def run_automatic_recon_refill(
+        self,
+        *,
+        request_id: str,
+        now: datetime | None = None,
+        queue_size: int = 45,
+    ) -> ReconRefillResult:
+        return self.run_controlled_recon_refill(
+            None,
+            request_id=request_id,
             now=now,
             queue_size=queue_size,
         )

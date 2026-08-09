@@ -41,6 +41,18 @@ class SpyRequestCoordinator:
         self.service = service
         self.database = database
 
+    def _unresolved_automatic_recon(self):
+        conn = self.database._require_conn()
+        table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='automatic_recon_actions'"
+        ).fetchone()
+        if table is None:
+            return None
+        return conn.execute(
+            """SELECT request_id,status FROM automatic_recon_actions
+               WHERE status IN ('pending','ambiguous') ORDER BY id DESC LIMIT 1"""
+        ).fetchone()
+
     def request(self, command: SpyRequestCommand, *, request_id: str) -> SpyRequestResult:
         clean = validate_command(command)
         request_id = str(request_id or "").strip()
@@ -48,6 +60,13 @@ class SpyRequestCoordinator:
             raise SpyRequestBlocked("request_id is required")
         if not self.service.enabled:
             raise SpyActionsDisabled("V2 spy actions are disabled")
+
+        automatic_unresolved = self._unresolved_automatic_recon()
+        if automatic_unresolved is not None:
+            raise SpyRequestBlocked(
+                "Ручная обработка spy fleet заблокирована незавершённой automatic recon операцией: "
+                f"{automatic_unresolved['request_id']} · {automatic_unresolved['status']}"
+            )
 
         existing = self.database.read_spy_action(request_id)
         if existing is not None:

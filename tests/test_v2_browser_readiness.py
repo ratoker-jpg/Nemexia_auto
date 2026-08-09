@@ -253,7 +253,7 @@ def test_auto06_application_layer_contains_no_browser_selectors() -> None:
         assert forbidden not in manager
         assert forbidden not in context
     for safe_backend in (
-        "V2NavigationCdpBackendNoAutoReconnect",
+        "V2AutomaticReconCdpBackendNoAutoReconnect",
         "V2RaidCdpBackendNoAutoReconnect",
         "V2SpyCdpBackendNoAutoReconnect",
         "V2AsteroidCdpBackendNoAutoReconnect",

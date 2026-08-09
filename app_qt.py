@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 
 from v2.application.asteroid_actions import AsteroidActionService
+from v2.application.automatic_recon import AutomaticReconService
 from v2.application.automation_context import DebrisEnabledApplicationContextWithReadiness
 from v2.application.browser_read_service import V2BrowserFlightSource
 from v2.application.context import V2ApplicationContext
@@ -21,10 +22,11 @@ from v2.application.asteroid_source import V2AsteroidSource
 from v2.infrastructure.cdp_debris_reader import ReadOnlyDebrisCdpBackend
 from v2.infrastructure.cdp_mutation_sessions import (
     V2AsteroidCdpBackendNoAutoReconnect,
-    V2NavigationCdpBackendNoAutoReconnect,
+    V2AutomaticReconCdpBackendNoAutoReconnect,
     V2RaidCdpBackendNoAutoReconnect,
     V2SpyCdpBackendNoAutoReconnect,
 )
+from v2.persistence.automatic_recon_journal import AutomaticReconJournalRepository
 from v2.persistence.database import V2Database
 from v2.persistence.navigation_journal import NavigationJournalRepository
 from v2.release_lifecycle import ReleaseLifecycleError, V2ProductionSession
@@ -53,9 +55,16 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             pass
 
         endpoint = resolve_cdp_endpoint(source_path, preferred_port=settings.get("cdp_port"))
+        navigation_backend = V2AutomaticReconCdpBackendNoAutoReconnect(endpoint.endpoint)
         navigation = NavigationCoordinator(
-            V2NavigationCdpBackendNoAutoReconnect(endpoint.endpoint),
+            navigation_backend,
             NavigationJournalRepository(database),
+        )
+        automatic_recon = AutomaticReconService(
+            navigation_backend,
+            navigation,
+            AutomaticReconJournalRepository(database),
+            enabled=bool(settings.get("actions_enabled")),
         )
         spy_backend = V2SpyCdpBackendNoAutoReconnect(endpoint.endpoint)
         asteroid_backend = V2AsteroidCdpBackendNoAutoReconnect(endpoint.endpoint)
@@ -89,6 +98,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             asteroid_actions=asteroid_actions,
             debris_source=debris_source,
             navigation_coordinator=navigation,
+            automatic_recon=automatic_recon,
         )
     except Exception:
         if navigation is not None:

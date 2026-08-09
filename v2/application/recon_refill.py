@@ -66,6 +66,7 @@ class ReconRefillResult:
 class ReconRefillRuntime(Protocol):
     def farm_snapshot(self): ...
     def process_spy(self, fleet_id: str, *, request_id: str) -> SpyRequestResult: ...
+    def run_automatic_recon(self, *, request_id: str) -> SpyRequestResult: ...
     def live_recon(self, *, now: datetime | None = None, lookback_hours: int = 24) -> ReconReadSnapshot: ...
     def ingest_verified_recon_report(self, report: SpyReportFact, *, now: datetime | None = None) -> ReconIngestResult: ...
     def preview_queue_refill(self, *, mode: str, queue_size: int = 45, now: datetime | None = None): ...
@@ -115,11 +116,12 @@ def _exact_verified_report(snapshot: ReconReadSnapshot, result: SpyRequestResult
 
 
 class ControlledReconRefill:
-    """Run one explicit exact-fleet reconnaissance → V2 ingest → AutoFarm refill cycle.
+    """Run one verified reconnaissance → V2 ingest → AutoFarm refill cycle.
 
-    This controller never selects a spy fleet, never retries `processSpy`, and is
-    intentionally not a background scheduler. The caller must provide the exact
-    already-existing espionage fleet ID and an immutable request ID.
+    With ``fleet_id`` the legacy-compatible manual exact-fleet boundary is used.
+    With ``fleet_id=None`` AUTO-07 discovers one processable exact fleet from live
+    DOM and still performs at most one journaled ``processSpy(fleet_id)`` attempt.
+    This controller never retries a spy mutation and is not a background scheduler.
     """
 
     COOLDOWN_SETTING = "farm_no_target_cooldown_until"
@@ -128,12 +130,13 @@ class ControlledReconRefill:
         self,
         runtime: ReconRefillRuntime,
         *,
-        fleet_id: str,
+        fleet_id: str | None,
         request_id: str,
         now: datetime | None = None,
         queue_size: int = 45,
     ) -> ReconRefillResult:
         current = as_utc(now or datetime.now(timezone.utc))
+        fleet_label = None if fleet_id is None else str(fleet_id)
         farm = runtime.farm_snapshot()
         if farm.state is not FarmState.NEED_RECON:
             reason = _stop_reason_for_farm_state(farm.state)
@@ -142,7 +145,7 @@ class ControlledReconRefill:
                 farm.detail,
                 stop_reason=reason,
                 request_id=request_id,
-                fleet_id=str(fleet_id),
+                fleet_id=fleet_label,
             )
 
         cooldown = _parse_utc(runtime.v2_setting(self.COOLDOWN_SETTING, ""))
@@ -151,29 +154,33 @@ class ControlledReconRefill:
                 ReconRefillState.COOLDOWN,
                 f"Успешный пустой scan уже зафиксирован; новая разведка не раньше {_iso(cooldown)}.",
                 request_id=request_id,
-                fleet_id=str(fleet_id),
+                fleet_id=fleet_label,
                 cooldown_until=_iso(cooldown),
             )
 
         try:
-            spy = runtime.process_spy(str(fleet_id), request_id=request_id)
+            if fleet_id is None:
+                spy = runtime.run_automatic_recon(request_id=request_id)
+            else:
+                spy = runtime.process_spy(str(fleet_id), request_id=request_id)
         except SpyCaptchaBlocked as exc:
-            return self._stopped(request_id, fleet_id, ReconRefillStopReason.CAPTCHA, str(exc))
+            return self._stopped(request_id, fleet_label, ReconRefillStopReason.CAPTCHA, str(exc))
         except SpyActionsDisabled as exc:
-            return self._stopped(request_id, fleet_id, ReconRefillStopReason.ACTIONS_DISABLED, str(exc))
+            return self._stopped(request_id, fleet_label, ReconRefillStopReason.ACTIONS_DISABLED, str(exc))
         except SpyRequestBlocked as exc:
-            return self._stopped(request_id, fleet_id, ReconRefillStopReason.SPY_BLOCKED, str(exc))
+            return self._stopped(request_id, fleet_label, ReconRefillStopReason.SPY_BLOCKED, str(exc))
         except SpyRequestRejected as exc:
-            return self._stopped(request_id, fleet_id, ReconRefillStopReason.SPY_REJECTED, str(exc))
+            return self._stopped(request_id, fleet_label, ReconRefillStopReason.SPY_REJECTED, str(exc))
         except Exception as exc:
-            # Pending intent has already been persisted by SpyRequestCoordinator;
-            # after any uncertain exception the remote action must never be retried here.
-            return self._stopped(request_id, fleet_id, ReconRefillStopReason.SPY_AMBIGUOUS, str(exc))
+            # Exact intent is already journaled by the selected mutation boundary;
+            # after uncertainty the remote action must never be retried here.
+            return self._stopped(request_id, fleet_label, ReconRefillStopReason.SPY_AMBIGUOUS, str(exc))
 
+        fleet_label = str(spy.fleet_id)
         if not spy.verified:
             return self._stopped(
                 request_id,
-                fleet_id,
+                fleet_label,
                 ReconRefillStopReason.SPY_AMBIGUOUS,
                 spy.detail or "Spy action не подтверждён; автоматический повтор запрещён.",
                 target=spy.target,
@@ -183,18 +190,18 @@ class ControlledReconRefill:
         snapshot = runtime.live_recon(now=current)
         if snapshot.state is ReportReadState.CAPTCHA:
             return self._stopped(
-                request_id, fleet_id, ReconRefillStopReason.CAPTCHA, snapshot.detail,
+                request_id, fleet_label, ReconRefillStopReason.CAPTCHA, snapshot.detail,
                 target=spy.target, report_id=spy.report_id,
             )
         if snapshot.state is ReportReadState.LIVE_UNAVAILABLE:
             return self._stopped(
-                request_id, fleet_id, ReconRefillStopReason.LIVE_UNAVAILABLE, snapshot.detail,
+                request_id, fleet_label, ReconRefillStopReason.LIVE_UNAVAILABLE, snapshot.detail,
                 target=spy.target, report_id=spy.report_id,
             )
         if snapshot.state is not ReportReadState.FRESH:
             return self._stopped(
                 request_id,
-                fleet_id,
+                fleet_label,
                 ReconRefillStopReason.NO_FRESH_REPORT,
                 snapshot.detail or "После подтверждённого spy action нет fresh report evidence.",
                 target=spy.target,
@@ -205,7 +212,7 @@ class ControlledReconRefill:
         if verified_report is None:
             return self._stopped(
                 request_id,
-                fleet_id,
+                fleet_label,
                 ReconRefillStopReason.VERIFIED_REPORT_MISSING,
                 "Новый fresh report не совпал одновременно по report_id, target и timestamp; refill остановлен.",
                 target=spy.target,
@@ -216,13 +223,13 @@ class ControlledReconRefill:
             ingest = runtime.ingest_verified_recon_report(verified_report, now=current)
         except Exception as exc:
             return self._stopped(
-                request_id, fleet_id, ReconRefillStopReason.INGEST_FAILED, str(exc),
+                request_id, fleet_label, ReconRefillStopReason.INGEST_FAILED, str(exc),
                 target=spy.target, report_id=spy.report_id,
             )
         if ingest.accepted <= 0:
             return self._stopped(
                 request_id,
-                fleet_id,
+                fleet_label,
                 ReconRefillStopReason.INGEST_FAILED,
                 "Verified report не был принят V2 recon repository.",
                 target=spy.target,
@@ -237,7 +244,7 @@ class ControlledReconRefill:
             )
         except Exception as exc:
             return self._stopped(
-                request_id, fleet_id, ReconRefillStopReason.REFILL_FAILED, str(exc),
+                request_id, fleet_label, ReconRefillStopReason.REFILL_FAILED, str(exc),
                 target=spy.target, report_id=spy.report_id,
             )
 
@@ -248,7 +255,7 @@ class ControlledReconRefill:
                 ReconRefillState.EMPTY_COOLDOWN,
                 f"Fresh scan подтверждён, eligible AutoFarm targets = 0; cooldown {LEGACY_EMPTY_SCAN_COOLDOWN_MINUTES} мин.",
                 request_id=request_id,
-                fleet_id=str(fleet_id),
+                fleet_id=fleet_label,
                 target=spy.target,
                 report_id=spy.report_id,
                 cooldown_until=_iso(cooldown_until),
@@ -256,18 +263,18 @@ class ControlledReconRefill:
             )
 
         try:
-            applied = runtime.apply_queue_refill(preview)
+            runtime.apply_queue_refill(preview)
             runtime.set_v2_setting(self.COOLDOWN_SETTING, "")
         except Exception as exc:
             return self._stopped(
-                request_id, fleet_id, ReconRefillStopReason.REFILL_FAILED, str(exc),
+                request_id, fleet_label, ReconRefillStopReason.REFILL_FAILED, str(exc),
                 target=spy.target, report_id=spy.report_id,
             )
         return ReconRefillResult(
             ReconRefillState.REFILLED,
             f"Fresh report подтверждён и очередь AutoFarm пополнена: добавлено {len(preview.added)}, сохранено {len(preview.kept)}.",
             request_id=request_id,
-            fleet_id=str(fleet_id),
+            fleet_id=fleet_label,
             target=spy.target,
             report_id=spy.report_id,
             ingested=ingest.accepted,
@@ -278,7 +285,7 @@ class ControlledReconRefill:
     @staticmethod
     def _stopped(
         request_id: str,
-        fleet_id: object,
+        fleet_id: object | None,
         reason: ReconRefillStopReason,
         detail: str,
         *,
@@ -290,7 +297,7 @@ class ControlledReconRefill:
             str(detail or reason.value),
             stop_reason=reason,
             request_id=request_id,
-            fleet_id=str(fleet_id),
+            fleet_id=None if fleet_id is None else str(fleet_id),
             target=target,
             report_id=report_id,
         )
