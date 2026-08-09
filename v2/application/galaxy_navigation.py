@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from v2.application.navigation import (
-    NavigationCoordinator,
-    NavigationMutationError,
-    NavigationObservation,
-)
+from v2.application.navigation import NavigationCoordinator, NavigationObservation
 from v2.persistence.navigation_journal import NavigationJournalRecord
 
 
@@ -34,7 +30,7 @@ class VerifiedGalaxyNavigationCoordinator(NavigationCoordinator):
         galaxy: int,
         solar: int,
     ) -> NavigationJournalRecord:
-        """Invoke one verified refreshGalaxy effect for one requested system."""
+        """Invoke one verified galaxy-system effect for one requested system."""
 
         galaxy = int(galaxy)
         solar = int(solar)
@@ -44,7 +40,7 @@ class VerifiedGalaxyNavigationCoordinator(NavigationCoordinator):
             current = before.identity.current_planet
             self._journal.begin(
                 request_id=str(request_id),
-                action_kind="navigate_galaxy_system",
+                action_kind="galaxy_system",
                 before=before.context_dict(),
                 intent={
                     "galaxy": galaxy,
