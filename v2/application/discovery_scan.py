@@ -64,7 +64,6 @@ class DiscoveryBrowser(Protocol):
 
 class DiscoveryNavigation(Protocol):
     def observe(self) -> NavigationObservation: ...
-    def prepare_galaxy(self, *, request_id: str): ...
     def navigate_galaxy_system(self, *, request_id: str, galaxy: int, solar: int): ...
     def unresolved(self): ...
 
@@ -111,14 +110,14 @@ class ControlledDiscoveryScan:
         return tuple(reader()) if callable(reader) else ()
 
     def start(self, *, scan_id: str, planet_coord: str | None = None) -> DiscoveryScanRecord:
+        """Persist a new scan only after the caller has prepared verified galaxy state."""
+
         if self._unresolved_navigation():
             raise RuntimeError("Discovery cannot start while navigation has unresolved effects")
-        prepare_id = f"discovery-prepare:{scan_id}:{uuid.uuid4().hex}"
-        prepare = self.navigation.prepare_galaxy(request_id=prepare_id)
-        if getattr(prepare, "status", None) != "verified":
-            raise RuntimeError(f"Galaxy preparation is not verified: {getattr(prepare, 'detail', '')}")
         before = self.navigation.observe()
         current = self._current(before)
+        if before.page.page_kind != "galaxy" or not before.page.galaxy_ready:
+            raise RuntimeError("Discovery start requires verified ready galaxy.php")
         if planet_coord is not None and str(planet_coord) != current.coord:
             raise RuntimeError(
                 "Discovery start must use the currently verified selected planet; "
@@ -135,6 +134,14 @@ class ControlledDiscoveryScan:
         if self._unresolved_navigation():
             raise RuntimeError(
                 "Discovery resume blocked by unresolved navigation evidence; reconcile it first"
+            )
+        scan = self.repository.read(str(scan_id))
+        if scan is None:
+            raise RuntimeError(f"Discovery scan not found: {scan_id}")
+        current = self.navigation.observe()
+        if not self._same_scan_context(scan, current):
+            raise RuntimeError(
+                "Discovery resume requires the original account/planet on ready galaxy.php"
             )
         return self.repository.resume(str(scan_id))
 
@@ -247,7 +254,7 @@ class ControlledDiscoveryScan:
             )
             return DiscoveryStepResult(failed, processed=False, galaxy=galaxy, solar=solar)
 
-        self.asteroid_storage.upsert_many(
+        self.asteroid_storage.insert(
             [
                 {
                     "galaxy": item.galaxy,
@@ -262,10 +269,12 @@ class ControlledDiscoveryScan:
                 for item in evidence.asteroids
             ]
         )
-        self.debris_repository.ingest(
-            evidence.debris,
-            now=evidence.observed_server_at.replace(tzinfo=timezone.utc),
-        )
+        observed_at = evidence.observed_server_at
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=timezone.utc)
+        else:
+            observed_at = observed_at.astimezone(timezone.utc)
+        self.debris_repository.ingest(evidence.debris, now=observed_at)
         advanced = self.repository.record_system(
             scan_id=scan.scan_id,
             sequence_index=index,
@@ -273,7 +282,7 @@ class ControlledDiscoveryScan:
             solar=solar,
             asteroid_count=len(evidence.asteroids),
             debris_count=len(evidence.debris),
-            observed_at=evidence.observed_server_at.isoformat(),
+            observed_at=observed_at.isoformat(),
         )
         if advanced.cursor_index == DISCOVERY_SYSTEM_COUNT:
             advanced = self.repository.complete(scan.scan_id)
