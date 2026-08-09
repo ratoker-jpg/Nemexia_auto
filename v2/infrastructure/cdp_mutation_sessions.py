@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from v2.infrastructure.cdp_asteroid_backend import V2AsteroidCdpBackend
 from v2.infrastructure.cdp_automatic_recon import V2AutomaticReconCdpBackend
+from v2.infrastructure.cdp_discovery_reader import OwnedDiscoveryReadMixin
 from v2.infrastructure.cdp_galaxy_navigation import VerifiedGalaxyNavigationMixin
 from v2.infrastructure.cdp_navigation_backend import V2NavigationCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
@@ -48,10 +49,11 @@ class V2NavigationCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2NavigationC
 
 class V2AutomaticReconCdpBackendNoAutoReconnect(
     _NoAutoReconnectMixin,
+    OwnedDiscoveryReadMixin,
     VerifiedGalaxyNavigationMixin,
     V2AutomaticReconCdpBackend,
 ):
-    """Shared AUTO-07/AUTO-09 single-page backend with auto_reconnect=False."""
+    """Shared AUTO-07/AUTO-09/AUTO-10 single-page backend with auto_reconnect=False."""
 
 
 class V2RaidCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2RaidCdpBackend):
