@@ -196,5 +196,7 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
 
     def close(self) -> None:
         self._automatic_recon = None
-        self._navigation_coordinator = None
+        # DebrisEnabledApplicationContext owns the shared NavigationCoordinator
+        # shutdown. Leave the reference intact so its close() can stop the CDP
+        # backend/Playwright worker exactly once, then clear the field there.
         super().close()
