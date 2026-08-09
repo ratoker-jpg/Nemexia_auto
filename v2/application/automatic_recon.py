@@ -190,6 +190,17 @@ class AutomaticReconService:
             return SpyCaptchaBlocked(detail)
         return SpyRequestRejected(detail)
 
+    @staticmethod
+    def _translate_read_error(exc: Exception) -> SpyActionError:
+        if isinstance(exc, AutomaticReconMutationError):
+            if exc.remote_attempted:
+                return AutomaticReconAmbiguous(str(exc))
+            if exc.captcha_present:
+                return SpyCaptchaBlocked(str(exc))
+        if isinstance(exc, SpyActionError):
+            return exc
+        return SpyRequestRejected(f"Automatic recon read preflight failed: {exc}")
+
     def _preflight_request(self, request_id: str) -> str:
         clean = str(request_id or "").strip()
         if not clean:
@@ -203,6 +214,17 @@ class AutomaticReconService:
             item = unresolved[0]
             raise SpyRequestRejected(
                 f"Automatic recon blocked by unresolved {item.request_id} ({item.status})"
+            )
+        manual_unresolved = [
+            row
+            for row in self.journal.database.list_spy_actions(limit=500)
+            if str(row.get("status") or "") in {"pending", "ambiguous"}
+        ]
+        if manual_unresolved:
+            item = manual_unresolved[0]
+            raise SpyRequestRejected(
+                "Automatic recon blocked by unresolved manual spy request: "
+                f"{item['request_id']} ({item['status']})"
             )
         return clean
 
@@ -219,11 +241,15 @@ class AutomaticReconService:
         self._assert_same_context(initial, initial, page_kind="fleets")
         account = initial.identity.account.ownership_fingerprint
 
-        fleets = self.browser.discover_spy_fleets(
-            expected_planet_id=current.planet_id,
-            expected_coord=current.coord,
-            expected_account_fingerprint=account,
-        )
+        try:
+            fleets = self.browser.discover_spy_fleets(
+                expected_planet_id=current.planet_id,
+                expected_coord=current.coord,
+                expected_account_fingerprint=account,
+            )
+        except Exception as exc:
+            translated = self._translate_read_error(exc)
+            raise translated from exc
         chosen = select_processable_spy_fleet(fleets)
         if chosen is None:
             pending = [item.remaining_seconds for item in fleets if item.remaining_seconds is not None]
@@ -238,11 +264,15 @@ class AutomaticReconService:
             raise self._translate_readiness_error(exc) from exc
         messages_observation = self.navigation.observe()
         self._assert_same_context(initial, messages_observation, page_kind="options")
-        before_reports = self.browser.read_spy_reports(
-            expected_planet_id=current.planet_id,
-            expected_coord=current.coord,
-            expected_account_fingerprint=account,
-        )
+        try:
+            before_reports = self.browser.read_spy_reports(
+                expected_planet_id=current.planet_id,
+                expected_coord=current.coord,
+                expected_account_fingerprint=account,
+            )
+        except Exception as exc:
+            translated = self._translate_read_error(exc)
+            raise translated from exc
         before_ids = frozenset(self._report_ids(before_reports))
 
         try:
@@ -251,14 +281,18 @@ class AutomaticReconService:
             raise self._translate_readiness_error(exc) from exc
         fleets_observation = self.navigation.observe()
         self._assert_same_context(initial, fleets_observation, page_kind="fleets")
-        revalidated = {
-            item.fleet_id: item
-            for item in self.browser.discover_spy_fleets(
-                expected_planet_id=current.planet_id,
-                expected_coord=current.coord,
-                expected_account_fingerprint=account,
-            )
-        }.get(chosen.fleet_id)
+        try:
+            revalidated = {
+                item.fleet_id: item
+                for item in self.browser.discover_spy_fleets(
+                    expected_planet_id=current.planet_id,
+                    expected_coord=current.coord,
+                    expected_account_fingerprint=account,
+                )
+            }.get(chosen.fleet_id)
+        except Exception as exc:
+            translated = self._translate_read_error(exc)
+            raise translated from exc
         if (
             revalidated is None
             or not revalidated.ready
@@ -318,7 +352,7 @@ class AutomaticReconService:
                 "processSpy result is ambiguous; automatic retry is forbidden"
             ) from exc
 
-        # Preserve the proven legacy/manual timing without repeating processSpy.
+        # Match the proven manual/legacy timing without repeating processSpy.
         time.sleep(0.35)
         try:
             self.readiness.ensure_messages(planet_coord=current.coord)
