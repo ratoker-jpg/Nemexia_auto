@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from v2.application.browser_identity import BrowserIdentitySnapshot
 from v2.application.flight_source import (
     ActiveFlightSnapshot,
     FleetCapacitySnapshot,
@@ -88,7 +89,25 @@ class V2BrowserFlightSource:
             for item in self._backend.flights()
         )
 
+    def browser_identity(self) -> BrowserIdentitySnapshot | None:
+        reader = getattr(self._backend, "browser_identity", None)
+        if not callable(reader):
+            return None
+        return reader()
+
+    def owned_planet_identities(self):
+        identity = self.browser_identity()
+        return () if identity is None else identity.planets
+
     def owned_planets(self) -> tuple[str, ...]:
+        identity_reader = getattr(self._backend, "browser_identity", None)
+        if callable(identity_reader):
+            try:
+                identity = identity_reader()
+            except Exception:
+                identity = None
+            if identity is not None:
+                return tuple(planet.coord for planet in identity.planets)
         reader = getattr(self._backend, "owned_planets", None)
         if not callable(reader):
             return ()
