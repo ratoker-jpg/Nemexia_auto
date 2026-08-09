@@ -48,6 +48,7 @@ class DiscoveryStepResult:
     solar: int | None = None
     asteroid_count: int = 0
     debris_count: int = 0
+    asteroid_observation_ids: tuple[int, ...] = ()
 
 
 class DiscoveryBrowser(Protocol):
@@ -122,40 +123,15 @@ class ControlledDiscoveryScan:
             "source": item.source,
         }
 
-    def _persist_asteroids(self, items: tuple[AsteroidObservationFact, ...]) -> int:
-        """Append new exact observations while making cursor replay idempotent."""
+    def _persist_asteroids(self, items: tuple[AsteroidObservationFact, ...]) -> tuple[int, ...]:
+        """Persist exact observations and return IDs observed by this exact scan step.
 
-        existing = {
-            (
-                int(row["galaxy"]),
-                int(row["system"]),
-                int(row["position"]),
-                str(row["last_move_at"]),
-                str(row["next_move_at"]),
-                int(row["period_seconds"]),
-                str(row["observed_at"]),
-                str(row["source"]),
-            )
-            for row in self.asteroid_storage.list()
-        }
-        rows: list[dict[str, object]] = []
-        for item in items:
-            row = self._asteroid_row(item)
-            identity = (
-                int(row["galaxy"]),
-                int(row["system"]),
-                int(row["position"]),
-                str(row["last_move_at"]),
-                str(row["next_move_at"]),
-                int(row["period_seconds"]),
-                str(row["observed_at"]),
-                str(row["source"]),
-            )
-            if identity in existing:
-                continue
-            existing.add(identity)
-            rows.append(row)
-        return self.asteroid_storage.insert(rows)
+        Existing exact rows are intentionally returned too: crash-replaying a proven
+        read must retain provenance without inserting duplicate evidence.
+        """
+
+        rows = [self._asteroid_row(item) for item in items]
+        return self.asteroid_storage.ensure_with_ids(rows)
 
     def start(self, *, scan_id: str, planet_coord: str | None = None) -> DiscoveryScanRecord:
         """Persist a new scan only after the caller has prepared verified galaxy state."""
@@ -302,7 +278,7 @@ class ControlledDiscoveryScan:
             )
             return DiscoveryStepResult(failed, processed=False, galaxy=galaxy, solar=solar)
 
-        self._persist_asteroids(evidence.asteroids)
+        asteroid_observation_ids = self._persist_asteroids(evidence.asteroids)
         observed_at = evidence.observed_server_at
         if observed_at.tzinfo is None:
             observed_at = observed_at.replace(tzinfo=timezone.utc)
@@ -327,6 +303,7 @@ class ControlledDiscoveryScan:
             solar=solar,
             asteroid_count=len(evidence.asteroids),
             debris_count=len(evidence.debris),
+            asteroid_observation_ids=asteroid_observation_ids,
         )
 
     def run(self, scan_id: str, *, max_steps: int | None = None) -> DiscoveryScanRecord:
