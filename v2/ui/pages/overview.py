@@ -1,32 +1,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QWidget
 
 from v2.application.context import V2ApplicationContext
+from v2.ui.components import MetricCard, SectionCard, StateBanner, command_button, page_layout
+from v2.ui.theme import SPACING
 
 
 def _number(value: int) -> str:
     return f"{value:,}".replace(",", " ")
-
-
-class MetricCard(QFrame):
-    def __init__(self, label: str, value: str, hint: str, parent=None) -> None:
-        super().__init__(parent)
-        self.setObjectName("MetricCard")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(4)
-        title = QLabel(label, self)
-        title.setObjectName("MetricLabel")
-        number = QLabel(value, self)
-        number.setObjectName("MetricValue")
-        detail = QLabel(hint, self)
-        detail.setObjectName("Muted")
-        detail.setWordWrap(True)
-        layout.addWidget(title)
-        layout.addWidget(number)
-        layout.addWidget(detail)
 
 
 class OverviewPage(QWidget):
@@ -38,67 +21,51 @@ class OverviewPage(QWidget):
         status = context.status()
         snapshot = context.overview()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout = page_layout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        banner = QFrame(self)
-        banner.setObjectName("InfoCard")
-        banner_layout = QVBoxLayout(banner)
-        banner_layout.setContentsMargins(18, 14, 18, 14)
-        banner_title = QLabel(
+        self.storage_banner = StateBanner(
             "Рабочие данные подключены только для чтения"
-            if status.available
-            else "Рабочая база данных не подключена",
-            banner,
+            if status.available else "Рабочая база данных не подключена",
+            "V2 показывает сохранённые факты из SQLite. Live-источник проверяется только после явного «Обновить live»."
+            if status.available else f"Источник: {status.path}\n{status.detail}",
+            tone="success" if status.available else "warning",
+            parent=self,
         )
-        banner_title.setObjectName("SectionTitle")
-        banner_text = QLabel(
-            "V2 показывает сохранённые факты из SQLite и пока не выполняет игровые действия."
-            if status.available
-            else f"Источник: {status.path}\n{status.detail}",
-            banner,
-        )
-        banner_text.setObjectName("Muted")
-        banner_text.setWordWrap(True)
-        banner_layout.addWidget(banner_title)
-        banner_layout.addWidget(banner_text)
-        layout.addWidget(banner)
+        layout.addWidget(self.storage_banner)
 
         value = (lambda n: _number(n)) if status.available else (lambda _n: "—")
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(12)
-        grid.addWidget(MetricCard("Всего целей", value(snapshot.targets_total), "Строк в targets"), 0, 0)
-        grid.addWidget(MetricCard("Активные цели", value(snapshot.targets_enabled), "Enabled и не в blacklist"), 0, 1)
-        grid.addWidget(MetricCard("В очереди", value(snapshot.queue_queued), "Состояние queued"), 0, 2)
-        grid.addWidget(MetricCard("История", value(snapshot.history_total), "Записей отправок"), 0, 3)
+        metrics = QGridLayout()
+        metrics.setHorizontalSpacing(SPACING["md"])
+        metrics.setVerticalSpacing(SPACING["md"])
+        metrics.addWidget(MetricCard("ВСЕГО ЦЕЛЕЙ", value(snapshot.targets_total), "Строк в targets", tone="info"), 0, 0)
+        metrics.addWidget(MetricCard("АКТИВНЫЕ ЦЕЛИ", value(snapshot.targets_enabled), "Enabled и не в blacklist", tone="success"), 0, 1)
+        metrics.addWidget(MetricCard("В ОЧЕРЕДИ", value(snapshot.queue_queued), "Состояние queued", tone="warning"), 0, 2)
+        metrics.addWidget(MetricCard("ИСТОРИЯ", value(snapshot.history_total), "Записей отправок"), 0, 3)
         for column in range(4):
-            grid.setColumnStretch(column, 1)
-        layout.addLayout(grid)
+            metrics.setColumnStretch(column, 1)
+        layout.addLayout(metrics)
 
-        live = QFrame(self)
-        live.setObjectName("InfoCard")
-        live_layout = QGridLayout(live)
-        live_layout.setContentsMargins(18, 16, 18, 16)
-        live_layout.setHorizontalSpacing(24)
-        live_layout.setVerticalSpacing(8)
-        heading = QHBoxLayout()
-        live_title = QLabel("Live-состояние", live)
-        live_title.setObjectName("SectionTitle")
-        heading.addWidget(live_title, 1)
-        self.live_refresh_button = QPushButton("Обновить live", live)
-        self.live_refresh_button.setObjectName("SecondaryButton")
-        self.live_refresh_button.clicked.connect(self.refresh_live)
-        heading.addWidget(self.live_refresh_button)
-        live_layout.addLayout(heading, 0, 0, 1, 4)
-
+        live = SectionCard(
+            "Live readiness",
+            "Attach-only снимок флотов и ёмкости. Никакой live-проверки при открытии приложения.",
+            object_name="CommandCard",
+            parent=self,
+        )
+        live_header = QHBoxLayout()
         self.live_status = QLabel("Live-данные ещё не проверены", live)
         self.live_status.setObjectName("Muted")
         self.live_status.setWordWrap(True)
-        live_layout.addWidget(self.live_status, 1, 0, 1, 4)
+        live_header.addWidget(self.live_status, 1)
+        self.live_refresh_button = command_button("Обновить live", tone="secondary", compact=True, parent=live)
+        self.live_refresh_button.setObjectName("SecondaryButton")
+        self.live_refresh_button.clicked.connect(self.refresh_live)
+        live_header.addWidget(self.live_refresh_button)
+        live.content_layout.addLayout(live_header)
 
+        live_grid = QGridLayout()
+        live_grid.setHorizontalSpacing(SPACING["xl"])
+        live_grid.setVerticalSpacing(SPACING["sm"])
         labels = (
             ("Слоты", "live_capacity"),
             ("Активные", "live_active"),
@@ -110,34 +77,43 @@ class OverviewPage(QWidget):
             ("Можно снова", "live_ready"),
         )
         for index, (label, attr) in enumerate(labels):
-            row = 2 + index // 4 * 2
+            row = (index // 4) * 2
             column = index % 4
-            key = QLabel(label, live)
-            key.setObjectName("Muted")
+            key = QLabel(label.upper(), live)
+            key.setObjectName("MetricLabel")
             val = QLabel("—", live)
+            val.setObjectName("BodyStrong")
+            val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             setattr(self, attr, val)
-            live_layout.addWidget(key, row, column)
-            live_layout.addWidget(val, row + 1, column)
-            live_layout.setColumnStretch(column, 1)
+            live_grid.addWidget(key, row, column)
+            live_grid.addWidget(val, row + 1, column)
+            live_grid.setColumnStretch(column, 1)
+        live.content_layout.addLayout(live_grid)
         layout.addWidget(live)
         self.render_live()
 
-        freshness = QFrame(self)
-        freshness.setObjectName("InfoCard")
-        freshness_layout = QGridLayout(freshness)
-        freshness_layout.setContentsMargins(18, 16, 18, 16)
-        freshness_layout.setHorizontalSpacing(24)
-        title = QLabel("Последние сохранённые события", freshness)
-        title.setObjectName("SectionTitle")
-        freshness_layout.addWidget(title, 0, 0, 1, 2)
-        spy_label = QLabel("Последняя разведка", freshness)
-        spy_label.setObjectName("Muted")
-        raid_label = QLabel("Последний рейд", freshness)
-        raid_label.setObjectName("Muted")
-        freshness_layout.addWidget(spy_label, 1, 0)
-        freshness_layout.addWidget(raid_label, 1, 1)
-        freshness_layout.addWidget(QLabel(snapshot.latest_spy_at or "—", freshness), 2, 0)
-        freshness_layout.addWidget(QLabel(snapshot.latest_raid_at or "—", freshness), 2, 1)
+        freshness = SectionCard(
+            "Последние сохранённые события",
+            "Persisted evidence; время не подменяется текущим временем приложения.",
+            parent=self,
+        )
+        freshness_grid = QGridLayout()
+        freshness_grid.setHorizontalSpacing(SPACING["xl"])
+        spy_label = QLabel("ПОСЛЕДНЯЯ РАЗВЕДКА", freshness)
+        spy_label.setObjectName("MetricLabel")
+        raid_label = QLabel("ПОСЛЕДНИЙ РЕЙД", freshness)
+        raid_label.setObjectName("MetricLabel")
+        spy_value = QLabel(snapshot.latest_spy_at or "—", freshness)
+        spy_value.setObjectName("Mono")
+        raid_value = QLabel(snapshot.latest_raid_at or "—", freshness)
+        raid_value.setObjectName("Mono")
+        freshness_grid.addWidget(spy_label, 0, 0)
+        freshness_grid.addWidget(raid_label, 0, 1)
+        freshness_grid.addWidget(spy_value, 1, 0)
+        freshness_grid.addWidget(raid_value, 1, 1)
+        freshness_grid.setColumnStretch(0, 1)
+        freshness_grid.setColumnStretch(1, 1)
+        freshness.content_layout.addLayout(freshness_grid)
         layout.addWidget(freshness)
         layout.addStretch(1)
 
