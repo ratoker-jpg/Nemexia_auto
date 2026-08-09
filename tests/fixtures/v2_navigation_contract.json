@@ -1,0 +1,54 @@
+{
+  "decision": "NO_NAVIGATION_BOUNDARY",
+  "evidence_source": "sanitized from effective legacy code and saved galaxy/fleets snapshots",
+  "effective_legacy": {
+    "bound_tab_identity": "playwright_page_object",
+    "bound_tab_validity": [
+      "page_is_open",
+      "game_host_matches",
+      "page_remains_in_connected_browser"
+    ],
+    "verifies_account_identity": false,
+    "verifies_selected_planet_identity": false,
+    "galaxy_ensure_calls_select_planet": true,
+    "planet_switch_route": "change_planet.php?id=<planet-id>",
+    "galaxy_page_route": "galaxy.php?galaxy=<g>&solar=<s>",
+    "galaxy_system_refresh": "refreshGalaxy() -> ajax_galaxy.php POST"
+  },
+  "saved_page_evidence": {
+    "galaxy_page": "galaxy.php?galaxy=3&solar=39",
+    "current_planet_label": "[3:39:11]",
+    "planet_switch_links_present": true,
+    "multiple_owned_planet_links_present": true,
+    "galaxy_inputs": ["#c1", "#c2"],
+    "galaxy_search_calls_refreshGalaxy": true
+  },
+  "v2_current_boundary": {
+    "attach_only": true,
+    "existing_fleets_page_selected_by_url": true,
+    "existing_galaxy_page_selected_by_url": true,
+    "stable_bound_page_token": false,
+    "account_identity_token": false,
+    "selected_planet_identity_token": false
+  },
+  "unproven_semantics": [
+    "whether refreshGalaxy/ajax_galaxy.php can alter server-side selected-planet or other account session context",
+    "whether a bound page that is manually redirected still belongs to the same intended account context",
+    "whether login redirects/history/manual navigation preserve the intended ownership context",
+    "whether a navigation destination can be verified without relying only on URL and rendered route controls"
+  ],
+  "allowed_after_audit": [
+    "attach-only reads from pages already opened by the operator",
+    "research and fixtures",
+    "typed dry-run design only after a future contract supplies account and selected-planet identity proof"
+  ],
+  "forbidden_after_audit": [
+    "page.goto for V2 navigation",
+    "refreshGalaxy from V2",
+    "ajax_galaxy.php navigation POST from V2",
+    "change_planet.php from V2",
+    "automatic 3x40 traversal",
+    "Rest Mode navigation loops",
+    "background navigation"
+  ]
+}
