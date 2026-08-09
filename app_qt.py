@@ -3,11 +3,14 @@ from __future__ import annotations
 import sys
 
 from v2.application.asteroid_actions import AsteroidActionService
+from v2.application.asteroid_source import V2AsteroidSource
 from v2.application.automatic_recon import AutomaticReconService
 from v2.application.automation_context import DebrisEnabledApplicationContextWithReadiness
 from v2.application.browser_read_service import V2BrowserFlightSource
 from v2.application.context import V2ApplicationContext
+from v2.application.debris_repository import V2DebrisRepository
 from v2.application.debris_source import V2DebrisSource
+from v2.application.discovery_scan import ControlledDiscoveryScan
 from v2.application.galaxy_navigation import VerifiedGalaxyNavigationCoordinator as NavigationCoordinator
 from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
@@ -18,7 +21,6 @@ from v2.application.report_source import V2BrowserReportSource
 from v2.application.spy_actions import SpyActionService
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
-from v2.application.asteroid_source import V2AsteroidSource
 from v2.infrastructure.cdp_debris_reader import ReadOnlyDebrisCdpBackend
 from v2.infrastructure.cdp_mutation_sessions import (
     V2AsteroidCdpBackendNoAutoReconnect,
@@ -26,8 +28,10 @@ from v2.infrastructure.cdp_mutation_sessions import (
     V2RaidCdpBackendNoAutoReconnect,
     V2SpyCdpBackendNoAutoReconnect,
 )
+from v2.persistence.asteroid_candidates import AsteroidObservationRepository
 from v2.persistence.automatic_recon_journal import AutomaticReconJournalRepository
 from v2.persistence.database import V2Database
+from v2.persistence.discovery_scan import DiscoveryScanRepository
 from v2.persistence.navigation_journal import NavigationJournalRepository
 from v2.release_lifecycle import ReleaseLifecycleError, V2ProductionSession
 from v2.runtime_paths import RuntimePaths, build_runtime_paths, ensure_runtime_paths
@@ -66,6 +70,13 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             AutomaticReconJournalRepository(database),
             enabled=bool(settings.get("actions_enabled")),
         )
+        discovery_scan = ControlledDiscoveryScan(
+            browser=navigation_backend,
+            navigation=navigation,
+            repository=DiscoveryScanRepository(database),
+            asteroid_storage=AsteroidObservationRepository(database),
+            debris_repository=V2DebrisRepository(database),
+        )
         spy_backend = V2SpyCdpBackendNoAutoReconnect(endpoint.endpoint)
         asteroid_backend = V2AsteroidCdpBackendNoAutoReconnect(endpoint.endpoint)
         flight_source = V2BrowserFlightSource(spy_backend)
@@ -99,6 +110,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             debris_source=debris_source,
             navigation_coordinator=navigation,
             automatic_recon=automatic_recon,
+            discovery_scan=discovery_scan,
         )
     except Exception:
         if navigation is not None:
