@@ -13,7 +13,7 @@ from v2.application.report_source import ReconReadSnapshot
 from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
 
 
-class AutomationReadyApplicationContext(DebrisEnabledApplicationContext):
+class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationContext):
     """V2 context that prepares recoverable browser state through NavigationCoordinator."""
 
     def __init__(self, *args, navigation_coordinator=None, **kwargs) -> None:
