@@ -5,7 +5,11 @@ from v2.persistence.navigation_journal import NavigationJournalRecord
 
 
 class VerifiedGalaxyNavigationCoordinator(NavigationCoordinator):
-    """AUTO-09 extension of the central NavigationCoordinator."""
+    """AUTO-09+ central NavigationCoordinator extension."""
+
+    def unresolved(self) -> tuple[NavigationJournalRecord, ...]:
+        """Expose persisted unresolved effects to higher-level recovery-safe workflows."""
+        return tuple(self._journal.unresolved())
 
     @staticmethod
     def _galaxy_verified(
