@@ -2,13 +2,15 @@
 
 Date: 2026-08-09  
 Audit baseline: `2a21fbc9d97de39fabb2bf658f700b3d57851980` / REL-09  
+REL-10 exact squash: `adf1c8318a1a0ffbe79cec2ffd23200cbbc375b5` / PR #125  
+REL-10 exact post-merge push-CI: **#287 green**  
 Release: V2 2.0.0
 
 ## Audit conclusion
 
-The repository is ready for the final Qt-default release handoff subject to REL-10 PR CI/review and exact post-merge push-CI.
+The repository passed the final Qt-default release gate. REL-10 completed with all four CI jobs green on the exact squash SHA and no unresolved substantive P1/P2.
 
-No new gameplay/browser capability is required for release. No legacy production deletion is authorized.
+No new gameplay/browser capability was required or added for release. No legacy production deletion was authorized.
 
 ## Repository truth checked
 
@@ -25,6 +27,21 @@ No new gameplay/browser capability is required for release. No legacy production
 - REL-08 classified `D. PROVEN DEAD = ∅`.
 - REL-09 retained the rollback stack with zero production deletions.
 
+## Exact release gate
+
+REL-10 squash:
+
+```text
+adf1c8318a1a0ffbe79cec2ffd23200cbbc375b5
+```
+
+Exact push-CI **#287** passed:
+
+- Windows Python 3.10 — compileall + full pytest + legacy self-test;
+- Windows Python 3.11 — compileall + full pytest + legacy self-test;
+- PySide6 Python 3.11 — real QApplication/MainWindow, all 11 routes, 1180×720 + 1440×900;
+- Windows clean install + existing-user upgrade — real installer, side-by-side smoke, Qt default launcher and explicit legacy fallback smoke.
+
 ## Rollback refs checked
 
 Both repository refs exist and remain unchanged:
@@ -36,7 +53,7 @@ archive/pre-pyside6-4e01bfda -> 4e01bfda752c6383e48c0f6eb8be64d68676da67
 
 ## Release blockers
 
-No previously identified cutover blocker remains open after REL-09:
+No identified release/cutover blocker remains open:
 
 - production V2 backup/restart lifecycle — green;
 - Windows Qt dependency/package path — green;
@@ -45,13 +62,12 @@ No previously identified cutover blocker remains open after REL-09:
 - default Qt cutover — complete;
 - post-cutover black-box regression — green;
 - cleanup reachability — audited;
-- rollback retention — hardened.
-
-REL-10 itself is documentation/release truth only.
+- rollback retention — hardened;
+- final release docs/current-state/install/upgrade/rollback handoff — complete.
 
 ## Deliberate limitations
 
-The audit confirms these remain intentional and do not block V2 2.0.0:
+These remain intentional and do not block V2 2.0.0:
 
 - `NO NAVIGATION BOUNDARY`;
 - automatic 3×40 traversal absent;
@@ -67,12 +83,6 @@ The audit confirms these remain intentional and do not block V2 2.0.0:
 - no unattended asteroid/debris scheduler;
 - V2-68/V2-69/V2-70 remain not started.
 
-## Final gate
+## Final handoff rule
 
-REL-10 and the optional exact-SHA docs handoff must have:
-
-- all four CI jobs green;
-- no unresolved substantive P1/P2;
-- exact `main` verification after squash merge.
-
-After that, the release/cutover batch is closed and development stops until a separate user-directed batch begins.
+This tiny exact-SHA handoff changes documentation/contracts only. It must pass the same CI/review discipline and exact post-merge push-CI. Once green, the release/cutover batch is closed and development stops until a separate user-directed batch begins.
