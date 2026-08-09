@@ -54,7 +54,7 @@ class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext):
     def recent_navigation_actions(self, *, limit: int = 200) -> tuple[NavigationJournalRecord, ...]:
         if self._navigation_coordinator is None:
             return ()
-        return tuple(self._navigation_coordinator._journal.recent(limit=limit))
+        return self._navigation_coordinator.recent(limit=limit)
 
     def unresolved_navigation_actions(self) -> tuple[NavigationJournalRecord, ...]:
         if self._navigation_coordinator is None:
