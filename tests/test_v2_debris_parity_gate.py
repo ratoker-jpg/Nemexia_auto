@@ -137,6 +137,7 @@ def test_legacy_storage_and_deferred_boundaries_remain_intact_after_cutover() ->
     legacy_launcher = text("run_legacy.bat")
     qt = text("app_qt.py")
     debris_page = text("v2/ui/pages/debris.py")
+    autorenew_context = text("v2/application/asteroid_autorenew_context.py")
 
     assert "mode=ro" in read_store
     assert "PRAGMA query_only=ON" in read_store
@@ -144,9 +145,10 @@ def test_legacy_storage_and_deferred_boundaries_remain_intact_after_cutover() ->
     assert "app_entry.py" not in default_launcher
     assert "app_entry.py" in legacy_launcher
     assert "app_qt.py" not in legacy_launcher
-    assert "DebrisEnabledApplicationContext" in qt
+    assert "AsteroidAutorenewApplicationContext" in qt
+    assert "DebrisEnabledApplicationContextWithReadiness" in autorenew_context
 
-    combined = qt + debris_page + text("v2/application/debris_context.py")
+    combined = qt + debris_page + text("v2/application/debris_context.py") + autorenew_context
     for forbidden in (
         "delete_messages",
         "processSpy(0)",

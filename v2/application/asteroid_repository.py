@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from v2.domain.asteroid_candidates import (
     AsteroidCandidatePreview,
@@ -64,6 +64,15 @@ class V2AsteroidRepository:
 
     def observations(self, *, limit: int | None = None) -> tuple[AsteroidObservationFact, ...]:
         return tuple(self._fact_from_row(row) for row in self.storage.list(limit=limit))
+
+    def observations_by_ids(
+        self,
+        observation_ids: Sequence[int],
+    ) -> tuple[AsteroidObservationFact, ...]:
+        return tuple(
+            self._fact_from_row(row)
+            for row in self.storage.list_by_ids(observation_ids)
+        )
 
     def preview(
         self,

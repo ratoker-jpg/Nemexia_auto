@@ -1,0 +1,306 @@
+# AUTO-11 — effective legacy asteroid autorenew audit
+
+Date: 2026-08-09
+
+Baseline: `757903c652707e71e59d2fd14951f4985afd27ae` — squash PR #140 (`feat: add controlled persistent 3x40 discovery`), exact post-main push CI #357 green.
+
+Scope: freeze the effective legacy asteroid autorenew call chain and the safer V2 replacement contract before merge. Debris repeat is explicitly outside AUTO-11 because effective legacy does not implement it.
+
+## Decision
+
+Effective legacy **does** implement asteroid autorenew:
+
+```text
+explicit enable
+→ asteroid scan/send cycle
+→ verified gas flights
+→ latest verified return_at + buffer
+→ wait
+→ next cycle
+```
+
+AUTO-11 restores that behavior on top of V2 identity/navigation/discovery/action contracts. It does not copy the legacy timer, Tkinter callbacks or browser monkey-patch architecture.
+
+Two deliberate safer V2 differences are required:
+
+1. **Startup is always disarmed.** Legacy persisted `asteroid_auto_enabled` and could continue after process restart. V2 persists diagnostic state/configuration but never restores authority to send. A new process requires a new explicit Start.
+2. **Capacity is authoritative live game evidence.** Legacy bounded the asteroid cycle with configured `max_slots` plus active-flight rows. V2 retains the existing action backend proof of `#FleetsCount`, `#MaxFleets` and `#ship_1_11_max` immediately before SendFleet.
+
+## Effective legacy call chain
+
+`app_entry.py` installs the effective browser/runtime patches before constructing `RaidManagerApp`. Relevant behavior is composed from `app.py`, `browser.py`, `background_browser_fix.py`, `all_flight_slots_fix.py` and fleet-capacity patches.
+
+### Start / arming
+
+`RaidManagerApp.toggle_asteroid_auto()`:
+
+- requires explicit operator confirmation;
+- disables normal AutoFarm so two automatic senders do not compete;
+- sets `asteroid_auto_enabled`;
+- clears the previous next-cycle timestamp/cancel flag;
+- saves asteroid settings;
+- immediately invokes `_run_asteroid_cycle(auto=True)`.
+
+Legacy uses separate asteroid source settings (`asteroid_home_*`, historically default `3:39:8`). The source planet is reselected before galaxy/fleet work.
+
+AUTO-11 restores the same mutual-exclusion intent without coupling scheduler logic to widgets. A process-local typed `AutomationAuthority` has exactly one automatic-mutation owner: `autofarm` or `asteroid_autorenew`. Asteroid Start acquires its owner token before service/browser work. The existing Farm surface acquires the AutoFarm token before its existing continuous preparation or manual wave and releases it on disarm/cancel/return. Context-level `run_farm_wave()` is also rejected while asteroid autorenew owns authority. Both loops start disarmed after process restart; remote uncertainty remains governed by persistent navigation/action journals rather than this in-process token.
+
+### Need for another wave / capacity
+
+`BrowserWorker._run_dynamic_asteroid_cycle()`:
+
+1. checks CAPTCHA;
+2. reads all own active flights because Nemexia has one shared fleet-slot limit;
+3. reads available recyclers;
+4. computes `requested = min(max_flights, free_slots, available_recyclers // recycler_count)`;
+5. zero requested work is an error and autorenew stops.
+
+AUTO-11 preserves capacity-bounded work but uses the stronger existing V2 live game counters instead of trusting a configured maximum.
+
+### Asteroid discovery and target
+
+Legacy:
+
+- reselects source planet;
+- prepares galaxy;
+- scans systems downward;
+- reads visible asteroid coordinates;
+- POSTs `ajax_info.php` with `type=squareInfo` and explicit `c1/c2/c3`;
+- parses movement schedule;
+- stops on CAPTCHA;
+- skips ordinary malformed candidates and continues.
+
+`_resolve_asteroid_plan()` repeatedly uses live game flight timing, predicts the arrival coordinate and iterates until the asteroid target stabilizes. A configured movement-boundary safety margin is required.
+
+AUTO-11 refreshes the candidate set through the already-owned AUTO-09/AUTO-10 3×40 discovery path. Every processed discovery step returns the authoritative V2 asteroid-observation IDs that were actually observed by that step. AUTO-11 persists `scan_id → observation_id` provenance and builds the cycle snapshot only from those linked IDs. Exact crash-replay duplicates can therefore be linked safely, while a parallel manual/current-system ingestion path cannot enter the automatic wave merely because it wrote to the shared observation table during the same time window. Before a candidate can send, AUTO-11 navigates to its predicted current system and performs another complete owned current-system read.
+
+### Independent pre-send trajectory re-check without a second tab
+
+The original V2 asteroid action backend was attach-only and `_matching_galaxy_page()` therefore expected a simultaneously open matching `galaxy.php` tab. That was a pre-AUTO-03 browser-preparation limitation, not a SendFleet requirement.
+
+The actual trajectory re-check does not need galaxy DOM. `_read_square_info()` needs only:
+
+- an authenticated same-origin Nemexia page;
+- `window.currentTime`;
+- explicit `c1/c2/c3` in the read-only `ajax_info.php type=squareInfo` request.
+
+AUTO-11 therefore subclasses the **existing** asteroid backend only to provide the already NavigationCoordinator-prepared `fleets.php` page as that same-origin read surface. The inherited `_recheck_observation()` still executes and validates movement period/schedule immediately before preparation and again before dispatch. The inherited SendFleet implementation is untouched.
+
+This removes the user's old manual requirement to keep a second matching galaxy tab open without introducing a second hidden page or another remote mutation path.
+
+### Recycler composition and mission
+
+Effective legacy and V2 both use:
+
+- recycler ship `ship_1_11`;
+- mission code `8` (`Добыча газа`);
+- configured recycler count per flight;
+- freshly calculated game flight timing and deterministic arrival target.
+
+AUTO-11 calls the existing:
+
+```text
+AsteroidRequestCoordinator
+→ AsteroidActionService
+→ V2AsteroidCdpBackend
+```
+
+No second SendFleet implementation exists.
+
+### Exactly-one / ambiguous SendFleet
+
+Legacy stopped autorenew if SendFleet might have been accepted but the new exact gas-flight row could not be proven. Legacy also contained a special retry for one positively identified pre-send rejection.
+
+V2 is stricter:
+
+- immutable request ID;
+- persistent pending row before remote effect;
+- exactly one SendFleet click per request;
+- final source/target/mission/ship/capacity proof;
+- exact new source/target gas-flight verification;
+- accepted-but-unverified or unclassified post-pending failure → `ambiguous`;
+- **no automatic retry after ambiguous**;
+- repository-wide pending/ambiguous asteroid action blocks later scheduler sends.
+
+AUTO-11 uses a deterministic request identity for each session/scan/candidate. If execution fails after the action journal already records `verified`, a later tick recognizes that same immutable verified request and advances without another SendFleet.
+
+### Return timing / cooldown
+
+Legacy `_schedule_next_asteroid_cycle(results)`:
+
+```text
+next_cycle_at = max(all verified result return_at) + asteroid_cycle_buffer_minutes
+```
+
+Default buffer is 5 minutes. `_tick()` starts the next cycle when the deadline is due and the application is not busy.
+
+AUTO-11 preserves exactly `latest verified return_at + buffer`; only verified V2 action results contribute.
+
+### Qt runtime driving
+
+The application service deliberately has no daemon/background thread because the existing V2 SQLite connection is owned by the application thread. `QtAsteroidAutorenewDriver` is therefore a thin `QTimer` pump on the same Qt event loop:
+
+- it checks the typed `asteroid_autorenew_state()` surface;
+- it calls `tick_asteroid_autorenew()` only while the scheduler is armed;
+- a tick exception is converted into typed Stop/disarm rather than another blind timer retry;
+- the timer is stopped on `aboutToQuit`;
+- the driver contains no selectors, CDP, SendFleet logic or business decisions.
+
+This makes an explicitly armed session advance its 3×40 steps, dispatch phase and return deadline in production. The visible operator Start/Stop controls are intentionally **not** mixed into this automation PR; they remain the required separate UI-only follow-up.
+
+The AutoFarm mutual-exclusion bridge preserves the existing runtime page contract: the wrapper still has the canonical runtime class name `FarmPage` and adds no visual controls or browser code. Its only responsibility is acquiring/releasing typed automation authority around the existing Farm behavior.
+
+### No asteroid / insufficient valid candidates
+
+Legacy:
+
+- no observations → `no_asteroids` → stop autorenew;
+- some sends but insufficient safe/valid candidates for requested work → `not_enough_valid` → stop;
+- zero initial capacity → stop.
+
+AUTO-11 remains fail-closed. It does not invent an endless empty scan loop.
+
+### CAPTCHA
+
+Legacy checks CAPTCHA during page work and send, and about every 20 seconds while waiting between cycles.
+
+AUTO-11:
+
+- CAPTCHA = hard STOP;
+- never solve/click/bypass;
+- waiting state probes the existing fleets-page backend at the same approximately 20-second cadence supplied by the Qt tick driver;
+- after CAPTCHA is handled manually, the scheduler remains disarmed until explicit Start.
+
+### Browser failure / tab loss
+
+Legacy serious browser/cycle errors disable autorenew. Background patches make minimized legacy operation practical but do not provide V2 persistent identity guarantees.
+
+AUTO-11 fails closed on Browser Readiness/NavigationCoordinator/action-backend loss. `_NoAutoReconnectMixin` remains authoritative after an established mutation session is lost. AUTO-13 owns explicit browser/session recovery.
+
+### Stop
+
+Legacy cancellation is checked during scanning and between candidate sends; it does not cancel an already-started remote request in a way that could create a duplicate window.
+
+AUTO-11 uses a step scheduler: one `tick()` performs at most one discovery-system step or one candidate dispatch. Explicit Stop disarms later ticks and stops a currently journaled discovery scan before future effects. Graceful application close uses the same service Stop lifecycle so a safely-running `discovery_scans` row is terminalized before shutdown. An already-started immutable SendFleet is resolved only by its action journal outcome.
+
+If discovery is already `ambiguous`, scheduler Stop never rewrites that uncertainty into a safe terminal state. The exact unresolved `active_scan_id` is retained while the scheduler becomes disarmed, and a later Start is rejected until that scan is explicitly reconciled.
+
+### Restart and crash-gap recovery
+
+Legacy can persist armed=true and `asteroid_next_cycle_at` and continue after restart.
+
+AUTO-11 intentionally does not. `AsteroidAutorenewRepository.disarm_on_startup()` converts stale persisted authority to `disarmed_restart`; no browser mutation happens from that state.
+
+There is an additional crash window between AUTO-10 committing a new `discovery_scans` row and AUTO-11 persisting that row into scheduler `active_scan_id`. AUTO-11 closes this gap without guessing:
+
+- explicit unresolved `active_scan_id` wins when present;
+- otherwise recovery searches for unresolved `discovery_scans` whose IDs use the owned `autorenew-scan:*` namespace;
+- AUTO-10 permits only one globally unresolved discovery scan; if exactly one AUTO-11 orphan exists, its exact ID is adopted into the disarmed recovery state;
+- if multiple matching unresolved rows somehow exist, recovery raises instead of choosing one;
+- a new Start is rejected while the explicit/adopted row remains `running` or `ambiguous`;
+- component-order tests remain valid because orphan lookup first checks `sqlite_master` and does nothing when AUTO-10 schema is not installed.
+
+Thus a process death cannot make an unresolved automatic discovery row invisible merely because `active_scan_id` was not yet persisted.
+
+### Planet/account/page interference
+
+Legacy repeatedly reselected source coordinates but had no persistent AccountContext/PlanetIdentity journal.
+
+AUTO-11 requires:
+
+- requested source belongs to the proven owned PlanetIdentity set before Start is accepted;
+- session captures source internal planet ID + coordinate + account fingerprint;
+- unresolved navigation is checked **before** Browser Readiness may switch planet/page;
+- every phase re-proves expected account/source/page;
+- each candidate re-proves exact galaxy/system before the complete current-system read;
+- after a verified send, account/source context is checked again before any later candidate;
+- unexpected changes stop future sends.
+
+AUTO-13 will expand this into the complete recovery/interference matrix.
+
+## Typed state machine
+
+Persistent state is diagnostic/recovery evidence; only the current process's explicit Start arms it.
+
+```text
+DISARMED / DISARMED_RESTART
+  → ARMED_DUE             explicit Start, only if automation authority is free
+ARMED_DUE
+  → RUNNING_DISCOVERY     safe source + galaxy preparation, new persistent scan
+RUNNING_DISCOVERY
+  → RUNNING_DISCOVERY     one verified system per tick
+  → RUNNING_DISPATCH      completed current scan + candidates
+  → STOPPED_NO_ASTEROIDS  no current usable evidence
+  → BLOCKED/AMBIGUOUS     failed/uncertain navigation/read
+RUNNING_DISPATCH
+  → RUNNING_DISPATCH      one candidate result per tick
+  → WAITING_RETURN        verified capacity-bounded wave
+  → STOPPED_CAPACITY      no capacity before any verified send
+  → STOPPED_INSUFFICIENT  candidates exhausted before requested work
+  → STOPPED_CAPTCHA
+  → STOPPED_AMBIGUOUS
+  → BLOCKED
+WAITING_RETURN
+  → ARMED_DUE             latest return + buffer elapsed
+any armed state
+  → STOPPED_MANUAL        explicit Stop
+process restart
+  → DISARMED_RESTART      always; unresolved scan identity retained/adopted
+```
+
+## Required V2 orchestration
+
+For every cycle:
+
+1. Acquire `asteroid_autorenew` automatic-mutation authority; reject if AutoFarm owns it before service/browser work.
+2. Confirm explicit in-process armed state.
+3. Reject unresolved NavigationCoordinator journal **before any readiness mutation**.
+4. Reject repository-wide unresolved asteroid action before another SendFleet.
+5. Prove source AccountContext + PlanetIdentity.
+6. Refresh current evidence via AUTO-10 controlled 3×40 discovery.
+7. Persist exact per-scan observation-ID provenance and build candidates only from IDs linked to that completed scan.
+8. Re-prove candidate current galaxy/system and read complete current squareInfo evidence.
+9. Prepare the same proven source as `fleets.php` through Browser Readiness.
+10. Existing asteroid backend independently repeats read-only squareInfo schedule verification from the authenticated fleets page.
+11. Existing backend proves live recycler count/capacity, source, mission, target freshness and performs exactly one SendFleet.
+12. Re-observe account/source after every verified action before permitting a later candidate.
+13. Stop on CAPTCHA, ambiguity, unresolved journals, context loss, manual Stop or serious browser error.
+14. Schedule only from verified return times.
+15. While armed, the Qt event-loop driver supplies one typed scheduler tick per interval and never performs browser work itself.
+16. Release the automatic-mutation owner whenever the scheduler disarms; AutoFarm applies the symmetric owner rule around its continuous/manual mutation surfaces.
+17. On crash/restart, preserve or adopt the exact unresolved `autorenew-scan:*` identity before allowing another Start.
+
+## Explicit exclusions
+
+- No debris autorenew/repeat.
+- No common "repeat everything" scheduler.
+- No second SendFleet implementation.
+- No second hidden galaxy tab/page.
+- No Qt Playwright/CDP/selectors.
+- No CAPTCHA interaction.
+- No silent reconnect after established mutation-session loss.
+- No automatic restart re-arm.
+- No visible asteroid Start/Stop controls in this automation PR; they belong to the separate UI-only follow-up.
+
+## Acceptance
+
+- explicit Start; startup disarmed;
+- AutoFarm and asteroid autorenew cannot own automatic mutation authority concurrently;
+- Stop prevents future scheduler attempts and releases process-level authority;
+- typed persistent status/config/next-cycle evidence;
+- one scheduler tick has at most one discovery-system step or one candidate send;
+- Qt event-loop pump advances armed sessions without a background SQLite thread;
+- current-cycle candidates come only from exact observation IDs linked to the active completed scan;
+- authoritative live capacity/recycler proof;
+- NavigationCoordinator/Browser Readiness owns page/planet/system mutations;
+- existing asteroid action journal/backend is the only SendFleet path;
+- deterministic request recovery prevents duplicate send after a verified action;
+- graceful close stops a safely-running discovery row before scheduler state is cleared;
+- unresolved `running/ambiguous` discovery identity survives Stop/restart;
+- crash between discovery row creation and scheduler linkage adopts the unique owned orphan and blocks a new Start;
+- no retry after ambiguous;
+- unresolved navigation/action blocks new effects;
+- CAPTCHA hard STOP;
+- restart cannot duplicate or auto-resume;
+- no debris repeat;
+- visible asteroid controls remain a separate UI-only PR.

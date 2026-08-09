@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from v2.application.context import V2ApplicationContext
+from v2.infrastructure.qt_autorenew_driver import QtAsteroidAutorenewDriver
 from v2.runtime_paths import RuntimePaths
 from v2.ui.browser_readiness_panel import BrowserReadinessPanel
 from v2.ui.components import StatusPill
@@ -17,7 +18,7 @@ from v2.ui.pages.active import ActivePage
 from v2.ui.pages.asteroids import AsteroidsPage
 from v2.ui.pages.debris import DebrisPage
 from v2.ui.pages.diagnostics import DiagnosticsPage
-from v2.ui.pages.farm import FarmPage
+from v2.ui.pages.farm_authority import AuthorityFarmPage
 from v2.ui.pages.overview import OverviewPage
 from v2.ui.pages.plan import PlanPage
 from v2.ui.pages.read_tables import HistoryPage, TargetsPage
@@ -187,7 +188,7 @@ class MainWindow(QMainWindow):
         if key == "active":
             return ActivePage(self.context, self)
         if key == "farm":
-            return FarmPage(self.context, self)
+            return AuthorityFarmPage(self.context, self)
         if key == "asteroids":
             return AsteroidsPage(self.context, self)
         if key == "debris":
@@ -250,5 +251,14 @@ def run_qt_app(runtime_paths: RuntimePaths, context: V2ApplicationContext) -> in
     app.setApplicationName("Nemexia Raid Manager V2")
     app.setStyleSheet(ORBITAL_COMMAND_QSS)
     window = MainWindow(runtime_paths, context)
+
+    # AUTO-11 scheduler state stays in the typed application layer; this thin
+    # event-loop pump merely supplies deterministic ticks from the SQLite-owning
+    # Qt thread. Visible Start/Stop controls remain a separate UI-only PR.
+    autorenew_driver = QtAsteroidAutorenewDriver(context, parent=window)
+    window._asteroid_autorenew_driver = autorenew_driver
+    app.aboutToQuit.connect(autorenew_driver.stop)
+    autorenew_driver.start()
+
     window.show()
     return app.exec()

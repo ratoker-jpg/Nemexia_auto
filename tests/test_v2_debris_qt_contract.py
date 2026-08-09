@@ -64,9 +64,11 @@ def test_debris_context_reuses_same_asteroid_action_service_and_journal() -> Non
 
 def test_qt_bootstrap_wires_attach_only_debris_reader_after_authorized_cutover() -> None:
     source = text("app_qt.py")
+    autorenew_context = text("v2/application/asteroid_autorenew_context.py")
     assert "ReadOnlyDebrisCdpBackend(endpoint.endpoint)" in source
     assert "V2DebrisSource" in source
-    assert "DebrisEnabledApplicationContext" in source
+    assert "AsteroidAutorenewApplicationContext" in source
+    assert "DebrisEnabledApplicationContextWithReadiness" in autorenew_context
 
     default_launcher = text("run_app.bat")
     legacy_launcher = text("run_legacy.bat")

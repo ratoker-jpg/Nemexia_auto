@@ -248,6 +248,9 @@ def test_auto06_application_layer_contains_no_browser_selectors() -> None:
     manager = (root / "v2" / "application" / "browser_readiness.py").read_text(encoding="utf-8")
     context = (root / "v2" / "application" / "automation_context.py").read_text(encoding="utf-8")
     app = (root / "app_qt.py").read_text(encoding="utf-8")
+    autorenew_backend = (
+        root / "v2" / "infrastructure" / "cdp_asteroid_autorenew_backend.py"
+    ).read_text(encoding="utf-8")
 
     for forbidden in ("playwright", "#planetSwitch", "#FleetsCount", "loadTabContent", "refreshGalaxy"):
         assert forbidden not in manager
@@ -256,6 +259,7 @@ def test_auto06_application_layer_contains_no_browser_selectors() -> None:
         "V2AutomaticReconCdpBackendNoAutoReconnect",
         "V2RaidCdpBackendNoAutoReconnect",
         "V2SpyCdpBackendNoAutoReconnect",
-        "V2AsteroidCdpBackendNoAutoReconnect",
+        "V2AutorenewAsteroidCdpBackendNoAutoReconnect",
     ):
         assert safe_backend in app
+    assert "V2AsteroidCdpBackendNoAutoReconnect" in autorenew_backend
