@@ -29,6 +29,9 @@ def test_discovery_reader_is_read_only_current_system_evidence() -> None:
         "ajax_info.php",
         "squareInfo",
         "CAPTCHA",
+        "holder.querySelectorAll('img')",
+        "unparseableAsteroids",
+        "_validated_visible_asteroid_coords",
     ):
         assert token in READER
     for forbidden in (
@@ -61,6 +64,13 @@ def test_persistent_contract_requires_all_120_systems_for_last_completed() -> No
     assert "count != DISCOVERY_SYSTEM_COUNT" in PERSISTENCE
     assert "WHERE status='completed' AND cursor_index=?" in PERSISTENCE
     assert "UNIQUE(scan_id, galaxy, solar)" in PERSISTENCE
+
+
+def test_review_gates_precede_readiness_and_competing_resume_is_repository_wide() -> None:
+    assert CONTEXT.count("self._require_discovery_navigation_clear()") >= 2
+    assert "zero new browser mutations attempted" in CONTEXT
+    assert "scan_id<>? AND status IN ('running','ambiguous')" in PERSISTENCE
+    assert "Discovery resume blocked by unresolved" in PERSISTENCE
 
 
 def test_auto10_exposes_typed_start_stop_resume_step_without_ui_browser_logic() -> None:
