@@ -69,7 +69,6 @@ class AsteroidsPage(ManualAsteroidsPage):
             heading.setObjectName("MetricLabel")
             value = QLabel("—", card)
             value.setObjectName(object_name)
-            value.setTextInteractionFlags(value.textInteractionFlags())
             metrics.addWidget(heading, 0, column)
             metrics.addWidget(value, 1, column)
             self._autorenew_values[object_name] = value
@@ -151,16 +150,17 @@ class AsteroidsPage(ManualAsteroidsPage):
         try:
             state = self._typed_autorenew_state()
             scan = self._typed_discovery_scan(None if state is None else state.active_scan_id)
-            self._autorenew_ui_error = ""
         except Exception as exc:
             state = None
             scan = None
             self._autorenew_ui_error = str(exc) or exc.__class__.__name__
 
         if self._autorenew_ui_error:
-            self.autorenew_banner.title.setText("ERROR")
-            self.autorenew_banner.detail.setText("Typed autorenew state недоступен; remote actions из UI не выполнялись.")
-            self.autorenew_banner.setProperty("tone", "danger")
+            self.autorenew_banner.set_state(
+                "ERROR",
+                "Typed autorenew state/action завершился ошибкой; UI не выполняет blind retry.",
+                "danger",
+            )
             self.autorenew_start_button.setEnabled(False)
             self.autorenew_stop_button.setEnabled(False)
             self._autorenew_values["AutorenewProgress"].setText("—/120")
@@ -171,16 +171,20 @@ class AsteroidsPage(ManualAsteroidsPage):
             return
 
         title, tone = self._presentation_state(state)
-        self.autorenew_banner.title.setText(title)
-        self.autorenew_banner.setProperty("tone", tone)
         if state is None:
-            self.autorenew_banner.detail.setText("AUTO-11 typed context недоступен в этом runtime.")
+            self.autorenew_banner.set_state(
+                title,
+                "AUTO-11 typed context недоступен в этом runtime.",
+                tone,
+            )
             self.autorenew_start_button.setEnabled(False)
             self.autorenew_stop_button.setEnabled(False)
             detail = "Typed autorenew service unavailable"
         else:
-            self.autorenew_banner.detail.setText(
-                f"{state.status} · session={state.session_id or '—'} · source={state.source_coord or '—'}"
+            self.autorenew_banner.set_state(
+                title,
+                f"{state.status} · session={state.session_id or '—'} · source={state.source_coord or '—'}",
+                tone,
             )
             blocked = str(state.status) in (self._BLOCKED_STATUSES | self._AMBIGUOUS_STATUSES)
             self.autorenew_start_button.setEnabled(not bool(state.armed) and not blocked)
@@ -217,12 +221,9 @@ class AsteroidsPage(ManualAsteroidsPage):
             )
         except Exception as exc:
             self._autorenew_ui_error = str(exc) or exc.__class__.__name__
-            self.autorenew_banner.title.setText("ERROR")
-            self.autorenew_banner.detail.setText("Start остановлен через typed AUTO-11 boundary.")
-            self.autorenew_result_value.setText(self._autorenew_ui_error)
-            self.autorenew_start_button.setEnabled(True)
-            self.autorenew_stop_button.setEnabled(False)
+            self._refresh_autorenew_status()
             return
+        self._autorenew_ui_error = ""
         self._refresh_autorenew_status()
 
     def _stop_autorenew(self) -> None:
@@ -235,10 +236,9 @@ class AsteroidsPage(ManualAsteroidsPage):
             stop(detail="Stopped by operator from Asteroids UI")
         except Exception as exc:
             self._autorenew_ui_error = str(exc) or exc.__class__.__name__
-            self.autorenew_banner.title.setText("ERROR")
-            self.autorenew_banner.detail.setText("Stop завершился ошибкой typed AUTO-11 boundary.")
-            self.autorenew_result_value.setText(self._autorenew_ui_error)
+            self._refresh_autorenew_status()
             return
+        self._autorenew_ui_error = ""
         self._refresh_autorenew_status()
 
     def reload_view(self) -> None:
