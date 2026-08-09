@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,12 +50,21 @@ def _assert_v2_integrity(path: Path) -> None:
         assert database.integrity_check() == "ok"
 
 
-def _assert_db_unlocked(path: Path) -> None:
-    """Windows rename proves no process still owns an open SQLite file handle."""
+def _assert_db_unlocked(path: Path, *, timeout_seconds: float = 5.0) -> None:
+    """Require Windows to release the SQLite file handle within a bounded window."""
     probe = path.with_name(path.name + ".unlock-check")
     assert not probe.exists()
-    os.replace(path, probe)
-    os.replace(probe, path)
+    deadline = time.monotonic() + timeout_seconds
+    last_error: PermissionError | None = None
+    while time.monotonic() < deadline:
+        try:
+            os.replace(path, probe)
+            os.replace(probe, path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.1)
+    raise AssertionError(f"SQLite file remained locked after {timeout_seconds}s: {path}") from last_error
 
 
 def _clean_install(profile: Path) -> None:
@@ -157,12 +167,7 @@ def _existing_user_upgrade(profile: Path) -> None:
 
 
 def main() -> int:
-    # Explicit rename-based unlock checks above are the lifecycle assertion.
-    # Hosted Windows runners can still briefly hold deleted temp files in AV /
-    # indexing after the tested process handles are gone, so cleanup is best-effort.
-    with tempfile.TemporaryDirectory(
-        prefix="nemexia_release_side_by_side_", ignore_cleanup_errors=True
-    ) as temp:
+    with tempfile.TemporaryDirectory(prefix="nemexia_release_side_by_side_") as temp:
         root = Path(temp)
         _clean_install(root / "clean")
         _existing_user_upgrade(root / "upgrade")
