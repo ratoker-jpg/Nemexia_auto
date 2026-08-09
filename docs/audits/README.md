@@ -1,5 +1,11 @@
 # Аудиты проекта
 
+## Текущий full-automation parity audit — AUTO-01 — 2026-08-09
+
+[`2026-08-09-v2-auto01-effective-legacy-automation-parity.md`](2026-08-09-v2-auto01-effective-legacy-automation-parity.md) фиксирует research-only матрицу effective legacy automation → current V2 → missing contract → risk → implementation order.
+
+Ключевой результат: прежний `NO NAVIGATION BOUNDARY` остаётся правильным историческим safety gate, но не целевым UX. Новый browser reference разрешает начать AUTO-02 read-only identity (`BrowserSession` / `AccountContext` / `PlanetIdentity`), после чего навигация может открываться только через central coordinator + persistent journal. Новая espionage route в effective legacy не доказана, debris repeat отсутствует, а Rest Mode является будущим утверждённым product contract, а не существовавшим legacy runtime.
+
 ## Текущий V2 asteroid parity gate — 2026-08-08
 
 [`2026-08-08-v2-asteroid-parity-gate.md`](2026-08-08-v2-asteroid-parity-gate.md) фиксирует V2-58: restart recovery для pending/ambiguous asteroid actions, live movement/capacity/recycler re-check, exact new-flight verification, fail-closed CAPTCHA semantics, bounded manual-stop и отсутствие automatic retry/scheduler.
