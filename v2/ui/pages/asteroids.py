@@ -3,21 +3,21 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPushButton,
     QSpinBox,
-    QVBoxLayout,
-    QWidget,
 )
 
 from v2.application.context import V2ApplicationContext
 from v2.application.asteroid_workflow import AsteroidPreparationBatch, AsteroidWorkflowState
 from v2.domain.asteroid_candidates import AsteroidCandidate
 from v2.domain.asteroids import AsteroidReadState
+from v2.ui.components import SectionCard, StateBanner, command_button
 from v2.ui.pages.read_tables import FilterableReadOnlyTable
+from v2.ui.theme import SPACING
 
 
 class AsteroidsPage(FilterableReadOnlyTable):
@@ -40,27 +40,35 @@ class AsteroidsPage(FilterableReadOnlyTable):
             ),
             (),
             placeholder="Поиск по asteroid candidates…",
+            empty_title="Asteroid candidates пока отсутствуют",
+            empty_detail="Открой нужную galaxy.php систему вручную и прочитай только текущую систему.",
             parent=parent,
         )
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
-        controls = QWidget(self)
+        controls = SectionCard(
+            "Asteroid command",
+            "Один attach-only current-system read → read-only preparation → явное подтверждение bounded dispatch.",
+            object_name="CommandCard",
+            parent=self,
+        )
         controls.setObjectName("AsteroidControls")
-        controls_layout = QVBoxLayout(controls)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(8)
 
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
-        action_row.addWidget(QLabel("Источник", controls))
+        fields = QGridLayout()
+        fields.setHorizontalSpacing(SPACING["md"])
+        fields.setVerticalSpacing(SPACING["xs"])
+        for column, text in enumerate(("SOURCE", "RECYCLERS / TARGET", "SAFETY · SEC")):
+            label = QLabel(text, controls)
+            label.setObjectName("MetricLabel")
+            fields.addWidget(label, 0, column)
+
         self.source_coord = QLineEdit(controls)
         self.source_coord.setObjectName("AsteroidSourceCoord")
         self.source_coord.setPlaceholderText("g:s:p")
-        self.source_coord.setMaximumWidth(110)
+        self.source_coord.setMaximumWidth(150)
         self.source_coord.setText(str(context.v2_setting("farm_home", "")))
-        action_row.addWidget(self.source_coord)
+        fields.addWidget(self.source_coord, 1, 0)
 
-        action_row.addWidget(QLabel("Переработчиков", controls))
         self.recycler_count = QSpinBox(controls)
         self.recycler_count.setObjectName("AsteroidRecyclerCount")
         self.recycler_count.setRange(1, 100000)
@@ -69,9 +77,8 @@ class AsteroidsPage(FilterableReadOnlyTable):
         except ValueError:
             legacy_recyclers = 5
         self.recycler_count.setValue(max(1, legacy_recyclers))
-        action_row.addWidget(self.recycler_count)
+        fields.addWidget(self.recycler_count, 1, 1)
 
-        action_row.addWidget(QLabel("Safety, сек", controls))
         self.safety_seconds = QSpinBox(controls)
         self.safety_seconds.setObjectName("AsteroidSafetySeconds")
         self.safety_seconds.setRange(0, 3600)
@@ -80,31 +87,39 @@ class AsteroidsPage(FilterableReadOnlyTable):
         except ValueError:
             legacy_safety = 10
         self.safety_seconds.setValue(max(0, legacy_safety))
-        action_row.addWidget(self.safety_seconds)
+        fields.addWidget(self.safety_seconds, 1, 2)
+        fields.setColumnStretch(3, 1)
+        controls.content_layout.addLayout(fields)
 
-        self.read_button = QPushButton("Прочитать открытую систему", controls)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(SPACING["sm"])
+        self.read_button = command_button("Прочитать открытую систему", tone="secondary", parent=controls)
         self.read_button.setObjectName("ReadAsteroidsButton")
-        self.prepare_button = QPushButton("Проверить выбранные", controls)
+        self.prepare_button = command_button("Проверить выбранные", tone="primary", parent=controls)
         self.prepare_button.setObjectName("PrepareAsteroidsButton")
-        self.send_button = QPushButton("Отправить выбранные", controls)
+        self.send_button = command_button("Отправить выбранные", tone="warning", parent=controls)
         self.send_button.setObjectName("DispatchAsteroidsButton")
-        self.stop_button = QPushButton("Остановить серию", controls)
+        self.send_button.setProperty("tone", "warning")
+        self.stop_button = command_button("Остановить серию", tone="danger", parent=controls)
         self.stop_button.setObjectName("StopAsteroidsButton")
+        self.stop_button.setProperty("tone", "danger")
         self.stop_button.setEnabled(False)
         action_row.addWidget(self.read_button)
         action_row.addWidget(self.prepare_button)
         action_row.addWidget(self.send_button)
-        action_row.addWidget(self.stop_button)
         action_row.addStretch(1)
-        controls_layout.addLayout(action_row)
+        action_row.addWidget(self.stop_button)
+        controls.content_layout.addLayout(action_row)
 
-        self.status_label = QLabel(
+        self.status_banner = StateBanner(
+            "ATTACH-ONLY · CURRENT SYSTEM",
             "Открой нужную galaxy.php вручную. V2 не переключает систему и не запускает браузер.",
-            controls,
+            tone="info",
+            parent=controls,
         )
+        self.status_label = self.status_banner.detail
         self.status_label.setObjectName("AsteroidStatus")
-        self.status_label.setWordWrap(True)
-        controls_layout.addWidget(self.status_label)
+        controls.content_layout.addWidget(self.status_banner)
 
         layout = self.layout()
         if layout is not None:
