@@ -11,6 +11,14 @@ from v2.persistence.navigation_journal import (
 )
 
 
+class NavigationMutationError(RuntimeError):
+    """Browser-context mutation error with explicit remote-attempt provenance."""
+
+    def __init__(self, message: str, *, remote_attempted: bool) -> None:
+        super().__init__(message)
+        self.remote_attempted = bool(remote_attempted)
+
+
 @dataclass(frozen=True)
 class NavigationObservation:
     """Exact in-process page ownership plus read-only account/planet identity."""
@@ -128,9 +136,10 @@ class NavigationCoordinator:
     def switch_planet(self, *, request_id: str, planet_id: str) -> NavigationJournalRecord:
         """Switch once to one proven owned planet and verify the full context.
 
-        The remote backend is invoked at most once. Any exception or mismatching
-        after-state is reconciled only from read evidence and otherwise persisted
-        as ``ambiguous``; this method never performs an automatic retry.
+        The remote backend is invoked at most once. Known pre-attempt failures are
+        ``failed_safe``. Any exception after an attempted remote navigation, or an
+        unexpected error without attempt provenance, is reconciled only from read
+        evidence and otherwise persisted as ``ambiguous``. No automatic retry.
         """
 
         with self._mutex:
@@ -172,7 +181,38 @@ class NavigationCoordinator:
                     expected_coord=target.coord,
                     expected_account_fingerprint=target.account_fingerprint,
                 )
+            except NavigationMutationError as exc:
+                if not exc.remote_attempted:
+                    try:
+                        observed = self._backend.observe()
+                    except Exception:
+                        observed = None
+                    return self._journal.finish(
+                        request_id,
+                        status="failed_safe",
+                        after=observed.context_dict() if observed is not None else before.context_dict(),
+                        detail=f"Planet switch blocked before remote mutation: {exc}",
+                    )
+                try:
+                    observed = self._backend.observe()
+                except Exception:
+                    observed = None
+                if observed is not None and self._switch_verified(before, observed, target):
+                    return self._journal.finish(
+                        request_id,
+                        status="verified",
+                        after=observed.context_dict(),
+                        detail=f"Planet switch verified by read reconciliation after backend error: {exc}",
+                    )
+                return self._journal.finish(
+                    request_id,
+                    status="ambiguous",
+                    after=observed.context_dict() if observed is not None else None,
+                    detail=f"Planet switch remote effect is uncertain; automatic retry forbidden: {exc}",
+                )
             except Exception as exc:
+                # Unknown backend errors have no reliable attempt provenance. Treat
+                # them conservatively as potentially post-effect and never retry.
                 try:
                     observed = self._backend.observe()
                 except Exception:
