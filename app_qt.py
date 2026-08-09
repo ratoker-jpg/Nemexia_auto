@@ -8,9 +8,9 @@ from v2.application.automation_context import DebrisEnabledApplicationContextWit
 from v2.application.browser_read_service import V2BrowserFlightSource
 from v2.application.context import V2ApplicationContext
 from v2.application.debris_source import V2DebrisSource
+from v2.application.galaxy_navigation import VerifiedGalaxyNavigationCoordinator as NavigationCoordinator
 from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
-from v2.application.navigation import NavigationCoordinator
 from v2.application.raid_actions import RaidActionService
 from v2.application.read_store import ReadOnlyStore, ReadStoreUnavailable
 from v2.application.recon_repository import V2ReconRepository
