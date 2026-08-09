@@ -67,8 +67,14 @@ class FakeReadiness:
 
 
 class FakeBrowser:
-    def __init__(self, *, process_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        process_error: Exception | None = None,
+        fresh_report_after_call: int = 2,
+    ) -> None:
         self.process_error = process_error
+        self.fresh_report_after_call = max(2, int(fresh_report_after_call))
         self.discover_calls = 0
         self.report_calls = 0
         self.process_calls = 0
@@ -83,7 +89,7 @@ class FakeBrowser:
             "old-report",
             when=datetime.now(timezone.utc) - timedelta(minutes=10),
         )
-        if self.report_calls == 1:
+        if self.report_calls < self.fresh_report_after_call:
             return (old,)
         fresh = report(
             "new-report",
@@ -185,6 +191,22 @@ def test_success_uses_exactly_one_process_spy_and_persists_verified_evidence(
     assert record.status == "verified"
     assert record.baseline_keys == ("old-report",)
     assert record.after_keys == ("new-report", "old-report")
+    database.close()
+
+
+def test_verification_polls_for_delayed_report_without_repeating_process_spy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("v2.application.automatic_recon.time.sleep", lambda _seconds: None)
+    browser = FakeBrowser(fresh_report_after_call=4)
+    database, journal, service = build_service(tmp_path, browser)
+    result = service.run(request_id="auto-delayed-report")
+    assert result.verified is True
+    assert result.report_id == "new-report"
+    assert browser.report_calls == 4
+    assert browser.process_calls == 1
+    record = journal.read("auto-delayed-report")
+    assert record is not None and record.status == "verified"
     database.close()
 
 
