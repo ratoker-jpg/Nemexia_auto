@@ -3,16 +3,15 @@ from __future__ import annotations
 from PySide6.QtWidgets import QMessageBox
 
 from v2.application.automation_authority import AUTOFARM_OWNER
-from v2.ui.pages.farm import FarmPage
+from v2.ui.pages.farm import FarmPage as BaseFarmPage
 
 
-class AuthorityFarmPage(FarmPage):
+class FarmPage(BaseFarmPage):
     """Existing FarmPage with typed mutual exclusion for automatic mutation loops.
 
-    This wrapper adds no browser knowledge and no new visible controls. It only
-    acquires the application-owned AutoFarm authority before the existing page can
-    prepare/arm a continuous cycle or execute a manual wave, then releases it on
-    every disarm/cancel/return path.
+    The runtime class name intentionally remains `FarmPage`, preserving the UI and
+    offscreen geometry contract. This wrapper adds no browser knowledge and no new
+    visible controls; it only owns the application-level automatic-mutation token.
     """
 
     def _ensure_farm_authority_available(self) -> bool:
@@ -90,3 +89,8 @@ class AuthorityFarmPage(FarmPage):
             super()._disarm(reason)
         finally:
             self._release_farm_authority()
+
+
+# Compatibility import for the initial AUTO-11 review-fix branch. Instances keep
+# the canonical runtime class name `FarmPage` required by the UI geometry contract.
+AuthorityFarmPage = FarmPage
