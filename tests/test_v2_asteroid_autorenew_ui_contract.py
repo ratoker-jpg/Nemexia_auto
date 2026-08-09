@@ -109,6 +109,13 @@ def test_progress_failure_does_not_discard_authoritative_scheduler_state() -> No
     assert "Autorenew state подтверждён" in PAGE
 
 
+def test_start_gate_allows_recoverable_blocked_but_rejects_retained_scan() -> None:
+    assert "if str(state.status) in cls._AMBIGUOUS_STATUSES:" in PAGE
+    assert 'if getattr(state, "active_scan_id", None):' in PAGE
+    assert "Safe BLOCKED states" in PAGE
+    assert "typed service revalidates readiness on every Start" in PAGE
+
+
 def test_zero_minute_return_buffer_is_not_replaced_by_default() -> None:
     assert 'int(self.context.v2_setting("farm_return_buffer_minutes", 5))' in PAGE
     assert 'v2_setting("farm_return_buffer_minutes", 5) or 5' not in PAGE
