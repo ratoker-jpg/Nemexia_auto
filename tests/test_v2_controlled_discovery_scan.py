@@ -12,6 +12,7 @@ from v2.application.discovery_scan import (
     DiscoverySystemEvidence,
 )
 from v2.application.navigation import NavigationObservation, NavigationPageState
+from v2.infrastructure.cdp_discovery_reader import _validated_visible_asteroid_coords
 from v2.persistence.asteroid_candidates import AsteroidObservationRepository
 from v2.persistence.database import V2Database
 from v2.persistence.discovery_scan import DiscoveryScanRepository
@@ -83,6 +84,21 @@ class FakeBrowser:
         )
 
 
+class MalformedVisibleAsteroidBrowser(FakeBrowser):
+    def read_discovery_system(self, *, expected_galaxy: int, expected_solar: int, **_kwargs):
+        self.calls.append((expected_galaxy, expected_solar))
+        _validated_visible_asteroid_coords(
+            {
+                "visible_asteroids": 1,
+                "unparseable_asteroids": 1,
+                "coords": [],
+            },
+            expected_galaxy=expected_galaxy,
+            expected_solar=expected_solar,
+        )
+        raise AssertionError("malformed visible asteroid must fail before evidence is returned")
+
+
 def service(tmp_path: Path):
     database = V2Database(tmp_path / "v2.sqlite3")
     navigation = FakeNavigation()
@@ -144,6 +160,23 @@ def test_partial_square_info_is_failed_safe_and_never_claims_empty_system(tmp_pa
     assert result.scan.status == "failed_safe"
     assert result.scan.cursor_index == 0
     assert "Partial system evidence" in result.scan.detail
+    assert scan.last_completed() is None
+    database.close()
+
+
+def test_malformed_visible_asteroid_is_failed_safe_without_cursor_or_system_evidence(tmp_path: Path) -> None:
+    database, navigation, _browser, scan = service(tmp_path)
+    malformed = MalformedVisibleAsteroidBrowser()
+    scan.browser = malformed
+    scan.start(scan_id="scan-malformed-visible")
+
+    result = scan.step("scan-malformed-visible")
+
+    assert result.processed is False
+    assert result.scan.status == "failed_safe"
+    assert result.scan.cursor_index == 0
+    assert malformed.calls == [(1, 40)]
+    assert scan.repository.systems("scan-malformed-visible") == ()
     assert scan.last_completed() is None
     database.close()
 
