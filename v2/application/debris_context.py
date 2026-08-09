@@ -13,7 +13,11 @@ from v2.application.debris_workflow import (
     DebrisPreparationBatch,
     DebrisWorkflowController,
 )
-from v2.application.navigation import NavigationCoordinator, NavigationObservation
+from v2.application.navigation import (
+    MessagePreparationResult,
+    NavigationCoordinator,
+    NavigationObservation,
+)
 from v2.domain.debris_candidates import DebrisCandidate, DebrisCandidatePreview
 from v2.persistence.navigation_journal import NavigationJournalRecord
 
@@ -58,6 +62,21 @@ class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext):
             request_id=request_id,
             planet_id=planet_id,
         )
+
+    def prepare_fleets_page(self, *, request_id: str) -> NavigationJournalRecord:
+        if self._navigation_coordinator is None:
+            raise RuntimeError("V2 NavigationCoordinator is unavailable")
+        return self._navigation_coordinator.prepare_fleets(request_id=request_id)
+
+    def prepare_system_messages(self, *, request_id: str) -> MessagePreparationResult:
+        if self._navigation_coordinator is None:
+            raise RuntimeError("V2 NavigationCoordinator is unavailable")
+        return self._navigation_coordinator.prepare_system_messages(request_id=request_id)
+
+    def prepare_galaxy_page(self, *, request_id: str) -> NavigationJournalRecord:
+        if self._navigation_coordinator is None:
+            raise RuntimeError("V2 NavigationCoordinator is unavailable")
+        return self._navigation_coordinator.prepare_galaxy(request_id=request_id)
 
     def recent_navigation_actions(self, *, limit: int = 200) -> tuple[NavigationJournalRecord, ...]:
         if self._navigation_coordinator is None:
