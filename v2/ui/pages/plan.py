@@ -51,12 +51,14 @@ class PlanPage(FilterableReadOnlyTable):
         self.queue_mode.addItem("Металл", "metal")
         self.queue_mode.addItem("Минералы", "minerals")
         self.queue_mode.addItem("AutoFarm ≥500k", "autofarm")
+        self.queue_mode.setMaximumWidth(180)
         builder_grid.addWidget(self.queue_mode, 1, 0)
 
         builder_grid.addWidget(QLabel("ЦЕЛЕЙ", builder), 0, 1)
         self.queue_size = QSpinBox(builder)
         self.queue_size.setRange(1, 5000)
         self.queue_size.setValue(45)
+        self.queue_size.setMaximumWidth(120)
         builder_grid.addWidget(self.queue_size, 1, 1)
 
         builder_grid.addWidget(QLabel("МИН. МЕТАЛЛ", builder), 0, 2)
@@ -64,7 +66,9 @@ class PlanPage(FilterableReadOnlyTable):
         self.minimum_metal.setRange(0, 2_000_000_000)
         self.minimum_metal.setSingleStep(10_000)
         self.minimum_metal.setValue(480_000)
+        self.minimum_metal.setMaximumWidth(180)
         builder_grid.addWidget(self.minimum_metal, 1, 2)
+        builder_grid.setColumnStretch(3, 1)
 
         builder_actions = QHBoxLayout()
         self.preview_refill_button = command_button("Предпросмотр", tone="secondary", compact=True, parent=builder)
@@ -74,8 +78,7 @@ class PlanPage(FilterableReadOnlyTable):
         self.apply_refill_button.clicked.connect(self.apply_refill)
         builder_actions.addWidget(self.apply_refill_button)
         builder_actions.addStretch(1)
-        builder_grid.addLayout(builder_actions, 1, 3)
-        builder_grid.setColumnStretch(3, 1)
+        builder_grid.addLayout(builder_actions, 2, 0, 1, 4)
         builder.content_layout.addLayout(builder_grid)
 
         self.refill_status = QLabel("Pure policy: browser не вызывается.", builder)
@@ -90,27 +93,29 @@ class PlanPage(FilterableReadOnlyTable):
             object_name="CommandCard",
             parent=self,
         )
-        controls_row = QHBoxLayout()
-        controls_row.setSpacing(SPACING["sm"])
+        controls_grid = QGridLayout()
+        controls_grid.setHorizontalSpacing(SPACING["sm"])
+        controls_grid.setVerticalSpacing(SPACING["sm"])
         ship_label = QLabel("МЕГАТРАНСПОРТИРОВЩИКИ", controls)
         ship_label.setObjectName("MetricLabel")
-        controls_row.addWidget(ship_label)
+        controls_grid.addWidget(ship_label, 0, 0)
         self.ship_count = QSpinBox(controls)
         self.ship_count.setRange(1, 100000)
         self.ship_count.setValue(25)
-        controls_row.addWidget(self.ship_count)
+        self.ship_count.setMaximumWidth(160)
+        controls_grid.addWidget(self.ship_count, 1, 0)
 
         self.prepare_button = command_button("Подготовить выбранную", tone="primary", parent=controls)
         self.prepare_button.clicked.connect(self.prepare_selected)
-        controls_row.addWidget(self.prepare_button)
+        controls_grid.addWidget(self.prepare_button, 1, 1)
 
         self.send_button = command_button("Отправить выбранную", tone="warning", parent=controls)
         self.send_button.setObjectName("PrimaryButton")
         self.send_button.setProperty("tone", "warning")
         self.send_button.clicked.connect(self.send_selected)
-        controls_row.addWidget(self.send_button)
-        controls_row.addStretch(1)
-        controls.content_layout.addLayout(controls_row)
+        controls_grid.addWidget(self.send_button, 1, 2)
+        controls_grid.setColumnStretch(3, 1)
+        controls.content_layout.addLayout(controls_grid)
 
         self.action_banner = StateBanner(
             "Ожидание выбора",
