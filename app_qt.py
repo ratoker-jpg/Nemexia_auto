@@ -3,9 +3,11 @@ from __future__ import annotations
 import sys
 
 from v2.application.asteroid_actions import AsteroidActionService
+from v2.application.asteroid_autorenew import AsteroidAutorenewService
+from v2.application.asteroid_autorenew_context import AsteroidAutorenewApplicationContext
+from v2.application.asteroid_repository import V2AsteroidRepository
 from v2.application.asteroid_source import V2AsteroidSource
 from v2.application.automatic_recon import AutomaticReconService
-from v2.application.automation_context import DebrisEnabledApplicationContextWithReadiness
 from v2.application.browser_read_service import V2BrowserFlightSource
 from v2.application.context import V2ApplicationContext
 from v2.application.debris_repository import V2DebrisRepository
@@ -21,9 +23,11 @@ from v2.application.report_source import V2BrowserReportSource
 from v2.application.spy_actions import SpyActionService
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
+from v2.infrastructure.cdp_asteroid_autorenew_backend import (
+    V2AutorenewAsteroidCdpBackendNoAutoReconnect,
+)
 from v2.infrastructure.cdp_debris_reader import ReadOnlyDebrisCdpBackend
 from v2.infrastructure.cdp_mutation_sessions import (
-    V2AsteroidCdpBackendNoAutoReconnect,
     V2AutomaticReconCdpBackendNoAutoReconnect,
     V2RaidCdpBackendNoAutoReconnect,
     V2SpyCdpBackendNoAutoReconnect,
@@ -78,7 +82,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             debris_repository=V2DebrisRepository(database),
         )
         spy_backend = V2SpyCdpBackendNoAutoReconnect(endpoint.endpoint)
-        asteroid_backend = V2AsteroidCdpBackendNoAutoReconnect(endpoint.endpoint)
+        asteroid_backend = V2AutorenewAsteroidCdpBackendNoAutoReconnect(endpoint.endpoint)
         flight_source = V2BrowserFlightSource(spy_backend)
         report_source = V2BrowserReportSource(spy_backend)
         asteroid_source = V2AsteroidSource(asteroid_backend)
@@ -95,7 +99,16 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             asteroid_backend,
             enabled=bool(settings.get("actions_enabled")),
         )
-        return DebrisEnabledApplicationContextWithReadiness(
+        asteroid_autorenew = AsteroidAutorenewService(
+            database=database,
+            navigation=navigation,
+            discovery=discovery_scan,
+            discovery_browser=navigation_backend,
+            asteroid_repository=V2AsteroidRepository(database),
+            asteroid_actions=asteroid_actions,
+            captcha_probe=asteroid_backend,
+        )
+        return AsteroidAutorenewApplicationContext(
             source_path,
             flight_source=flight_source,
             report_source=report_source,
@@ -111,6 +124,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             navigation_coordinator=navigation,
             automatic_recon=automatic_recon,
             discovery_scan=discovery_scan,
+            asteroid_autorenew=asteroid_autorenew,
         )
     except Exception:
         if navigation is not None:
