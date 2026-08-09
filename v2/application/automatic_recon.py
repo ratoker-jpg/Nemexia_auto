@@ -135,12 +135,16 @@ class AutomaticReconService:
         journal: AutomaticReconJournalRepository,
         *,
         enabled: bool = False,
+        verification_timeout_seconds: float = 10.0,
+        verification_poll_seconds: float = 0.4,
     ) -> None:
         self.browser = browser
         self.navigation = navigation
         self.readiness = BrowserReadinessManager(navigation)
         self.journal = journal
         self.enabled = bool(enabled)
+        self.verification_timeout_seconds = max(0.0, float(verification_timeout_seconds))
+        self.verification_poll_seconds = max(0.0, float(verification_poll_seconds))
 
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = bool(enabled)
@@ -201,6 +205,13 @@ class AutomaticReconService:
             return exc
         return SpyRequestRejected(f"Automatic recon read preflight failed: {exc}")
 
+    def _unresolved_manual_spy(self):
+        return self.journal.database._require_conn().execute(
+            """SELECT request_id,status FROM spy_actions
+               WHERE status IN ('pending','ambiguous')
+               ORDER BY id DESC LIMIT 1"""
+        ).fetchone()
+
     def _preflight_request(self, request_id: str) -> str:
         clean = str(request_id or "").strip()
         if not clean:
@@ -215,16 +226,11 @@ class AutomaticReconService:
             raise SpyRequestRejected(
                 f"Automatic recon blocked by unresolved {item.request_id} ({item.status})"
             )
-        manual_unresolved = [
-            row
-            for row in self.journal.database.list_spy_actions(limit=500)
-            if str(row.get("status") or "") in {"pending", "ambiguous"}
-        ]
-        if manual_unresolved:
-            item = manual_unresolved[0]
+        manual_unresolved = self._unresolved_manual_spy()
+        if manual_unresolved is not None:
             raise SpyRequestRejected(
                 "Automatic recon blocked by unresolved manual spy request: "
-                f"{item['request_id']} ({item['status']})"
+                f"{manual_unresolved['request_id']} ({manual_unresolved['status']})"
             )
         return clean
 
@@ -352,17 +358,49 @@ class AutomaticReconService:
                 "processSpy result is ambiguous; automatic retry is forbidden"
             ) from exc
 
-        # Match the proven manual/legacy timing without repeating processSpy.
+        # Exactly one mutation has happened. From here on we only prepare/read the
+        # verification surface; polling must never call processSpy again.
         time.sleep(0.35)
         try:
             self.readiness.ensure_messages(planet_coord=current.coord)
             after_observation = self.navigation.observe()
             self._assert_same_context(initial, after_observation, page_kind="options")
-            after_reports = self.browser.read_spy_reports(
-                expected_planet_id=current.planet_id,
-                expected_coord=current.coord,
-                expected_account_fingerprint=account,
-            )
+
+            deadline = time.monotonic() + self.verification_timeout_seconds
+            after_reports: tuple[SpyReportFact, ...] = ()
+            while True:
+                after_reports = self.browser.read_spy_reports(
+                    expected_planet_id=current.planet_id,
+                    expected_coord=current.coord,
+                    expected_account_fingerprint=account,
+                )
+                verified = select_new_exact_report(
+                    after_reports,
+                    before_ids=before_ids,
+                    target=chosen.target,
+                    requested_at=requested_at,
+                )
+                if verified is not None:
+                    after_ids = self._report_ids(after_reports)
+                    self.journal.finish(
+                        request_id,
+                        status="verified",
+                        after_keys=after_ids,
+                        detail="Verified by new exact-target fresh spy report",
+                    )
+                    return SpyRequestResult(
+                        fleet_id=chosen.fleet_id,
+                        source=chosen.source,
+                        target=chosen.target,
+                        requested_at=requested_at,
+                        verified=True,
+                        report_id=verified.report_id,
+                        report_at=verified.reported_at,
+                        detail="Verified by new exact-target fresh spy report",
+                    )
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(self.verification_poll_seconds)
         except Exception as exc:
             self.journal.finish(
                 request_id,
@@ -375,41 +413,17 @@ class AutomaticReconService:
             ) from exc
 
         after_ids = self._report_ids(after_reports)
-        verified = select_new_exact_report(
-            after_reports,
-            before_ids=before_ids,
-            target=chosen.target,
-            requested_at=requested_at,
-        )
-        if verified is None:
-            self.journal.finish(
-                request_id,
-                status="ambiguous",
-                after_keys=after_ids,
-                detail="No new exact-target fresh report observed; automatic retry forbidden",
-            )
-            return SpyRequestResult(
-                fleet_id=chosen.fleet_id,
-                source=chosen.source,
-                target=chosen.target,
-                requested_at=requested_at,
-                verified=False,
-                detail="No new exact-target fresh report observed; automatic retry forbidden",
-            )
-
         self.journal.finish(
             request_id,
-            status="verified",
+            status="ambiguous",
             after_keys=after_ids,
-            detail="Verified by new exact-target fresh spy report",
+            detail="No new exact-target fresh report observed within verification window; automatic retry forbidden",
         )
         return SpyRequestResult(
             fleet_id=chosen.fleet_id,
             source=chosen.source,
             target=chosen.target,
             requested_at=requested_at,
-            verified=True,
-            report_id=verified.report_id,
-            report_at=verified.reported_at,
-            detail="Verified by new exact-target fresh spy report",
+            verified=False,
+            detail="No new exact-target fresh report observed within verification window; automatic retry forbidden",
         )
