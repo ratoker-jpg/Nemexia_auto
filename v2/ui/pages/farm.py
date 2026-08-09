@@ -4,12 +4,12 @@ import uuid
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox, QVBoxLayout, QWidget
 
 from v2.application.context import V2ApplicationContext
 from v2.application.farm_controller import FarmSnapshot, FarmState
 from v2.application.recon_refill import ReconRefillState
-from v2.ui.components import SectionCard, StateBanner, StatusPill, command_button, page_layout
+from v2.ui.components import SectionCard, StateBanner, StatusPill, command_button, scrollable_page
 from v2.ui.theme import SPACING
 
 
@@ -42,7 +42,12 @@ class FarmPage(QWidget):
         self._timer.setInterval(SCHEDULER_INTERVAL_MS)
         self._timer.timeout.connect(self._scheduler_tick)
 
-        layout = page_layout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        scroll, _content, layout = scrollable_page(self)
+        scroll.setObjectName("FarmPageScroll")
+        outer.addWidget(scroll)
 
         hero = SectionCard(
             "AutoFarm command",
