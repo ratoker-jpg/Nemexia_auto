@@ -182,24 +182,35 @@ class AsteroidsPage(ManualAsteroidsPage):
         )
 
     def _refresh_autorenew_status(self) -> None:
+        state = None
+        scan = None
         state_error = ""
+        scan_error = ""
+
         try:
             state = self._typed_autorenew_state()
-            scan = self._typed_discovery_scan(None if state is None else state.active_scan_id)
         except Exception as exc:
-            state = None
-            scan = None
             state_error = str(exc) or exc.__class__.__name__
             self._autorenew_last_error = state_error
-
-        if scan is not None:
-            progress = int(scan.cursor_index)
-        elif state is not None and str(state.status) == "waiting_return":
-            progress = len(DISCOVERY_SEQUENCE)
         else:
-            progress = 0
-        self._autorenew_values["AutorenewProgress"].setText(f"{progress}/120")
-        self._autorenew_values["AutorenewCurrentSystem"].setText(self._current_system(scan))
+            try:
+                scan = self._typed_discovery_scan(None if state is None else state.active_scan_id)
+            except Exception as exc:
+                scan_error = str(exc) or exc.__class__.__name__
+
+        if scan_error:
+            self._autorenew_values["AutorenewProgress"].setText("—/120")
+            self._autorenew_values["AutorenewCurrentSystem"].setText("—")
+        else:
+            if scan is not None:
+                progress = int(scan.cursor_index)
+            elif state is not None and str(state.status) == "waiting_return":
+                progress = len(DISCOVERY_SEQUENCE)
+            else:
+                progress = 0
+            self._autorenew_values["AutorenewProgress"].setText(f"{progress}/120")
+            self._autorenew_values["AutorenewCurrentSystem"].setText(self._current_system(scan))
+
         self._autorenew_values["AutorenewNextCycle"].setText(
             self._display_time(None if state is None else state.next_cycle_at)
         )
@@ -217,7 +228,18 @@ class AsteroidsPage(ManualAsteroidsPage):
             self.autorenew_result_value.setText(self._autorenew_last_error)
             return
 
+        # A discovery progress read is ancillary. Never discard a successfully
+        # read authoritative scheduler state, especially an armed state with Stop.
         self._sync_control_interlock(state, state_unknown=False)
+        if scan_error:
+            self.autorenew_banner.set_state(
+                "ERROR",
+                f"Autorenew state подтверждён ({state.status if state is not None else 'unavailable'}); progress 3×40 недоступен.",
+                "danger",
+            )
+            self.autorenew_result_value.setText(f"Discovery progress unavailable: {scan_error}")
+            return
+
         title, tone = self._presentation_state(state)
         if state is None:
             self.autorenew_banner.set_state(
