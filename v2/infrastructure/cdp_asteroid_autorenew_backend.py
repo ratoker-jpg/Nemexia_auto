@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from v2.application.asteroid_actions import AsteroidActionError
+from v2.application.asteroid_actions import AsteroidCaptchaBlocked
 from v2.infrastructure.cdp_mutation_sessions import V2AsteroidCdpBackendNoAutoReconnect
 
 
@@ -22,7 +22,7 @@ class V2AutorenewAsteroidCdpBackendNoAutoReconnect(V2AsteroidCdpBackendNoAutoRec
     async def _matching_galaxy_page(self, galaxy: int, system: int):
         page = await self._existing_fleets_page()
         if await self._captcha_present(page):
-            raise AsteroidActionError(
+            raise AsteroidCaptchaBlocked(
                 "CAPTCHA detected before autorenew asteroid trajectory re-check"
             )
         return page
