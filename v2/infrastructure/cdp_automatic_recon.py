@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from urllib.parse import urlsplit
-
 from v2.application.automatic_recon import (
     AutomaticReconMutationError,
     ProcessableSpyFleet,
