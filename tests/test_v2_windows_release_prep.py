@@ -47,6 +47,15 @@ def test_build_environment_and_specs_preserve_qt_default_plus_legacy_fallback() 
     assert "NemexiaRaidManagerLegacy.spec" in BUILD_LEGACY
 
 
+def test_package_builders_are_order_independent_and_do_not_delete_other_artifacts() -> None:
+    assert "rmdir /s /q dist" not in BUILD_DEFAULT
+    assert "rmdir /s /q dist" not in BUILD_QT
+    assert "rmdir /s /q dist" not in BUILD_LEGACY
+    assert "del /q dist\\NemexiaRaidManager.exe" in BUILD_DEFAULT
+    assert "del /q dist\\NemexiaRaidManagerQt.exe" in BUILD_QT
+    assert "del /q dist\\NemexiaRaidManagerLegacy.exe" in BUILD_LEGACY
+
+
 def test_release_launch_and_build_surfaces_do_not_add_navigation_commands() -> None:
     combined = RUN_DEFAULT + RUN_QT + RUN_LEGACY + BUILD_DEFAULT + BUILD_QT + BUILD_LEGACY + DEFAULT_SPEC + QT_SPEC + INSTALL
     for forbidden in (
