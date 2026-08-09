@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from v2.application.context import V2ApplicationContext
 from v2.runtime_paths import RuntimePaths
+from v2.ui.browser_readiness_panel import BrowserReadinessPanel
 from v2.ui.components import StatusPill
 from v2.ui.pages.active import ActivePage
 from v2.ui.pages.asteroids import AsteroidsPage
@@ -52,7 +53,7 @@ def _iter_pages() -> Iterable[tuple[str, str, str]]:
 
 
 class MainWindow(QMainWindow):
-    """Orbital Command V2 shell; routing only, never a browser/action boundary."""
+    """Orbital Command V2 shell; routing/readiness UI only, never a browser boundary."""
 
     def __init__(self, runtime_paths: RuntimePaths, context: V2ApplicationContext) -> None:
         super().__init__()
@@ -79,6 +80,9 @@ class MainWindow(QMainWindow):
 
         self.topbar = self._build_topbar()
         content_layout.addWidget(self.topbar)
+
+        self.browser_readiness = BrowserReadinessPanel(self.context, content)
+        content_layout.addWidget(self.browser_readiness)
 
         self.stack = QStackedWidget(content)
         self.stack.setContentsMargins(0, 0, 0, 0)
@@ -131,11 +135,11 @@ class MainWindow(QMainWindow):
                 layout.addWidget(button)
 
         layout.addStretch(1)
-        boundary = QLabel("ATTACH-ONLY · SAFETY CONTRACT", sidebar)
+        boundary = QLabel("AUTOMATION · JOURNALED SAFETY", sidebar)
         boundary.setObjectName("SidebarMeta")
         boundary.setWordWrap(True)
         layout.addWidget(boundary)
-        version = QLabel("Qt V2 opt-in\nlegacy launcher unchanged", sidebar)
+        version = QLabel("Qt V2\nlegacy rollback available", sidebar)
         version.setObjectName("SidebarMeta")
         version.setWordWrap(True)
         layout.addWidget(version)
@@ -159,13 +163,10 @@ class MainWindow(QMainWindow):
         title_block.addWidget(self.page_description)
         layout.addLayout(title_block, 1)
 
-        v2_status = StatusPill("V2 · QT", "info", topbar)
+        v2_status = StatusPill("V2 · AUTOMATION", "info", topbar)
+        v2_status.setToolTip("Браузерный контекст готовится через NavigationCoordinator и persistent journals")
         v2_status.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         layout.addWidget(v2_status)
-        attach_status = StatusPill("ATTACH-ONLY", "neutral", topbar)
-        attach_status.setToolTip("V2 не запускает браузер и не владеет browser navigation boundary")
-        attach_status.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        layout.addWidget(attach_status)
 
         data_status = self.context.status()
         if data_status.available:
@@ -218,7 +219,7 @@ class MainWindow(QMainWindow):
         description_label = QLabel(description, card)
         description_label.setObjectName("Muted")
         description_label.setWordWrap(True)
-        note = QLabel("Экран подключится к V2 services поэтапно. Игровые действия здесь пока отключены.", card)
+        note = QLabel("Экран подключается к V2 services поэтапно; remote effects остаются journaled и fail-closed.", card)
         note.setObjectName("Muted")
         note.setWordWrap(True)
         card_layout.addWidget(title_label)
@@ -241,6 +242,7 @@ class MainWindow(QMainWindow):
         reloader = getattr(page, "reload_view", None)
         if callable(reloader):
             reloader()
+        self.browser_readiness.refresh_async()
 
 
 def run_qt_app(runtime_paths: RuntimePaths, context: V2ApplicationContext) -> int:
