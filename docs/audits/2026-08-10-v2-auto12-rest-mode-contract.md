@@ -41,7 +41,7 @@ URL_REDIRECT = 'bot_check.php?redir=%2Ffleets.php'
 currentTime = new Date(...)
 ```
 
-This is enough to authorize a read-only activity-timer adapter in the implementation stage, provided its parser is fixture-tested against saved-page evidence.
+This authorizes research and a read-only activity-timer adapter in the implementation stage, but **does not by itself prove that the raw numeric `BOT_CHECK` value is measured in minutes**. The implementation must either read a concrete rendered human-readable countdown whose unit is explicit, or separately prove and fixture-test the game variable conversion. It is forbidden to interpret the saved raw `BOT_CHECK` number as minutes merely because `StringBotcheckTime` mentions minutes.
 
 It does **not** prove the exact DOM of a real incoming attack. The approved 2026-08-06 contract already requires a saved page captured during a real attack before exact attack selectors/row semantics are implemented.
 
@@ -72,7 +72,8 @@ Rules:
 - browser/tab/session loss immediately disarms and persists `BLOCKED_BROWSER`;
 - account/planet proof loss immediately disarms and persists `BLOCKED_IDENTITY`;
 - an unresolved/ambiguous NavigationCoordinator effect immediately disarms and persists `BLOCKED_AMBIGUOUS`; no automatic retry is allowed;
-- unexpected read/parser errors fail closed to `ERROR` and never become a successful “no warning” result.
+- unexpected read/parser errors fail closed to `ERROR` and never become a successful “no warning” result;
+- every transition that leaves Rest Mode disarmed must eventually release its process-level authority token, but only after the current serialized cycle is quiescent and cannot perform another page/context operation.
 
 `WATCHING` and `ACTIVITY_WARNING` are the only normally armed states.
 
@@ -92,19 +93,23 @@ Rules:
 8. run one read-only observation;
 9. enter `WATCHING` only after the observation is complete and CAPTCHA-free.
 
-Any failure before a verified working state leaves the mode disarmed and persists the reason.
+Any failure before a verified working state leaves the mode disarmed and persists the reason. **If step 2 already acquired Rest Mode authority, every failed Start exit must release that token after the Start operation itself has quiesced.** A Start that never reaches `WATCHING` / `ACTIVITY_WARNING` must never strand the authority token and block AutoFarm or asteroid autorenew until process restart.
 
 ### Stop
 
-`Stop Rest Mode` must:
+`Stop Rest Mode` must serialize with the same in-process cycle lock/mutex used by Rest Mode ticks. It must:
 
-- set `armed = false` persistently before any further scheduled cycle;
-- cancel/ignore future local timer ticks;
-- release the Rest Mode authority token;
-- perform **no browser mutation** merely to stop;
-- retain last successful observation, warning state and recovery/error evidence.
+1. persist a stop/disarm intent so no future scheduled cycle can start;
+2. cancel/ignore future local timer ticks;
+3. wait for any already-running Rest Mode cycle to drain to a quiescent point under the same serialization boundary;
+4. if that in-flight cycle was inside a NavigationCoordinator operation, let the operation finish/reconcile normally and preserve any resulting VERIFIED / FAILED_SAFE / AMBIGUOUS journal evidence — never interrupt it by starting a competing browser operation;
+5. release the Rest Mode authority token **only after** the in-flight cycle can perform no further page/context work;
+6. perform **no new browser mutation** merely to stop;
+7. retain last successful observation, warning state and recovery/error evidence.
 
-Closing the application has the same fail-safe arming outcome: next startup is disarmed.
+This ordering prevents a race where AutoFarm, asteroid autorenew, or manual browser-driving controls acquire the page while an old Rest Mode cycle is still reading/preparing it.
+
+Closing the application has the same fail-safe arming outcome: next startup is disarmed. Shutdown should request the same quiesce path when feasible; persisted startup-disarm semantics remain the final authority if the process terminates before graceful drain completes.
 
 ## AccountContext / PlanetIdentity invariant
 
@@ -138,7 +143,7 @@ RestModeService
 
 A Rest Mode read adapter may inspect the **already coordinator-owned page** read-only. It may not own a second browser/page chooser and may not silently rebind to another Nemexia tab.
 
-If a page preparation is `AMBIGUOUS`, Rest Mode persists `BLOCKED_AMBIGUOUS`, disarms, and performs zero new automatic navigation attempts until the uncertainty is reconciled or the operator explicitly recovers through a safe path.
+If a page preparation is `AMBIGUOUS`, Rest Mode persists `BLOCKED_AMBIGUOUS`, disarms, and performs zero new automatic navigation attempts until the uncertainty is reconciled or the operator explicitly recovers through a safe path. Authority is released only after the cycle holding the coordinator/page has quiesced, as defined by the Stop/disarm lifecycle above.
 
 ## Browser Readiness / session loss
 
@@ -165,9 +170,10 @@ On detection:
 
 1. persist `CAPTCHA_REQUIRED`;
 2. set `armed = false`;
-3. release Rest Mode authority;
-4. suppress all further Rest Mode navigation/read cycles;
-5. notify the operator.
+3. suppress all future Rest Mode navigation/read cycles;
+4. drain the current serialized cycle without introducing a second browser action;
+5. release Rest Mode authority after quiescence;
+6. notify the operator.
 
 Forbidden:
 
@@ -196,17 +202,20 @@ check armed state
 → prove identity again
 → read CAPTCHA + activity timer from the owned page
 → persist complete observation
-→ emit at most one threshold warning
+→ emit at most one threshold warning for the current proven epoch
 → schedule next local cycle
 ```
 
-The activity timer reader must be read-only and fixture-tested. It must never fabricate a value when the expected game-owned evidence is absent or malformed.
+The activity timer reader must be read-only and fixture-tested. It must never fabricate a value when the expected game-owned evidence is absent or malformed. Raw `BOT_CHECK` unit conversion must not be guessed.
 
 25-minute warning dedupe:
 
-- notify only on the transition from a confirmed value `> 25` to a confirmed value `<= 25` within the same activity-check epoch;
+- if the current activity-check epoch has **not** already been warned and the first confirmed readable sample is already `<= 25`, notify immediately and persist the warned marker for that epoch;
+- otherwise notify on the transition from a confirmed value `> 25` to a confirmed value `<= 25` within the same activity-check epoch;
 - do not notify every 5-minute cycle while remaining below the threshold;
-- if the timer later increases enough to prove a new activity-check epoch, the threshold may arm again;
+- a process restart or explicit Stop/Start must preserve enough warning/epoch evidence to avoid duplicating a warning that was already emitted for the still-current epoch;
+- if the timer later increases enough to prove a new activity-check epoch, the threshold may arm again and the new epoch starts un-warned;
+- if the implementation cannot prove whether a post-restart low timer belongs to an already-warned epoch, it must prefer persisted dedupe evidence and avoid notification spam; it may expose an uncertain warning epoch rather than erase evidence;
 - missing/unreadable timer data is an error/blocked observation, not “no warning”.
 
 ## Attack-watch semantics
@@ -281,20 +290,23 @@ Crash/restart rule:
 
 - persisted `armed = true` from a prior process is never trusted as permission to resume;
 - startup rewrites runtime authority to disarmed/recovery state while preserving the prior session/evidence for diagnosis;
-- unresolved NavigationCoordinator/action evidence is never erased by Rest Mode recovery.
+- unresolved NavigationCoordinator/action evidence is never erased by Rest Mode recovery;
+- process-level authority is never reconstructed from persisted `armed`; a fresh explicit Start must reacquire it after all gates pass.
 
 ## Mutual exclusion
 
 Rest Mode does **not** initiate fleet sends in the approved first version. Nevertheless it controls the same bound browser/page and performs coordinator navigation, so concurrent automatic workflows would create context races.
 
-Therefore AUTO-12 must extend the existing process-level `AutomationAuthority` with a Rest Mode owner and hold that authority for the whole armed session.
+Therefore AUTO-12 must extend the existing process-level `AutomationAuthority` with a Rest Mode owner and hold that authority for the whole armed session **and for any still-draining cycle during disarm**.
 
-While Rest Mode is armed:
+While Rest Mode is armed or draining:
 
 - AutoFarm cannot arm;
 - asteroid autorenew cannot arm;
 - Rest Mode cannot arm if either already owns authority;
 - manual bounded operations that can drive the same browser must either be explicitly blocked by UI/application entry gates or require Rest Mode to be stopped first.
+
+Failed Start cleanup is part of this same invariant: if Rest Mode acquired authority but did not successfully arm, it must release the token before returning control to the operator.
 
 This is a browser/context exclusion rule, not authorization for Rest Mode to send anything.
 
@@ -306,7 +318,7 @@ Notifications are local operator signals only.
 
 Required events for the first implementation:
 
-- activity timer crosses the 25-minute threshold;
+- activity timer first becomes/readably starts at `<= 25` for an un-warned epoch, or crosses the 25-minute threshold;
 - CAPTCHA stop;
 - browser/session/identity loss that stops the mode;
 - persistent ERROR/BLOCKED condition where operator action is required.
@@ -356,7 +368,8 @@ AUTO-12 is fully green only when:
 - AUTO-12A runtime PR is merged and exact post-main CI is green;
 - AUTO-12B UI-only PR is merged and exact post-main CI is green;
 - startup is proven disarmed;
-- explicit Start/Stop are proven;
+- explicit Start/Stop are proven, including quiescing an in-flight cycle before authority release;
+- every failed Start path releases any authority it acquired;
 - AccountContext / PlanetIdentity are revalidated;
 - NavigationCoordinator is the sole context mutation owner;
 - Browser Readiness participates in every start/cycle requiring page preparation;
@@ -364,7 +377,8 @@ AUTO-12 is fully green only when:
 - browser/session loss stops/blocks;
 - ambiguity causes zero blind retries;
 - typed recovery evidence survives restart;
-- Rest Mode is mutually exclusive with competing automatic browser senders;
+- first low activity sample and threshold crossing warning semantics are deduped across restart;
+- Rest Mode is mutually exclusive with competing automatic browser senders while armed/draining;
 - attack-watch capability truthfully reports the evidence gate and never false-zeroes attacks.
 
 AUTO-13 and AUTO-14 remain forbidden until every applicable AUTO-12 gate above is green.
