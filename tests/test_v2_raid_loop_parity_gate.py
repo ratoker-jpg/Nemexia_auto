@@ -8,10 +8,13 @@ def text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_default_launcher_and_rollback_boundary_remain_legacy_safe() -> None:
-    launcher = text("run_app.bat")
-    assert "app_entry.py" in launcher
-    assert "app_qt.py" not in launcher
+def test_default_qt_launcher_and_legacy_rollback_boundary_remain_safe() -> None:
+    default_launcher = text("run_app.bat")
+    legacy_launcher = text("run_legacy.bat")
+    assert "app_qt.py" in default_launcher
+    assert "app_entry.py" not in default_launcher
+    assert "app_entry.py" in legacy_launcher
+    assert "app_qt.py" not in legacy_launcher
 
 
 def test_legacy_sqlite_boundary_remains_strictly_read_only() -> None:

@@ -69,8 +69,6 @@ class CrashAfterPendingBackend:
 
     def dispatch(self, _command, _preparation):
         self.dispatch_calls += 1
-        # Models process termination after pending was durably committed but before
-        # application-level exception recovery could classify the remote attempt.
         raise SimulatedCrash("process terminated")
 
     def close(self) -> None:
@@ -178,12 +176,15 @@ def test_asteroid_auto_repeat_remains_deferred_and_no_scheduler_can_start_on_res
 
 
 def test_default_launcher_and_debris_boundary_remain_controlled() -> None:
-    launcher = text("run_app.bat")
+    default_launcher = text("run_app.bat")
+    legacy_launcher = text("run_legacy.bat")
     window = text("v2/ui/main_window.py")
     debris_page = text("v2/ui/pages/debris.py")
     debris_context = text("v2/application/debris_context.py")
-    assert "app_entry.py" in launcher
-    assert "app_qt.py" not in launcher
+    assert "app_qt.py" in default_launcher
+    assert "app_entry.py" not in default_launcher
+    assert "app_entry.py" in legacy_launcher
+    assert "app_qt.py" not in legacy_launcher
     assert 'if key == "debris":' in window
     assert "return DebrisPage(self.context, self)" in window
     assert "AsteroidRequestCoordinator(self._asteroid_actions, database)" in debris_context

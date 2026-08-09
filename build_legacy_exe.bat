@@ -6,16 +6,16 @@ set "PYTHONIOENCODING=utf-8"
 cd /d "%~dp0"
 set "VENV_PY=.venv\Scripts\python.exe"
 if not exist "%VENV_PY%" goto :missing_venv
-"%VENV_PY%" -c "import sys" >nul 2>nul
+"%VENV_PY%" -c "import app_entry" >nul 2>nul
 if errorlevel 1 goto :missing_venv
 call :message build_requirements
 "%VENV_PY%" -m pip install -r requirements-build.txt
 if errorlevel 1 goto :build_requirements_error
-rmdir /s /q build\NemexiaRaidManager 2>nul
-del /q dist\NemexiaRaidManager.exe 2>nul
-"%VENV_PY%" -m PyInstaller NemexiaRaidManager.spec --noconfirm
+rmdir /s /q build\NemexiaRaidManagerLegacy 2>nul
+del /q dist\NemexiaRaidManagerLegacy.exe 2>nul
+"%VENV_PY%" -m PyInstaller NemexiaRaidManagerLegacy.spec --noconfirm
 if errorlevel 1 goto :pyinstaller_error
-call :message build_success
+echo Готово: dist\NemexiaRaidManagerLegacy.exe
 if /i "%~1"=="--pause" pause
 endlocal & exit /b 0
 
@@ -27,7 +27,6 @@ set "ERROR_KEY=build_requirements_error"
 goto :error
 :pyinstaller_error
 set "ERROR_KEY=pyinstaller_error"
-goto :error
 :error
 set "EXIT_CODE=%ERRORLEVEL%"
 if "%EXIT_CODE%"=="0" set "EXIT_CODE=1"

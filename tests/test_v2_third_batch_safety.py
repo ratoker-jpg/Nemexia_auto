@@ -4,7 +4,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGES = ROOT / "v2" / "ui" / "pages"
 MAIN = (ROOT / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
 DIAGNOSTICS = (PAGES / "diagnostics.py").read_text(encoding="utf-8")
-LEGACY_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+DEFAULT_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+LEGACY_RUNNER = (ROOT / "run_legacy.bat").read_text(encoding="utf-8")
 
 
 def test_third_batch_pages_are_real_and_diagnostics_exposes_source_truth() -> None:
@@ -51,6 +52,8 @@ def test_plan_action_page_has_no_direct_browser_or_sql_surface() -> None:
         assert forbidden not in plan
 
 
-def test_legacy_launcher_is_still_the_default() -> None:
-    assert '"%VENV_PY%" app_entry.py' in LEGACY_RUNNER
+def test_qt_is_default_and_legacy_fallback_remains_available() -> None:
+    assert '"%VENV_PY%" app_qt.py %*' in DEFAULT_RUNNER
+    assert "app_entry.py" not in DEFAULT_RUNNER
+    assert '"%VENV_PY%" app_entry.py %*' in LEGACY_RUNNER
     assert "app_qt.py" not in LEGACY_RUNNER

@@ -7,14 +7,17 @@ SETTINGS = (ROOT / "v2" / "ui" / "pages" / "settings.py").read_text(encoding="ut
 DIAGNOSTICS = (ROOT / "v2" / "ui" / "pages" / "diagnostics.py").read_text(encoding="utf-8")
 CDP = (ROOT / "v2" / "infrastructure" / "cdp_read_backend.py").read_text(encoding="utf-8")
 ACCOUNT_CDP = (ROOT / "v2" / "infrastructure" / "cdp_account_reader.py").read_text(encoding="utf-8")
-LEGACY_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+DEFAULT_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+LEGACY_RUNNER = (ROOT / "run_legacy.bat").read_text(encoding="utf-8")
 
 
-def test_v2_writes_are_isolated_and_legacy_launcher_is_unchanged() -> None:
+def test_v2_writes_are_isolated_and_legacy_fallback_remains_independent() -> None:
     assert "V2Database(paths.database)" in APP_QT
     assert "ReadOnlyStore(source_path)" in APP_QT
     assert "LegacySettingsImporter" in APP_QT
-    assert '"%VENV_PY%" app_entry.py' in LEGACY_RUNNER
+    assert '"%VENV_PY%" app_qt.py %*' in DEFAULT_RUNNER
+    assert "app_entry.py" not in DEFAULT_RUNNER
+    assert '"%VENV_PY%" app_entry.py %*' in LEGACY_RUNNER
     assert "app_qt.py" not in LEGACY_RUNNER
     assert "V2 SQLite" in DIAGNOSTICS
     assert "Legacy SQLite режим" in DIAGNOSTICS

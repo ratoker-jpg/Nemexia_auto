@@ -131,16 +131,19 @@ def test_recovery_matrix_is_pinned_by_concrete_regressions() -> None:
     assert "debris_label_cannot_bypass_same_unresolved_asteroid_trajectory" in reuse
 
 
-def test_legacy_storage_default_launcher_and_deferred_boundaries_remain_intact() -> None:
+def test_legacy_storage_and_deferred_boundaries_remain_intact_after_cutover() -> None:
     read_store = text("v2/application/read_store.py")
-    launcher = text("run_app.bat")
+    default_launcher = text("run_app.bat")
+    legacy_launcher = text("run_legacy.bat")
     qt = text("app_qt.py")
     debris_page = text("v2/ui/pages/debris.py")
 
     assert "mode=ro" in read_store
     assert "PRAGMA query_only=ON" in read_store
-    assert "app_entry.py" in launcher
-    assert "app_qt.py" not in launcher
+    assert "app_qt.py" in default_launcher
+    assert "app_entry.py" not in default_launcher
+    assert "app_entry.py" in legacy_launcher
+    assert "app_qt.py" not in legacy_launcher
     assert "DebrisEnabledApplicationContext" in qt
 
     combined = qt + debris_page + text("v2/application/debris_context.py")

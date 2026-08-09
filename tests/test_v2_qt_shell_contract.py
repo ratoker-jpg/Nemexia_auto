@@ -5,7 +5,8 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_QT = (ROOT / "app_qt.py").read_text(encoding="utf-8")
 MAIN_WINDOW = (ROOT / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
 THEME = (ROOT / "v2" / "ui" / "theme.py").read_text(encoding="utf-8")
-LEGACY_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+DEFAULT_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+LEGACY_RUNNER = (ROOT / "run_legacy.bat").read_text(encoding="utf-8")
 V2_REQUIREMENTS = (ROOT / "requirements-v2.txt").read_text(encoding="utf-8")
 
 
@@ -20,8 +21,10 @@ def test_v2_dependencies_are_separate_from_legacy_requirements() -> None:
     assert "PySide6" in V2_REQUIREMENTS
 
 
-def test_legacy_runner_still_launches_legacy_entrypoint() -> None:
-    assert '"%VENV_PY%" app_entry.py' in LEGACY_RUNNER
+def test_qt_is_default_and_legacy_runner_still_launches_legacy_entrypoint() -> None:
+    assert '"%VENV_PY%" app_qt.py %*' in DEFAULT_RUNNER
+    assert "app_entry.py" not in DEFAULT_RUNNER
+    assert '"%VENV_PY%" app_entry.py %*' in LEGACY_RUNNER
     assert "app_qt.py" not in LEGACY_RUNNER
 
 

@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 UI_ROOT = ROOT / "v2" / "ui"
 SMOKE = (ROOT / "ci" / "qt_smoke.py").read_text(encoding="utf-8")
 LAUNCHER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+LEGACY_LAUNCHER = (ROOT / "run_legacy.bat").read_text(encoding="utf-8")
 
 
 def _all_ui_source() -> str:
@@ -49,6 +50,8 @@ def test_entire_v2_ui_tree_has_no_browser_navigation_primitives() -> None:
         assert forbidden not in source
 
 
-def test_default_launcher_remains_legacy_tk_entrypoint() -> None:
-    assert '"%VENV_PY%" app_entry.py' in LAUNCHER
-    assert "app_qt.py" not in LAUNCHER
+def test_default_launcher_is_qt_and_legacy_fallback_remains_independent() -> None:
+    assert '"%VENV_PY%" app_qt.py %*' in LAUNCHER
+    assert "app_entry.py" not in LAUNCHER
+    assert '"%VENV_PY%" app_entry.py %*' in LEGACY_LAUNCHER
+    assert "app_qt.py" not in LEGACY_LAUNCHER

@@ -3,16 +3,18 @@ from PyInstaller.utils.hooks import collect_all
 
 playwright_datas, playwright_binaries, playwright_hidden = collect_all('playwright')
 bs4_datas, bs4_binaries, bs4_hidden = collect_all('bs4')
+pystray_datas, pystray_binaries, pystray_hidden = collect_all('pystray')
 
 analysis = Analysis(
-    ['app_qt.py'],
+    ['app_entry.py'],
     pathex=[],
-    binaries=playwright_binaries + bs4_binaries,
-    datas=playwright_datas + bs4_datas + [
+    binaries=playwright_binaries + bs4_binaries + pystray_binaries,
+    datas=playwright_datas + bs4_datas + pystray_datas + [
+        ('targets_seed.json', '.'),
         ('assets/nemexia.ico', 'assets'),
     ],
-    hiddenimports=playwright_hidden + bs4_hidden + [
-        'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets', 'soupsieve',
+    hiddenimports=playwright_hidden + bs4_hidden + pystray_hidden + [
+        'PIL._tkinter_finder', 'PIL.Image', 'PIL.ImageTk', 'soupsieve',
     ],
     hookspath=[],
     hooksconfig={},
@@ -27,7 +29,7 @@ exe = EXE(
     analysis.binaries,
     analysis.datas,
     [],
-    name='NemexiaRaidManager',
+    name='NemexiaRaidManagerLegacy',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
