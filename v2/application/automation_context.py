@@ -9,7 +9,8 @@ from v2.application.browser_readiness import (
 )
 from v2.application.debris_context import DebrisEnabledApplicationContext
 from v2.application.flight_source import FlightSourceStatus
-from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReconReadSnapshot, ReportReadState
+from v2.application.report_source import ReconReadSnapshot
+from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
 
 
 class AutomationReadyApplicationContext(DebrisEnabledApplicationContext):
