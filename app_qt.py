@@ -3,9 +3,9 @@ from __future__ import annotations
 import sys
 
 from v2.application.asteroid_actions import AsteroidActionService
+from v2.application.automation_context import AutomationReadyApplicationContext
 from v2.application.browser_read_service import V2BrowserFlightSource
 from v2.application.context import V2ApplicationContext
-from v2.application.debris_context import DebrisEnabledApplicationContext
 from v2.application.debris_source import V2DebrisSource
 from v2.application.legacy_settings_import import LegacySettingsImporter
 from v2.application.live_bootstrap import resolve_cdp_endpoint, resolve_legacy_source_path
@@ -73,7 +73,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             asteroid_backend,
             enabled=bool(settings.get("actions_enabled")),
         )
-        return DebrisEnabledApplicationContext(
+        return AutomationReadyApplicationContext(
             source_path,
             flight_source=flight_source,
             report_source=report_source,
