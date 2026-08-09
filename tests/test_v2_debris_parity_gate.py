@@ -69,7 +69,9 @@ def test_debris_evidence_is_v2_owned_append_only_and_does_not_fake_full_scan() -
     assert "PARTIAL_EVIDENCE" in domain
     assert "LIVE_UNAVAILABLE" in domain
     assert "CAPTCHA" in domain
-    assert "V2_SCHEMA_VERSION = 8" in database
+    assert "V2_SCHEMA_VERSION = 9" in database
+    assert "def _migrate_to_9" in database
+    assert "install_debris_candidate_schema" in database
     for forbidden in (
         "DELETE FROM debris_observations",
         "completed 120",
