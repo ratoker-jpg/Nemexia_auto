@@ -37,8 +37,9 @@ class AsteroidAutorenewApplicationContext(DebrisEnabledApplicationContextWithRea
         return self._automation_authority.acquire(owner)
 
     def release_automation_cycle(self, owner: str) -> None:
-        if self._automation_authority.owner() == str(owner):
-            self._automation_authority.release(owner)
+        authority = getattr(self, "_automation_authority", None)
+        if authority is not None and authority.owner() == str(owner):
+            authority.release(owner)
 
     def asteroid_autorenew_state(self) -> AsteroidAutorenewState | None:
         service = self._asteroid_autorenew
