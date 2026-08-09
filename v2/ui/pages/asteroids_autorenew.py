@@ -124,7 +124,17 @@ class AsteroidsPage(ManualAsteroidsPage):
     def _start_allowed(cls, state) -> bool:
         if state is None or bool(state.armed):
             return False
-        return str(state.status) not in (cls._BLOCKED_STATUSES | cls._AMBIGUOUS_STATUSES)
+        if str(state.status) in cls._AMBIGUOUS_STATUSES:
+            return False
+        # A retained scan id is persistent recovery evidence after a crash or
+        # ambiguous/incomplete discovery. Do not offer an action the typed
+        # service will deterministically reject until that evidence is resolved.
+        if getattr(state, "active_scan_id", None):
+            return False
+        # Safe BLOCKED states (for example temporary browser/readiness loss)
+        # are recoverable by an explicit operator Start after the prerequisite
+        # is repaired; the typed service revalidates readiness on every Start.
+        return True
 
     @staticmethod
     def _current_system(scan) -> str:
