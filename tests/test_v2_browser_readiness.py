@@ -185,9 +185,9 @@ def test_auto06_application_layer_contains_no_browser_selectors() -> None:
         assert forbidden not in manager
         assert forbidden not in context
     for safe_backend in (
-        "MutationNavigationCdpBackend",
-        "MutationRaidCdpBackend",
-        "MutationSpyCdpBackend",
-        "MutationAsteroidCdpBackend",
+        "V2NavigationCdpBackendNoAutoReconnect",
+        "V2RaidCdpBackendNoAutoReconnect",
+        "V2SpyCdpBackendNoAutoReconnect",
+        "V2AsteroidCdpBackendNoAutoReconnect",
     ):
         assert safe_backend in app
