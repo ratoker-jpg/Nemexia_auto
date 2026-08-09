@@ -51,6 +51,14 @@ class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext):
             return None
         return self._navigation_coordinator.observe()
 
+    def switch_owned_planet(self, *, planet_id: str, request_id: str) -> NavigationJournalRecord:
+        if self._navigation_coordinator is None:
+            raise RuntimeError("V2 NavigationCoordinator is unavailable")
+        return self._navigation_coordinator.switch_planet(
+            request_id=request_id,
+            planet_id=planet_id,
+        )
+
     def recent_navigation_actions(self, *, limit: int = 200) -> tuple[NavigationJournalRecord, ...]:
         if self._navigation_coordinator is None:
             return ()

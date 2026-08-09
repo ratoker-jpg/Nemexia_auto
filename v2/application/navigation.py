@@ -4,11 +4,19 @@ import threading
 from dataclasses import dataclass
 from typing import Mapping, Protocol
 
-from v2.application.browser_identity import BrowserIdentitySnapshot
+from v2.application.browser_identity import BrowserIdentitySnapshot, PlanetIdentity
 from v2.persistence.navigation_journal import (
     NavigationJournalRecord,
     NavigationJournalRepository,
 )
+
+
+class NavigationMutationError(RuntimeError):
+    """Browser-context mutation error with explicit remote-attempt provenance."""
+
+    def __init__(self, message: str, *, remote_attempted: bool) -> None:
+        super().__init__(message)
+        self.remote_attempted = bool(remote_attempted)
 
 
 @dataclass(frozen=True)
@@ -36,16 +44,19 @@ class NavigationBackend(Protocol):
 
     def observe(self) -> NavigationObservation: ...
 
+    def switch_planet(
+        self,
+        *,
+        planet_id: str,
+        expected_coord: str,
+        expected_account_fingerprint: str,
+    ) -> NavigationObservation: ...
+
     def close(self) -> None: ...
 
 
 class NavigationCoordinator:
-    """Serialize browser context ownership and persist mutation intent/results.
-
-    AUTO-03 deliberately exposes observation/journal primitives only. Concrete
-    browser mutations are added one operation at a time in AUTO-04/AUTO-05/AUTO-09.
-    Feature services and Qt must never call Playwright/CDP selectors directly.
-    """
+    """Serialize browser context ownership and persistent exactly-one mutations."""
 
     def __init__(
         self,
@@ -61,6 +72,25 @@ class NavigationCoordinator:
         if self._closed:
             raise RuntimeError("NavigationCoordinator is closed")
 
+    @staticmethod
+    def _switch_verified(
+        before: NavigationObservation,
+        after: NavigationObservation,
+        target: PlanetIdentity,
+    ) -> bool:
+        current = after.identity.current_planet
+        return bool(
+            after.page_token == before.page_token
+            and after.identity.session.server_host == before.identity.session.server_host
+            and after.identity.account.ownership_fingerprint
+            == before.identity.account.ownership_fingerprint
+            == target.account_fingerprint
+            and current is not None
+            and current.selected
+            and current.planet_id == target.planet_id
+            and current.coord == target.coord
+        )
+
     def observe(self) -> NavigationObservation:
         with self._mutex:
             self._require_open()
@@ -73,11 +103,7 @@ class NavigationCoordinator:
         action_kind: str,
         intent: Mapping[str, object],
     ) -> NavigationJournalRecord:
-        """Persist immutable intent before a future remote context mutation.
-
-        A request ID can be inserted only once. Callers must not catch duplicate
-        request errors and retry with the same remote action.
-        """
+        """Persist immutable intent before a future remote context mutation."""
 
         with self._mutex:
             self._require_open()
@@ -105,6 +131,118 @@ class NavigationCoordinator:
                 status=status,
                 after=after,
                 detail=detail,
+            )
+
+    def switch_planet(self, *, request_id: str, planet_id: str) -> NavigationJournalRecord:
+        """Switch once to one proven owned planet and verify the full context.
+
+        The remote backend is invoked at most once. Known pre-attempt failures are
+        ``failed_safe``. Any exception after an attempted remote navigation, or an
+        unexpected error without attempt provenance, is reconciled only from read
+        evidence and otherwise persisted as ``ambiguous``. No automatic retry.
+        """
+
+        with self._mutex:
+            self._require_open()
+            before = self._backend.observe()
+            target = before.identity.by_id(str(planet_id))
+            intent = {"planet_id": str(planet_id)}
+            if target is not None:
+                intent.update(
+                    {
+                        "planet_coord": target.coord,
+                        "account_fingerprint": target.account_fingerprint,
+                    }
+                )
+            self._journal.begin(
+                request_id=request_id,
+                action_kind="switch_planet",
+                before=before.context_dict(),
+                intent=intent,
+            )
+            if target is None:
+                return self._journal.finish(
+                    request_id,
+                    status="failed_safe",
+                    after=before.context_dict(),
+                    detail="Requested planet is not present in the proven owned-planet set",
+                )
+            if before.identity.current_planet is not None and before.identity.current_planet.planet_id == target.planet_id:
+                return self._journal.finish(
+                    request_id,
+                    status="verified",
+                    after=before.context_dict(),
+                    detail="Target planet was already selected; no remote mutation attempted",
+                )
+
+            try:
+                after = self._backend.switch_planet(
+                    planet_id=target.planet_id,
+                    expected_coord=target.coord,
+                    expected_account_fingerprint=target.account_fingerprint,
+                )
+            except NavigationMutationError as exc:
+                if not exc.remote_attempted:
+                    try:
+                        observed = self._backend.observe()
+                    except Exception:
+                        observed = None
+                    return self._journal.finish(
+                        request_id,
+                        status="failed_safe",
+                        after=observed.context_dict() if observed is not None else before.context_dict(),
+                        detail=f"Planet switch blocked before remote mutation: {exc}",
+                    )
+                try:
+                    observed = self._backend.observe()
+                except Exception:
+                    observed = None
+                if observed is not None and self._switch_verified(before, observed, target):
+                    return self._journal.finish(
+                        request_id,
+                        status="verified",
+                        after=observed.context_dict(),
+                        detail=f"Planet switch verified by read reconciliation after backend error: {exc}",
+                    )
+                return self._journal.finish(
+                    request_id,
+                    status="ambiguous",
+                    after=observed.context_dict() if observed is not None else None,
+                    detail=f"Planet switch remote effect is uncertain; automatic retry forbidden: {exc}",
+                )
+            except Exception as exc:
+                # Unknown backend errors have no reliable attempt provenance. Treat
+                # them conservatively as potentially post-effect and never retry.
+                try:
+                    observed = self._backend.observe()
+                except Exception:
+                    observed = None
+                if observed is not None and self._switch_verified(before, observed, target):
+                    return self._journal.finish(
+                        request_id,
+                        status="verified",
+                        after=observed.context_dict(),
+                        detail=f"Planet switch verified by read reconciliation after backend error: {exc}",
+                    )
+                return self._journal.finish(
+                    request_id,
+                    status="ambiguous",
+                    after=observed.context_dict() if observed is not None else None,
+                    detail=f"Planet switch remote effect is uncertain; automatic retry forbidden: {exc}",
+                )
+
+            if not self._switch_verified(before, after, target):
+                return self._journal.finish(
+                    request_id,
+                    status="ambiguous",
+                    after=after.context_dict(),
+                    detail="Planet switch returned but account/page/selected-planet verification did not match",
+                )
+            return self._journal.finish(
+                request_id,
+                status="verified",
+                after=after.context_dict(),
+                detail="Planet switch verified by page token, account fingerprint, internal ID and coordinate",
             )
 
     def record(self, request_id: str) -> NavigationJournalRecord | None:

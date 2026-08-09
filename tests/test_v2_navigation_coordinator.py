@@ -87,7 +87,7 @@ def test_coordinator_captures_before_context_and_keeps_backend_behind_mutex(tmp_
         assert backend.closed is True
 
 
-def test_auto03_navigation_backend_binds_but_does_not_navigate() -> None:
+def test_navigation_backend_stays_single_owned_surface_after_auto04() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "v2" / "infrastructure" / "cdp_navigation_backend.py").read_text(encoding="utf-8")
     app = (root / "app_qt.py").read_text(encoding="utf-8")
@@ -98,15 +98,15 @@ def test_auto03_navigation_backend_binds_but_does_not_navigate() -> None:
     assert "V2NavigationCdpBackend" in app
     assert "NavigationJournalRepository" in app
     assert "NavigationCoordinator" in app
+    assert source.count(".goto(") == 1
+    assert "change_planet.php" in source
 
     for forbidden in (
-        ".goto(",
         ".click(",
         ".fill(",
         ".select_option(",
         "new_page(",
         "refreshGalaxy(",
-        "change_planet.php",
         "processSpy(",
         "SendFleet(",
     ):
