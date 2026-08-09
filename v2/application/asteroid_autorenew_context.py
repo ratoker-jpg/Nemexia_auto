@@ -79,9 +79,10 @@ class AsteroidAutorenewApplicationContext(DebrisEnabledApplicationContextWithRea
             try:
                 state = service.state()
                 if state.armed:
-                    service.repository.stop(
-                        status="disarmed",
-                        detail="Application closed; explicit Start required on next launch",
+                    # Use the service lifecycle so a running AUTO-10 discovery row
+                    # is stopped before scheduler authority/active_scan_id is cleared.
+                    service.stop(
+                        detail="Application closed; explicit Start required on next launch"
                     )
             finally:
                 self._asteroid_autorenew = None
