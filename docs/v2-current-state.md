@@ -107,9 +107,9 @@ Legacy SQLite remains strictly read-only:
 
 V2-owned runtime storage remains under `%LOCALAPPDATA%/NemexiaRaidManagerV2/`.
 
-Current core V2 SQLite schema version: **8**.
+Current V2 SQLite schema version: **9**.
 
-V2-owned state includes:
+V2-owned versioned schema/state includes:
 
 - allow-listed typed settings;
 - `raid_actions`;
@@ -119,9 +119,13 @@ V2-owned state includes:
 - immutable `recon_reports`;
 - `asteroid_actions`;
 - immutable `asteroid_observations`;
-- additive immutable `debris_observations` evidence.
+- immutable `debris_observations` evidence.
 
-`debris_observations` is feature-local additive storage and does not modify legacy SQLite. A `no_debris` result from one currently opened system never deletes evidence learned from other systems.
+Schema migration 9 installs `debris_observations` through the normal `V2Database` migration chain and records migration 9 before `PRAGMA user_version` advances. `DebrisObservationRepository` is a data-access repository only; constructing it does not create or mutate schema.
+
+Existing schema-8 databases migrate safely in both states that existed before this maintenance gate: databases without `debris_observations`, and real-world databases where the former feature-local installer had already created the table. The migration is idempotent for the latter and preserves existing debris evidence.
+
+A `no_debris` result from one currently opened system never deletes evidence learned from other systems.
 
 ## Browser boundary
 

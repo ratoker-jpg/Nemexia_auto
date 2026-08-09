@@ -8,11 +8,7 @@ from v2.persistence.database import V2Database, V2DatabaseError
 
 
 def install_debris_candidate_schema(conn: sqlite3.Connection) -> None:
-    """Install append-only V2-owned debris evidence storage.
-
-    This table is feature-local and additive: it never reads or mutates legacy
-    SQLite and never replaces evidence from systems that are not currently open.
-    """
+    """Install immutable V2-owned debris evidence storage for schema v9."""
 
     conn.executescript(
         """CREATE TABLE IF NOT EXISTS debris_observations (
@@ -45,9 +41,6 @@ class DebrisObservationRepository:
 
     def __init__(self, database: V2Database) -> None:
         self.database = database
-        conn = database._require_conn()
-        with conn:
-            install_debris_candidate_schema(conn)
 
     @staticmethod
     def _now() -> str:
