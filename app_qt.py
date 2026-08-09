@@ -18,11 +18,13 @@ from v2.application.spy_actions import SpyActionService
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
 from v2.application.asteroid_source import V2AsteroidSource
-from v2.infrastructure.cdp_asteroid_backend import V2AsteroidCdpBackend
 from v2.infrastructure.cdp_debris_reader import ReadOnlyDebrisCdpBackend
-from v2.infrastructure.cdp_navigation_backend import V2NavigationCdpBackend
-from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
-from v2.infrastructure.cdp_spy_backend import V2SpyCdpBackend
+from v2.infrastructure.cdp_mutation_sessions import (
+    MutationAsteroidCdpBackend,
+    MutationNavigationCdpBackend,
+    MutationRaidCdpBackend,
+    MutationSpyCdpBackend,
+)
 from v2.persistence.database import V2Database
 from v2.persistence.navigation_journal import NavigationJournalRepository
 from v2.release_lifecycle import ReleaseLifecycleError, V2ProductionSession
@@ -52,17 +54,17 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
 
         endpoint = resolve_cdp_endpoint(source_path, preferred_port=settings.get("cdp_port"))
         navigation = NavigationCoordinator(
-            V2NavigationCdpBackend(endpoint.endpoint),
+            MutationNavigationCdpBackend(endpoint.endpoint),
             NavigationJournalRepository(database),
         )
-        spy_backend = V2SpyCdpBackend(endpoint.endpoint)
-        asteroid_backend = V2AsteroidCdpBackend(endpoint.endpoint)
+        spy_backend = MutationSpyCdpBackend(endpoint.endpoint)
+        asteroid_backend = MutationAsteroidCdpBackend(endpoint.endpoint)
         flight_source = V2BrowserFlightSource(spy_backend)
         report_source = V2BrowserReportSource(spy_backend)
         asteroid_source = V2AsteroidSource(asteroid_backend)
         debris_source = V2DebrisSource(ReadOnlyDebrisCdpBackend(endpoint.endpoint))
         raid_actions = RaidActionService(
-            V2RaidCdpBackend(endpoint.endpoint),
+            MutationRaidCdpBackend(endpoint.endpoint),
             enabled=bool(settings.get("actions_enabled")),
         )
         spy_actions = SpyActionService(
