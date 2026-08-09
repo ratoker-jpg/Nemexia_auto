@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from v2.infrastructure.cdp_asteroid_backend import V2AsteroidCdpBackend
 from v2.infrastructure.cdp_automatic_recon import V2AutomaticReconCdpBackend
+from v2.infrastructure.cdp_galaxy_navigation import VerifiedGalaxyNavigationMixin
 from v2.infrastructure.cdp_navigation_backend import V2NavigationCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
 from v2.infrastructure.cdp_spy_backend import V2SpyCdpBackend
@@ -26,8 +27,6 @@ class _NoAutoReconnectMixin:
 
         retained = getattr(self, "_mutation_browser_identity", None)
         if retained is not None and retained.is_connected():
-            # Restore only the exact Browser object originally attached. This is
-            # handle recovery, not a new connect_over_cdp call or silent rebind.
             self._browser = retained
             self._mutation_session_established = True
             return retained
@@ -49,9 +48,10 @@ class V2NavigationCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2NavigationC
 
 class V2AutomaticReconCdpBackendNoAutoReconnect(
     _NoAutoReconnectMixin,
+    VerifiedGalaxyNavigationMixin,
     V2AutomaticReconCdpBackend,
 ):
-    """Single-page AUTO-07 navigation/recon backend with auto_reconnect=False."""
+    """Shared AUTO-07/AUTO-09 single-page backend with auto_reconnect=False."""
 
 
 class V2RaidCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2RaidCdpBackend):
