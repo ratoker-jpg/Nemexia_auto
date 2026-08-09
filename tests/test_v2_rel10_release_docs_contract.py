@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+REL10_SHA = "adf1c8318a1a0ffbe79cec2ffd23200cbbc375b5"
 
 
 def text(path: str) -> str:
@@ -75,9 +76,22 @@ def test_release_lineage_contains_required_exact_baselines() -> None:
         "fd0992bb8eba2d236ffb867e4a034c2aa15b1153",
         "925d28a8a56436135ea9d134e6a9a52bf2236294",
         "2a21fbc9d97de39fabb2bf658f700b3d57851980",
+        REL10_SHA,
     ):
         assert sha in release
-    assert "POST_MERGE_HANDOFF" in release
+    assert "exact push-CI #287 green" in release
+    assert "POST_MERGE_HANDOFF" not in release
+
+
+def test_current_state_and_plan_pin_rel10_exact_gate() -> None:
+    current = text("docs/v2-current-state.md")
+    plan = text("docs/plans/2026-08-09-v2-release-cutover-batch.md")
+    audit = text("docs/audits/2026-08-09-v2-final-release-audit.md")
+    for doc in (current, plan, audit):
+        assert REL10_SHA in doc
+        assert "#287" in doc
+    assert "REL-01→REL-10 are complete" in current
+    assert "REL-01→REL-10 COMPLETE" in plan
 
 
 def test_rollback_refs_and_original_tk_sha_are_documented() -> None:

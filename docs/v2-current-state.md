@@ -2,7 +2,8 @@
 
 Release: **V2 2.0.0 / PySide6 Qt default**  
 Release date: 2026-08-09  
-REL-10 starting baseline: `2a21fbc9d97de39fabb2bf658f700b3d57851980` / REL-09.
+REL-10 exact squash: `adf1c8318a1a0ffbe79cec2ffd23200cbbc375b5` / PR #125  
+REL-10 exact post-merge push-CI: **#287 green**
 
 ## Production entrypoints
 
@@ -30,7 +31,7 @@ Legacy fallback package:
 NemexiaRaidManagerLegacy.spec -> app_entry.py -> NemexiaRaidManagerLegacy.exe
 ```
 
-The Tkinter stack is retained intentionally as a tested rollback surface. REL-08 found no production legacy file that was positively proven dead, and REL-09 therefore performed zero production deletions.
+The Tkinter stack is intentionally retained as a tested rollback surface. REL-08 proved no production legacy file was safely removable, and REL-09 therefore performed zero production deletions.
 
 ## Canonical release baselines
 
@@ -48,30 +49,29 @@ The Tkinter stack is retained intentionally as a tested rollback surface. REL-08
 | Post-cutover gate REL-07 | `fd0992bb8eba2d236ffb867e4a034c2aa15b1153` | PR #122 / exact push-CI #278 green |
 | Legacy reachability audit REL-08 | `925d28a8a56436135ea9d134e6a9a52bf2236294` | PR #123 / exact push-CI #281 green |
 | Rollback retention REL-09 | `2a21fbc9d97de39fabb2bf658f700b3d57851980` | PR #124 / exact push-CI #285 green |
-| Final release docs REL-10 | recorded by the post-merge release handoff | must have exact green push-CI |
+| Final release docs REL-10 | `adf1c8318a1a0ffbe79cec2ffd23200cbbc375b5` | PR #125 / exact push-CI #287 green |
 
 ## Release/cutover status
 
-REL-01→REL-09 are complete. REL-10 finalizes release truth/documentation only; it does not change game/browser/storage behavior.
+**REL-01→REL-10 are complete.** Production cutover is closed; this release batch must not open new feature work automatically.
 
-Release progression:
-
-- **REL-01** — full Tkinter → PySide6 user-visible parity audit; classified intentional safety exclusions and release blockers.
-- **REL-02** — production V2 startup/shutdown lifecycle, mandatory backup boundaries and restart recovery.
-- **REL-03** — Windows Qt install/package preparation while legacy remained default.
-- **REL-04** — real clean-install + existing-user upgrade matrix with storage isolation and legacy DB integrity.
-- **REL-05** — independent `run_legacy.bat` rollback and black-box fallback proof.
-- **REL-06** — authorized default launcher/package cutover to Qt after all prerequisites were green.
-- **REL-07** — post-cutover black-box regression gate on Qt-default main.
+- **REL-01** — Tkinter → PySide6 user-visible parity audit.
+- **REL-02** — production V2 startup/shutdown lifecycle, backup boundaries and restart recovery.
+- **REL-03** — Windows Qt install/package preparation.
+- **REL-04** — real clean-install + existing-user upgrade matrix.
+- **REL-05** — independent tested Tk fallback.
+- **REL-06** — authorized default launcher/package cutover to Qt.
+- **REL-07** — post-cutover black-box regression gate.
 - **REL-08** — complete legacy reachability audit; result `D. PROVEN DEAD = ∅`.
-- **REL-09** — intentional NO-OP/HARDENING; zero production deletions, retained rollback manifest + regression gates.
-- **REL-10** — release 2.0.0 documentation/version/handoff.
+- **REL-09** — intentional NO-OP/HARDENING; zero production deletions.
+- **REL-10** — V2 2.0.0 release docs/version/install/upgrade/rollback/final handoff.
 
 Detailed records:
 
 - `docs/audits/2026-08-09-v2-release-cutover-parity-audit.md`
 - `docs/audits/2026-08-09-v2-legacy-reachability-audit.md`
 - `docs/audits/2026-08-09-v2-rel09-rollback-retention.md`
+- `docs/audits/2026-08-09-v2-final-release-audit.md`
 - `docs/plans/2026-08-09-v2-release-cutover-batch.md`
 - `docs/releases/2026-08-09-v2-2.0.0-qt-cutover.md`
 
@@ -79,25 +79,15 @@ Detailed records:
 
 Current V2 SQLite schema version: **9**.
 
-V2 runtime storage lives under:
+V2 runtime storage:
 
 ```text
 %LOCALAPPDATA%\NemexiaRaidManagerV2\
 ```
 
-V2-owned versioned state includes:
+V2-owned state includes typed settings, raid actions/queue, spy actions, recon targets/reports, asteroid actions/observations and debris observations.
 
-- allow-listed typed settings;
-- `raid_actions`;
-- `raid_queue`;
-- `spy_actions`;
-- `recon_targets`;
-- immutable `recon_reports`;
-- `asteroid_actions`;
-- immutable `asteroid_observations`;
-- immutable `debris_observations`.
-
-Production lifecycle creates V2 backups at accepted startup/shutdown boundaries, closes the V2 context/database deterministically and preserves unresolved journals across restart rather than silently clearing them.
+Production lifecycle creates V2 backups at accepted startup/shutdown boundaries, closes the context/database deterministically and preserves unresolved journals across restart rather than silently retrying remote effects.
 
 Legacy SQLite remains strictly read-only from V2:
 
@@ -105,11 +95,11 @@ Legacy SQLite remains strictly read-only from V2:
 - `PRAGMA query_only=ON`;
 - no V2 mutation of legacy targets/history/queue/recon/settings.
 
-The release upgrade gate uses isolated `%LOCALAPPDATA%` roots and checks legacy DB byte integrity where the import contract requires it, V2 restart persistence and database unlock after shutdown.
+The existing-user upgrade gate checks legacy DB byte-integrity where required, accepted import into V2 storage, V2 restart persistence and database unlock after shutdown.
 
 ## PySide6 UI release state
 
-The frozen Qt design system and all 11 production routes are complete:
+The Qt design system and all 11 production routes are complete:
 
 1. Overview;
 2. Plan;
@@ -123,28 +113,30 @@ The frozen Qt design system and all 11 production routes are complete:
 10. Settings;
 11. Diagnostics.
 
-The Qt smoke constructs a real `QApplication` / `MainWindow`, selects every route and validates both required geometries:
+The Qt validation gate constructs a real `QApplication` / `MainWindow`, selects all 11 routes and validates:
 
 ```text
 1180×720
 1440×900
 ```
 
-The final UI action baseline remains `8d9c3c548ed74f6b2b55533489b9834126a65908`; release/cutover work did not reopen visual redesign or change gameplay contracts.
+The final UI action baseline remains `8d9c3c548ed74f6b2b55533489b9834126a65908`.
 
 ## Browser boundary — authoritative
 
 Decision remains **`NO NAVIGATION BOUNDARY`**.
 
-V2 remains attach-only. It may inspect/use an already-open compatible Nemexia page through CDP but does not acquire account/planet ownership by navigating it automatically.
+V2 remains attach-only and does not silently acquire browser/account/planet ownership through navigation.
 
-Current live prerequisites remain operation-specific:
+Live operations therefore require the relevant Nemexia surface to be already open/rendered before the user triggers the V2 action:
 
-- already-open `fleets.php` for fleet/capacity/raid/spy/asteroid/debris-send facts;
-- already-rendered System messages on `options.php` for spy-report verification;
-- already-open `galaxy.php` for explicit current-system asteroid/debris observation.
+- `fleets.php` — fleet/capacity facts and raid/spy/asteroid/debris-send preparation/verification;
+- `options.php` with already-rendered **System** messages — spy-report verification/ingestion;
+- `galaxy.php` on the intended current system — explicit current-system asteroid/debris observation.
 
-The following are **not implemented in the Qt release and must not appear implicitly through release work**:
+V2 does not automatically switch between these pages to satisfy a missing prerequisite.
+
+Current release deliberately does **not** implement:
 
 - automatic 3×40 traversal;
 - background browser navigation;
@@ -161,44 +153,26 @@ These are future feature contracts, not release blockers.
 
 ## Mutation/safety contracts
 
-### Raid
-
-Requires the existing enable/safety gates, typed validation, read-only preparation, persistent request identity, exactly one remote SendFleet attempt, exact new-flight verification and no automatic retry after ambiguity.
-
-### Spy / recon
-
-V2 uses only exact existing processable espionage rows via `processSpy(fleet_id)`. It never uses `processSpy(0)` and does not create a new espionage route when no exact processable row exists.
-
-### AutoFarm
-
-Continuous mode starts disarmed and requires explicit manual Start. Scheduler interval remains 30 seconds. Arm and exact Spy fleet ID are session-only. Pending/ambiguous effects, CAPTCHA, stale/no fresh evidence, live failure or wave failure disarm the cycle.
-
-### Asteroid / debris
-
-Both workflows reuse the authoritative recycler mutation boundary and persistent unresolved trajectory journal. Preparation/re-check precedes exactly one remote attempt; ambiguity is not automatically retried. Manual Stop blocks future attempts but cannot undo an already-started remote side effect.
-
-There is no unattended asteroid/debris scheduler and no automatic 3×40 current-release navigation.
-
-### CAPTCHA / messages
-
-CAPTCHA remains **detect → STOP**. Solve/click/bypass is not implemented. Automatic message deletion is not implemented.
+- Raid/asteroid/debris mutations remain typed, prepared/rechecked, journaled and exactly-one-attempt per accepted request.
+- Ambiguous remote acceptance is never automatically retried.
+- Spy/recon uses an exact existing processable fleet ID and never `processSpy(0)`.
+- No new espionage route is created when no exact processable spy fleet exists.
+- AutoFarm starts disarmed; explicit Start is required; arm and exact Spy fleet ID are session-only.
+- There is no unattended asteroid/debris scheduler.
+- CAPTCHA remains **detect → STOP**; solve/click/bypass is not implemented.
+- Automatic message deletion is not implemented.
 
 ## Legacy rollback retention
 
-REL-08 proved that the current fallback reaches the legacy stack through multiple live roots:
+REL-08 traced fallback reachability through `run_legacy.bat`, `run_console.bat`, `app_entry.py`, all ordered monkey-patch/install calls, legacy core transitives, legacy PyInstaller/build paths, installer dependencies, self-test, release fallback smoke, tests and evidence fixtures.
 
-- `run_legacy.bat -> app_entry.py`;
-- `run_console.bat -> app_entry.py`;
-- `NemexiaRaidManagerLegacy.spec -> app_entry.py`;
-- `build_legacy_exe.bat`;
-- `install.bat`;
-- legacy self-test;
-- release fallback smoke;
-- direct ordered monkey-patch/install calls from `app_entry.py`.
+Result:
 
-Therefore **UNKNOWN ≠ DEAD**, and no legacy production file was authorized for removal.
+```text
+D. PROVEN DEAD = ∅
+```
 
-REL-09 retained the stack and added a machine-readable retention manifest plus tests. Any future removal requires a new explicit rollback-retirement/reachability audit.
+Therefore **UNKNOWN ≠ DEAD** and no production legacy file was authorized for removal. REL-09 retained the stack and added a machine-readable retention manifest plus regression tests.
 
 ## Rollback refs
 
@@ -215,13 +189,13 @@ Original stable Tkinter SHA:
 4e01bfda752c6383e48c0f6eb8be64d68676da67
 ```
 
-## Required final validation gate
+## Final validation gate
 
-Every release/handoff main must be green on:
+REL-10 exact squash `adf1c8318a1a0ffbe79cec2ffd23200cbbc375b5` passed exact push-CI **#287** with:
 
-- **Windows Python 3.10** — compileall + full pytest + legacy self-test;
-- **Windows Python 3.11** — compileall + full pytest + legacy self-test;
-- **PySide6 / Python 3.11** — real QApplication/MainWindow, all 11 routes, 1180×720 + 1440×900;
-- **Windows release black-box** — real `install.bat`, side-by-side clean/existing-user upgrade, `run_app.bat --release-smoke` = Qt/V2, `run_legacy.bat --release-smoke` = Tk/legacy, V2 restart, legacy DB integrity where required, database unlocked after shutdown.
+- Windows Python 3.10 — compileall + full pytest + legacy self-test;
+- Windows Python 3.11 — compileall + full pytest + legacy self-test;
+- PySide6 / Python 3.11 — real QApplication/MainWindow, all 11 routes, 1180×720 + 1440×900;
+- Windows release black-box — real `install.bat`, side-by-side clean/existing-user upgrade, `run_app.bat --release-smoke` = Qt/V2, `run_legacy.bat --release-smoke` = Tk/legacy, V2 restart, legacy DB integrity where required and database unlocked after shutdown.
 
-No release stage may weaken these gates. After every squash merge, exact push-CI must be verified on the new `main` SHA.
+The final exact-SHA handoff must pass the same CI/review discipline. After its exact post-merge push-CI is green, stop; do not begin V2-68/V2-69/V2-70, Rest Mode, browser navigation or new gameplay work automatically.
