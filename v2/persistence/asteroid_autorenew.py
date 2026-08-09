@@ -186,6 +186,13 @@ class AsteroidAutorenewRepository:
         """
 
         conn = self.database._require_conn()
+        discovery_installed = conn.execute(
+            """SELECT 1 FROM sqlite_master
+               WHERE type='table' AND name='discovery_scans'"""
+        ).fetchone()
+        if discovery_installed is None:
+            return None
+
         clean = str(scan_id or "").strip()
         if clean:
             row = conn.execute(
