@@ -30,6 +30,11 @@ def test_release_smoke_runs_clean_and_existing_user_profiles() -> None:
     assert 'settings.get("farm_return_buffer_minutes") == 9' in SMOKE
     assert "len(database.list_raid_queue_rows()) == 5" in SMOKE
     assert "len(database.list_recon_target_rows()) > 0" in SMOKE
+    assert "def _assert_db_unlocked" in SMOKE
+    assert "timeout_seconds: float = 5.0" in SMOKE
+    assert "os.replace(path, probe)" in SMOKE
+    assert "TemporaryDirectory(prefix=" in SMOKE
+    assert "ignore_cleanup_errors" not in SMOKE
 
 
 def test_ci_uses_real_installer_and_installed_venv_for_side_by_side_gate() -> None:
