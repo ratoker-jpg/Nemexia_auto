@@ -70,9 +70,13 @@ def test_active_recon_ui_uses_typed_context_and_no_direct_browser_or_sql() -> No
     main = (root / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
     assert "context.recon()" in page
     assert "ingest_live_recon" in page
-    assert "prepare_spy" in page and "process_spy" in page
+    assert "run_automatic_recon" in page
+    assert "run_automatic_recon_refill" in page
+    assert "prepare_spy" not in page
+    assert "process_spy" not in page
     assert "ReconPage(self.context" in main
     for forbidden in (
-        "BrowserWorker", "delete_messages", "sqlite3", "INSERT INTO", "UPDATE ", "DELETE FROM"
+        "BrowserWorker", "delete_messages", "sqlite3", "INSERT INTO", "UPDATE ", "DELETE FROM",
+        "playwright", "processSpy(", "#spy1Link-", "#spy1Time-",
     ):
         assert forbidden not in page
