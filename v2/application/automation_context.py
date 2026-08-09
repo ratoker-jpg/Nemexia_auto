@@ -10,11 +10,13 @@ from v2.application.browser_readiness import (
     BrowserReadinessSnapshot,
 )
 from v2.application.debris_context import DebrisEnabledApplicationContext
+from v2.application.discovery_scan import ControlledDiscoveryScan, DiscoveryStepResult
 from v2.application.flight_source import FlightSourceStatus
 from v2.application.report_source import ReconReadSnapshot
 from v2.application.spy_actions import SpyRequestResult
 from v2.domain.recon import LEGACY_SPY_REPORT_LOOKBACK_HOURS, ReportReadState
 from v2.persistence.automatic_recon_journal import AutomaticReconJournalRecord
+from v2.persistence.discovery_scan import DiscoveryScanRecord
 
 
 class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationContext):
@@ -25,6 +27,7 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
         *args,
         navigation_coordinator=None,
         automatic_recon: AutomaticReconService | None = None,
+        discovery_scan: ControlledDiscoveryScan | None = None,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -39,6 +42,7 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
             else None
         )
         self._automatic_recon = automatic_recon
+        self._discovery_scan = discovery_scan
 
     def set_v2_settings(self, values: Mapping[str, object]) -> dict[str, object]:
         parsed = super().set_v2_settings(values)
@@ -103,6 +107,58 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
             galaxy=int(galaxy),
             solar=int(solar),
         )
+
+    def _require_discovery_scan(self) -> ControlledDiscoveryScan:
+        if self._discovery_scan is None:
+            raise RuntimeError("V2 controlled discovery scan is unavailable")
+        return self._discovery_scan
+
+    def discovery_scan(self, scan_id: str) -> DiscoveryScanRecord | None:
+        return self._require_discovery_scan().repository.read(str(scan_id))
+
+    def last_completed_discovery_scan(self) -> DiscoveryScanRecord | None:
+        return self._require_discovery_scan().last_completed()
+
+    def start_discovery_scan(
+        self,
+        *,
+        scan_id: str,
+        planet_coord: str | None = None,
+    ) -> DiscoveryScanRecord:
+        """Prepare owned planet + galaxy page, then persist a fresh 3×40 cursor."""
+
+        self.ensure_galaxy_ready(planet_coord=planet_coord)
+        return self._require_discovery_scan().start(
+            scan_id=str(scan_id),
+            planet_coord=planet_coord,
+        )
+
+    def resume_discovery_scan(self, scan_id: str) -> DiscoveryScanRecord:
+        service = self._require_discovery_scan()
+        scan = service.repository.read(str(scan_id))
+        if scan is None:
+            raise RuntimeError(f"Discovery scan not found: {scan_id}")
+        self.ensure_galaxy_ready(planet_coord=scan.planet_coord)
+        return service.resume(str(scan_id))
+
+    def stop_discovery_scan(
+        self,
+        scan_id: str,
+        *,
+        detail: str = "Stopped by operator",
+    ) -> DiscoveryScanRecord:
+        return self._require_discovery_scan().stop(str(scan_id), detail=detail)
+
+    def step_discovery_scan(self, scan_id: str) -> DiscoveryStepResult:
+        return self._require_discovery_scan().step(str(scan_id))
+
+    def run_discovery_scan(
+        self,
+        scan_id: str,
+        *,
+        max_steps: int | None = None,
+    ) -> DiscoveryScanRecord:
+        return self._require_discovery_scan().run(str(scan_id), max_steps=max_steps)
 
     def refresh_live_source(self) -> FlightSourceStatus:
         """Normal live-flight refresh now prepares fleets.php automatically when safe."""
@@ -196,6 +252,7 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
 
     def close(self) -> None:
         self._automatic_recon = None
+        self._discovery_scan = None
         # DebrisEnabledApplicationContext owns the shared NavigationCoordinator
         # shutdown. Leave the reference intact so its close() can stop the CDP
         # backend/Playwright worker exactly once, then clear the field there.
