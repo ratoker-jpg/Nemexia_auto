@@ -49,6 +49,14 @@ def _assert_v2_integrity(path: Path) -> None:
         assert database.integrity_check() == "ok"
 
 
+def _assert_db_unlocked(path: Path) -> None:
+    """Windows rename proves no process still owns an open SQLite file handle."""
+    probe = path.with_name(path.name + ".unlock-check")
+    assert not probe.exists()
+    os.replace(path, probe)
+    os.replace(probe, path)
+
+
 def _clean_install(profile: Path) -> None:
     legacy_root = _legacy_root(profile)
     legacy_db = legacy_root / "nemexia.sqlite3"
@@ -65,7 +73,7 @@ def _clean_install(profile: Path) -> None:
     _assert_v2_integrity(v2_db)
     assert len(list((v2_root / "backups").glob("nemexia_v2_*.sqlite3"))) >= 2
 
-    # The legacy smoke then creates only its own root.  It must not touch the
+    # The legacy smoke then creates only its own root. It must not touch the
     # already-created V2 database.
     v2_before_legacy = v2_db.read_bytes()
     _run_entry("app_entry.py", profile)
@@ -80,6 +88,8 @@ def _clean_install(profile: Path) -> None:
     assert legacy_db.read_bytes() == legacy_before_qt
     _assert_v2_integrity(v2_db)
     assert legacy_root.resolve() != v2_root.resolve()
+    _assert_db_unlocked(legacy_db)
+    _assert_db_unlocked(v2_db)
 
 
 def _seed_existing_user(profile: Path) -> tuple[Path, bytes]:
@@ -137,15 +147,22 @@ def _existing_user_upgrade(profile: Path) -> None:
         assert database.integrity_check() == "ok"
 
     # The original Tkinter runtime remains independently startable against its
-    # own unchanged primary DB after the Qt upgrade path exists.
+    # own primary DB after the Qt upgrade path exists.
     _run_entry("app_entry.py", profile)
     assert legacy_db.is_file()
     assert v2_db.is_file()
     _assert_v2_integrity(v2_db)
+    _assert_db_unlocked(legacy_db)
+    _assert_db_unlocked(v2_db)
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="nemexia_release_side_by_side_") as temp:
+    # Explicit rename-based unlock checks above are the lifecycle assertion.
+    # Hosted Windows runners can still briefly hold deleted temp files in AV /
+    # indexing after the tested process handles are gone, so cleanup is best-effort.
+    with tempfile.TemporaryDirectory(
+        prefix="nemexia_release_side_by_side_", ignore_cleanup_errors=True
+    ) as temp:
         root = Path(temp)
         _clean_install(root / "clean")
         _existing_user_upgrade(root / "upgrade")
