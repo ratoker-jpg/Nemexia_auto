@@ -95,7 +95,7 @@ def test_navigation_backend_stays_single_owned_surface_after_auto04() -> None:
     assert "_bound_page" in source
     assert "len(candidates) != 1" in source
     assert "runtime-page:" in source
-    assert "V2NavigationCdpBackend" in app
+    assert "V2AutomaticReconCdpBackendNoAutoReconnect" in app
     assert "NavigationJournalRepository" in app
     assert "NavigationCoordinator" in app
     assert source.count(".goto(") == 1
