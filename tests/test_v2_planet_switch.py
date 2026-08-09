@@ -121,7 +121,7 @@ def test_known_pre_attempt_backend_failure_is_failed_safe(tmp_path: Path) -> Non
         record = coordinator.switch_planet(request_id="preflight-1", planet_id="202")
         assert record.status == "failed_safe"
         assert backend.switch_calls == 1
-        assert "before remote mutation" in record.detail
+        assert "before remote effect" in record.detail
         assert coordinator.unresolved() == ()
     finally:
         coordinator.close()
