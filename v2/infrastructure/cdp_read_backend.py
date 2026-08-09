@@ -126,6 +126,11 @@ class ReadOnlyCdpBackend:
         finally:
             loop.close()
 
+    def _should_passthrough_submit_exception(self, exc: Exception) -> bool:
+        """Allow specialized subclasses to preserve typed mutation provenance."""
+
+        return False
+
     def _submit(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         if self._closed or self._loop is None:
             raise CdpReadError("CDP read backend is closed")
@@ -134,6 +139,8 @@ class ReadOnlyCdpBackend:
             return future.result(timeout=self.timeout_seconds + 1.0)
         except Exception as exc:
             future.cancel()
+            if self._should_passthrough_submit_exception(exc):
+                raise
             raise CdpReadError(str(exc) or exc.__class__.__name__) from exc
 
     async def _ensure_browser(self) -> Browser:
