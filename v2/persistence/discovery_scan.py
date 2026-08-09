@@ -202,12 +202,24 @@ class DiscoveryScanRepository:
         return record
 
     def resume(self, scan_id: str) -> DiscoveryScanRecord:
+        scan_id = str(scan_id)
         conn = self.database._require_conn()
         with conn:
+            competing = conn.execute(
+                """SELECT scan_id, status FROM discovery_scans
+                   WHERE scan_id<>? AND status IN ('running','ambiguous')
+                   ORDER BY id DESC LIMIT 1""",
+                (scan_id,),
+            ).fetchone()
+            if competing is not None:
+                raise DiscoveryScanConflictError(
+                    "Discovery resume blocked by unresolved "
+                    f"{competing['scan_id']} ({competing['status']})"
+                )
             cursor = conn.execute(
                 """UPDATE discovery_scans SET status='running', detail='', updated_at=?
                    WHERE scan_id=? AND status IN ('stopped','failed_safe')""",
-                (_now(), str(scan_id)),
+                (_now(), scan_id),
             )
         if cursor.rowcount != 1:
             raise DiscoveryScanConflictError(
