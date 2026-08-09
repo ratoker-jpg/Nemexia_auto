@@ -7,7 +7,8 @@ CDP = (ROOT / "v2" / "infrastructure" / "cdp_read_backend.py").read_text(encodin
 ACCOUNT_CDP = (ROOT / "v2" / "infrastructure" / "cdp_account_reader.py").read_text(encoding="utf-8")
 APP_QT = (ROOT / "app_qt.py").read_text(encoding="utf-8")
 ACTIVE = (ROOT / "v2" / "ui" / "pages" / "active.py").read_text(encoding="utf-8")
-LEGACY_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+DEFAULT_RUNNER = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+LEGACY_RUNNER = (ROOT / "run_legacy.bat").read_text(encoding="utf-8")
 
 
 def test_v2_capacity_selectors_are_grounded_in_saved_real_fleets_page() -> None:
@@ -19,9 +20,6 @@ def test_v2_capacity_selectors_are_grounded_in_saved_real_fleets_page() -> None:
 
 
 def test_concrete_qt_read_sources_stay_attach_only_and_non_mutating() -> None:
-    # V2-45 intentionally wires a separate guarded mutation backend in app_qt.
-    # The older invariant here is narrower: the flight/account read sources must
-    # remain attach-only and must not inherit navigation or game-side effects.
     assert "V2SpyCdpBackend" in APP_QT
     assert "ReadOnlyCdpBackend" in ACCOUNT_CDP
     assert "connect_over_cdp" in CDP
@@ -48,6 +46,8 @@ def test_concrete_qt_read_sources_stay_attach_only_and_non_mutating() -> None:
         assert forbidden not in combined
 
 
-def test_legacy_runtime_is_not_switched_to_qt() -> None:
-    assert '"%VENV_PY%" app_entry.py' in LEGACY_RUNNER
+def test_authorized_qt_default_preserves_independent_legacy_runtime() -> None:
+    assert '"%VENV_PY%" app_qt.py %*' in DEFAULT_RUNNER
+    assert "app_entry.py" not in DEFAULT_RUNNER
+    assert '"%VENV_PY%" app_entry.py %*' in LEGACY_RUNNER
     assert "app_qt.py" not in LEGACY_RUNNER
