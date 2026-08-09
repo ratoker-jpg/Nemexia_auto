@@ -112,6 +112,11 @@ class NavigationCoordinator:
             self._require_open()
             return self._journal.read(request_id)
 
+    def recent(self, *, limit: int = 200) -> tuple[NavigationJournalRecord, ...]:
+        with self._mutex:
+            self._require_open()
+            return self._journal.recent(limit=limit)
+
     def unresolved(self) -> tuple[NavigationJournalRecord, ...]:
         with self._mutex:
             self._require_open()
