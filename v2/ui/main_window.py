@@ -18,7 +18,7 @@ from v2.ui.pages.active import ActivePage
 from v2.ui.pages.asteroids import AsteroidsPage
 from v2.ui.pages.debris import DebrisPage
 from v2.ui.pages.diagnostics import DiagnosticsPage
-from v2.ui.pages.farm import FarmPage
+from v2.ui.pages.farm_authority import AuthorityFarmPage
 from v2.ui.pages.overview import OverviewPage
 from v2.ui.pages.plan import PlanPage
 from v2.ui.pages.read_tables import HistoryPage, TargetsPage
@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
         if key == "active":
             return ActivePage(self.context, self)
         if key == "farm":
-            return FarmPage(self.context, self)
+            return AuthorityFarmPage(self.context, self)
         if key == "asteroids":
             return AsteroidsPage(self.context, self)
         if key == "debris":
