@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from playwright.async_api import Page
 
-from v2.application.navigation import NavigationObservation
+from v2.application.navigation import NavigationMutationError, NavigationObservation
 from v2.infrastructure.cdp_account_reader import ReadOnlyAccountCdpBackend
 from v2.infrastructure.cdp_read_backend import CdpReadError
 
@@ -83,47 +83,61 @@ class V2NavigationCdpBackend(ReadOnlyAccountCdpBackend):
         expected_coord: str,
         expected_account_fingerprint: str,
     ) -> NavigationObservation:
-        page = await self._existing_fleets_page()
-        href = await page.evaluate(
-            r"""args => {
-                const [planetId, coord, host] = args;
-                for (const a of Array.from(document.querySelectorAll('#planetsListHolder a'))) {
-                    let url;
-                    try { url = new URL(a.getAttribute('href') || '', location.href); }
-                    catch (_) { continue; }
-                    if (url.hostname !== host) continue;
-                    if (!url.pathname.endsWith('/change_planet.php')) continue;
-                    if ((url.searchParams.get('id') || '') !== String(planetId)) continue;
-                    const text=(a.textContent||'').replace(/\s+/g,'');
-                    if (!text.includes('[' + coord + ']')) continue;
-                    return url.href;
-                }
-                return '';
-            }""",
-            [str(planet_id), str(expected_coord), self.game_host],
-        )
+        try:
+            page = await self._existing_fleets_page()
+            href = await page.evaluate(
+                r"""args => {
+                    const [planetId, coord, host] = args;
+                    for (const a of Array.from(document.querySelectorAll('#planetsListHolder a'))) {
+                        let url;
+                        try { url = new URL(a.getAttribute('href') || '', location.href); }
+                        catch (_) { continue; }
+                        if (url.hostname !== host) continue;
+                        if (!url.pathname.endsWith('/change_planet.php')) continue;
+                        if ((url.searchParams.get('id') || '') !== String(planetId)) continue;
+                        const text=(a.textContent||'').replace(/\s+/g,'');
+                        if (!text.includes('[' + coord + ']')) continue;
+                        return url.href;
+                    }
+                    return '';
+                }""",
+                [str(planet_id), str(expected_coord), self.game_host],
+            )
+        except Exception as exc:
+            raise NavigationMutationError(
+                f"Planet switch preflight failed before remote mutation: {exc}",
+                remote_attempted=False,
+            ) from exc
         if not href:
-            raise CdpReadError(
-                "PlanetIdentity no longer matches an owned change_planet.php anchor; mutation not attempted"
+            raise NavigationMutationError(
+                "PlanetIdentity no longer matches an owned change_planet.php anchor",
+                remote_attempted=False,
             )
 
         # Exactly one remote navigation attempt. Any exception after this point is
-        # surfaced to NavigationCoordinator as potentially ambiguous; no retry here.
-        await page.goto(
-            href,
-            wait_until="domcontentloaded",
-            timeout=int(self.timeout_seconds * 1000),
-        )
-        await page.locator("#planetSwitch").wait_for(
-            state="attached",
-            timeout=int(self.timeout_seconds * 1000),
-        )
-        identity = await self._read_browser_identity()
-        if identity.account.ownership_fingerprint != str(expected_account_fingerprint):
-            raise CdpReadError("Account ownership evidence changed after planet switch")
-        current = identity.current_planet
-        if current is None or current.planet_id != str(planet_id) or current.coord != str(expected_coord):
-            raise CdpReadError("Selected planet proof does not match the requested PlanetIdentity")
+        # tagged as post-attempt so the coordinator can only reconcile or persist
+        # ambiguity; it must never issue a second navigation automatically.
+        try:
+            await page.goto(
+                href,
+                wait_until="domcontentloaded",
+                timeout=int(self.timeout_seconds * 1000),
+            )
+            await page.locator("#planetSwitch").wait_for(
+                state="attached",
+                timeout=int(self.timeout_seconds * 1000),
+            )
+            identity = await self._read_browser_identity()
+            if identity.account.ownership_fingerprint != str(expected_account_fingerprint):
+                raise CdpReadError("Account ownership evidence changed after planet switch")
+            current = identity.current_planet
+            if current is None or current.planet_id != str(planet_id) or current.coord != str(expected_coord):
+                raise CdpReadError("Selected planet proof does not match the requested PlanetIdentity")
+        except Exception as exc:
+            raise NavigationMutationError(
+                f"Planet switch failed after remote navigation started: {exc}",
+                remote_attempted=True,
+            ) from exc
         return NavigationObservation(
             page_token=f"runtime-page:{id(page)}",
             identity=identity,
