@@ -134,9 +134,11 @@ def _assert_full_page_geometry(window: MainWindow, app: QApplication) -> None:
             app.processEvents()
             page = window.stack.widget(index)
             assert page.__class__.__name__ == class_name, (key, page.__class__.__name__)
-            hint = page.minimumSizeHint()
-            assert hint.width() <= window.stack.width(), (key, width, hint.width(), window.stack.width())
-            assert hint.height() <= window.stack.height(), (key, height, hint.height(), window.stack.height())
+            assert page.minimumWidth() <= window.stack.width(), (key, width, page.minimumWidth(), window.stack.width())
+            assert page.minimumHeight() <= window.stack.height(), (key, height, page.minimumHeight(), window.stack.height())
+            assert page.width() <= window.stack.width(), (key, width, page.width(), window.stack.width())
+            assert page.height() <= window.stack.height(), (key, height, page.height(), window.stack.height())
+            assert window.width() == width and window.height() == height, (key, width, height, window.size())
 
 
 def main() -> int:
@@ -197,6 +199,7 @@ def main() -> int:
             diagnostics = window.stack.widget(window._page_index["diagnostics"])
             assert farm._armed is False
             assert farm._timer.isActive() is False
+            assert farm.findChildren(QScrollArea), "AutoFarm must scroll at the 1180x720 minimum height"
             assert settings_page.findChildren(QScrollArea), "Settings must scroll instead of forcing the main window larger"
             assert diagnostics.findChildren(QScrollArea), "Diagnostics must scroll instead of forcing the main window larger"
             assert live_source.status_reads == 0 and live_source.refreshes == 0
