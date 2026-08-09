@@ -1,0 +1,137 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sanitized Nemexia automation contract snippets</title>
+
+<!--
+Sanitized from user-supplied saved pages dated 2026-08-09.
+Values and account-specific identifiers are placeholders.
+This is a selector/shape fixture, not a runnable copy of Nemexia.
+-->
+
+<section id="owned-planet-switch-contract">
+  <div id="planetSwitch">
+    <div class="trigger">
+      <small>Текущая планета:</small>
+      <big>HOME <span>[<HOME_COORD>]</span></big>
+    </div>
+    <ul class="planetsList" id="planetsListHolder">
+      <li class="active">
+        <a href="https://game.ares.nemexia.com/change_planet.php?id=<PLANET_ID_HOME>">
+          HOME <span>[<HOME_COORD>]</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://game.ares.nemexia.com/change_planet.php?id=<PLANET_ID_2>">
+          PLANET_2 <span>[<PLANET_2_COORD>]</span>
+        </a>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section id="fleet-contract">
+  <span id="FleetsCount">0</span>
+  <span id="MaxFleets">25</span>
+
+  <div id="TabChooseShips">
+    <input id="ship_1_2_max" name="ship_1_2_max" type="hidden" value="<AVAILABLE_MEGATRANSPORTERS>">
+    <input class="ships" id="ship_1_2" name="ship[1][2]" type="text" value="0">
+  </div>
+
+  <div id="TabSendFleets">
+    <input id="my_c1" name="my_c1" type="hidden" value="<SOURCE_G>">
+    <input id="my_c2" name="my_c2" type="hidden" value="<SOURCE_S>">
+    <input id="my_c3" name="my_c3" type="hidden" value="<SOURCE_P>">
+
+    <div id="RowTargetCoords">
+      <input id="target_c1" name="target_c1" onchange="FlyCheck()" value="<TARGET_G>">
+      <input id="target_c2" name="target_c2" onchange="FlyCheck()" value="<TARGET_S>">
+      <input id="target_c3" name="target_c3" onchange="FlyCheck()" value="<TARGET_P>">
+    </div>
+
+    <select id="mission" name="mission">
+      <option value="2">Шпионаж</option>
+      <option value="3">Атака</option>
+      <option value="8">Добыча газа</option>
+    </select>
+
+    <select id="speed" name="speed">
+      <option value="10">100%</option>
+      <option value="1">10%</option>
+    </select>
+
+    <input id="SendFleetButton" name="continue" onclick="SendFleet()" type="button" value="Отправить флот">
+  </div>
+</section>
+
+<section id="spy-fleet-contract">
+  <table>
+    <tr class="espionageClass">
+      <td class="light"><a href="galaxy.php?galaxy=<SOURCE_G>&solar=<SOURCE_S>"><SOURCE_COORD></a></td>
+      <td class="light"><a href="galaxy.php?galaxy=<TARGET_G>&solar=<TARGET_S>"><TARGET_COORD></a></td>
+      <td class="fleetType"><a onclick="fleetDetails(<FLEET_ID>)">Шпионаж</a></td>
+      <td>
+        <a id="spy1Link-<FLEET_ID>" onclick="processSpy(<FLEET_ID>)">Шпионаж</a>
+        <span id="spy1Time-<FLEET_ID>">00:00:05</span>
+        <input name="spySelect-<FLEET_ID>" type="checkbox" value="<FLEET_ID>">
+      </td>
+    </tr>
+  </table>
+</section>
+
+<section id="system-messages-contract">
+  <ul class="menu" id="messagesFolders">
+    <li class="system">
+      <a onclick="loadTabContent('TabAdministrative',2,0); showTab('TabAdministrative');">
+        Система
+      </a>
+    </li>
+  </ul>
+
+  <div id="TabAdministrative">
+    <h1>Системные сообщения</h1>
+    <div class="messageItem">
+      <time><REPORT_AT></time>
+      <b>Полный шпионский отчет от <TARGET_COORD> ( PLAYER )</b>
+      <div>Металл <METAL></div>
+      <div>Минералы <MINERALS></div>
+      <div>Газ <GAS></div>
+      <div>Энергия <ENERGY></div>
+    </div>
+  </div>
+</section>
+
+<section id="galaxy-contract">
+  <div id="galaxyWrapper">
+    <div id="galaxyBreadcrumb"></div>
+    <div id="galaxySearch">
+      <input id="c1" name="galaxy" value="<GALAXY>">
+      <input id="c2" name="solar" value="<SYSTEM>">
+    </div>
+    <div id="screenHolder">
+      <div id="galaxyLoading"></div>
+      <div id="galaxyHolder">
+        <div id="galaxyPlanets"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="empire-overview-contract">
+  <article id="PlanetHolder-<PLANET_ID>">
+    <h2 id="planetInfoTitle-<PLANET_ID>">PLANET [COORD]</h2>
+    <div id="PlanetContentHolder-<PLANET_ID>">
+      <button id="BuildingsLi-<PLANET_ID>">Здания</button>
+      <button id="ShipsLi-<PLANET_ID>">Корабли</button>
+      <button id="DefenceLi-<PLANET_ID>">Оборона</button>
+      <button id="ScienceLi-<PLANET_ID>">Наука</button>
+    </div>
+  </article>
+</section>
+
+<section id="alliance-future-contract">
+  <nav id="allianceMenu"></nav>
+  <div id="teamInfo"></div>
+  <table id="tbl_members"></table>
+  <div id="createTeamPlanetTabBox"></div>
+</section>
