@@ -1,5 +1,11 @@
 # Аудиты проекта
 
+## AUTO-12 — Rest Mode contract / safety audit — 2026-08-10
+
+[`2026-08-10-v2-auto12-rest-mode-contract.md`](2026-08-10-v2-auto12-rest-mode-contract.md) фиксирует контракт нового V2 Rest Mode после полностью green AUTO-11. Это **новая product feature, не legacy parity**.
+
+Ключевые решения: explicit Start/Stop, startup disarmed, обязательные AccountContext/PlanetIdentity + Browser Readiness, NavigationCoordinator-only preparation, CAPTCHA/browser/session/identity loss = STOP/BLOCKED, no blind retry after ambiguous navigation, persistent typed recovery evidence и process-level mutual exclusion с AutoFarm/asteroid autorenew. Реальная сохранённая `fleets.php` подтверждает activity-timer/BOTCHECK evidence. Точный DOM входящей атаки всё ещё не доказан, поэтому attack-watch обязан показывать `UNVERIFIED_DATA_REQUIRED`, а не ложный `0 attacks`, пока не появится реальный attack fixture.
+
 ## AUTO-08 — espionage route parity gate — 2026-08-09
 
 [`2026-08-09-v2-auto08-espionage-route-parity.md`](2026-08-09-v2-auto08-espionage-route-parity.md) фиксирует no-op решение после AUTO-07: effective legacy доказывает обработку уже существующих spy fleets через `processSpy`, но не доказывает создание нового mission-2 espionage route через `SendFleet`.
