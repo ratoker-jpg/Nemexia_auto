@@ -28,7 +28,8 @@ def test_fallback_smoke_uses_legacy_storage_only() -> None:
     assert 'profile / "NemexiaRaidManager" / "nemexia.sqlite3"' in FALLBACK_SMOKE
     assert 'profile / "NemexiaRaidManagerV2"' in FALLBACK_SMOKE
     assert "assert not v2_root.exists()" in FALLBACK_SMOKE
-    assert 'APP_DIR = LOCAL_APPDATA / "NemexiaRaidManager"' in CONFIG
+    assert 'base = root / "NemexiaRaidManager"' in CONFIG
+    assert 'DB_PATH = DATA_DIR / "nemexia.sqlite3"' in CONFIG
 
 
 def test_windows_release_job_executes_fallback_after_real_install() -> None:
