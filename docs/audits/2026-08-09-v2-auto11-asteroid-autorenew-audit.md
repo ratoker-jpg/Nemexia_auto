@@ -70,7 +70,7 @@ Legacy:
 
 `_resolve_asteroid_plan()` repeatedly uses live game flight timing, predicts the arrival coordinate and iterates until the asteroid target stabilizes. A configured movement-boundary safety margin is required.
 
-AUTO-11 refreshes the candidate set through the already-owned AUTO-09/AUTO-10 3×40 discovery path. Only observations added by the current completed autorenew discovery pass become that cycle's candidate snapshot. Before a candidate can send, AUTO-11 navigates to its predicted current system and performs another complete owned current-system read.
+AUTO-11 refreshes the candidate set through the already-owned AUTO-09/AUTO-10 3×40 discovery path. Every processed discovery step returns the authoritative V2 asteroid-observation IDs that were actually observed by that step. AUTO-11 persists `scan_id → observation_id` provenance and builds the cycle snapshot only from those linked IDs. Exact crash-replay duplicates can therefore be linked safely, while a parallel manual/current-system ingestion path cannot enter the automatic wave merely because it wrote to the shared observation table during the same time window. Before a candidate can send, AUTO-11 navigates to its predicted current system and performs another complete owned current-system read.
 
 ### Independent pre-send trajectory re-check without a second tab
 
@@ -134,6 +134,18 @@ Default buffer is 5 minutes. `_tick()` starts the next cycle when the deadline i
 
 AUTO-11 preserves exactly `latest verified return_at + buffer`; only verified V2 action results contribute.
 
+### Qt runtime driving
+
+The application service deliberately has no daemon/background thread because the existing V2 SQLite connection is owned by the application thread. `QtAsteroidAutorenewDriver` is therefore a thin `QTimer` pump on the same Qt event loop:
+
+- it checks the typed `asteroid_autorenew_state()` surface;
+- it calls `tick_asteroid_autorenew()` only while the scheduler is armed;
+- a tick exception is converted into typed Stop/disarm rather than another blind timer retry;
+- the timer is stopped on `aboutToQuit`;
+- the driver contains no selectors, CDP, SendFleet logic or business decisions.
+
+This makes an explicitly armed session advance its 3×40 steps, dispatch phase and return deadline in production. The visible operator Start/Stop controls are intentionally **not** mixed into this automation PR; they remain the required separate UI-only follow-up.
+
 ### No asteroid / insufficient valid candidates
 
 Legacy:
@@ -152,7 +164,7 @@ AUTO-11:
 
 - CAPTCHA = hard STOP;
 - never solve/click/bypass;
-- waiting state probes the existing fleets-page backend at the same approximately 20-second cadence when scheduler ticks are supplied;
+- waiting state probes the existing fleets-page backend at the same approximately 20-second cadence supplied by the Qt tick driver;
 - after CAPTCHA is handled manually, the scheduler remains disarmed until explicit Start.
 
 ### Browser failure / tab loss
@@ -165,7 +177,7 @@ AUTO-11 fails closed on Browser Readiness/NavigationCoordinator/action-backend l
 
 Legacy cancellation is checked during scanning and between candidate sends; it does not cancel an already-started remote request in a way that could create a duplicate window.
 
-AUTO-11 uses a step scheduler: one `tick()` performs at most one discovery-system step or one candidate dispatch. Explicit Stop disarms later ticks and stops a currently journaled discovery scan before future effects. An already-started immutable SendFleet is resolved only by its action journal outcome.
+AUTO-11 uses a step scheduler: one `tick()` performs at most one discovery-system step or one candidate dispatch. Explicit Stop disarms later ticks and stops a currently journaled discovery scan before future effects. Graceful application close uses the same service Stop lifecycle so a running `discovery_scans` row is not orphaned. An already-started immutable SendFleet is resolved only by its action journal outcome.
 
 ### Restart
 
@@ -228,7 +240,7 @@ For every cycle:
 3. Reject repository-wide unresolved asteroid action before another SendFleet.
 4. Prove source AccountContext + PlanetIdentity.
 5. Refresh current evidence via AUTO-10 controlled 3×40 discovery.
-6. Build deterministic candidates only from observations newly written by that discovery pass.
+6. Persist exact per-scan observation-ID provenance and build candidates only from IDs linked to that completed scan.
 7. Re-prove candidate current galaxy/system and read complete current squareInfo evidence.
 8. Prepare the same proven source as `fleets.php` through Browser Readiness.
 9. Existing asteroid backend independently repeats read-only squareInfo schedule verification from the authenticated fleets page.
@@ -236,6 +248,7 @@ For every cycle:
 11. Re-observe account/source after every verified action before permitting a later candidate.
 12. Stop on CAPTCHA, ambiguity, unresolved journals, context loss, manual Stop or serious browser error.
 13. Schedule only from verified return times.
+14. While armed, the Qt event-loop driver supplies one typed scheduler tick per interval and never performs browser work itself.
 
 ## Explicit exclusions
 
@@ -247,6 +260,7 @@ For every cycle:
 - No CAPTCHA interaction.
 - No silent reconnect after established mutation-session loss.
 - No automatic restart re-arm.
+- No visible Start/Stop controls in this automation PR; they belong to the separate UI-only follow-up.
 
 ## Acceptance
 
@@ -254,14 +268,16 @@ For every cycle:
 - Stop prevents future scheduler attempts;
 - typed persistent status/config/next-cycle evidence;
 - one scheduler tick has at most one discovery-system step or one candidate send;
-- current-cycle V2-owned asteroid evidence only;
+- Qt event-loop pump advances armed sessions without a background SQLite thread;
+- current-cycle candidates come only from exact observation IDs linked to the active completed scan;
 - authoritative live capacity/recycler proof;
 - NavigationCoordinator/Browser Readiness owns page/planet/system mutations;
 - existing asteroid action journal/backend is the only SendFleet path;
 - deterministic request recovery prevents duplicate send after a verified action;
+- graceful close stops a running discovery row before scheduler state is cleared;
 - no retry after ambiguous;
 - unresolved navigation/action blocks new effects;
 - CAPTCHA hard STOP;
 - restart cannot duplicate or auto-resume;
 - no debris repeat;
-- automation and UI remain separate PR scopes.
+- automation and visible UI controls remain separate PR scopes.
