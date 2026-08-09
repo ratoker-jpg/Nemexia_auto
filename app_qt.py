@@ -22,6 +22,7 @@ from v2.infrastructure.cdp_debris_reader import ReadOnlyDebrisCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
 from v2.infrastructure.cdp_spy_backend import V2SpyCdpBackend
 from v2.persistence.database import V2Database
+from v2.release_lifecycle import ReleaseLifecycleError, V2ProductionSession
 from v2.runtime_paths import RuntimePaths, build_runtime_paths, ensure_runtime_paths
 
 
@@ -106,11 +107,12 @@ def main() -> int:
         raise
 
     paths = ensure_runtime_paths(build_runtime_paths())
-    context = build_context(paths)
     try:
-        return int(run_qt_app(paths, context))
-    finally:
-        context.close()
+        with V2ProductionSession(paths, build_context) as context:
+            return int(run_qt_app(paths, context))
+    except ReleaseLifecycleError as exc:
+        print(f"V2 production lifecycle stopped: {exc}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":
