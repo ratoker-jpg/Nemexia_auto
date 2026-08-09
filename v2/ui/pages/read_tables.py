@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHeaderView,
     QLineEdit,
+    QSizePolicy,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -108,6 +109,7 @@ class FilterableReadOnlyTable(QWidget):
 
         card = QFrame(self)
         card.setObjectName("DataCard")
+        card.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(1, 1, 1, 1)
 
@@ -120,6 +122,7 @@ class FilterableReadOnlyTable(QWidget):
 
         table = QTableView(card)
         table.setObjectName("DataTable")
+        table.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         table.setModel(self.proxy)
         table.setSortingEnabled(True)
         table.setAlternatingRowColors(False)
