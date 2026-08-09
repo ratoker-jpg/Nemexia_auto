@@ -136,7 +136,8 @@ class AsteroidAutorenewRepository:
 
     `armed` is persisted only for crash diagnostics. Service construction always
     disarms stale authority, so persisted armed state can never authorize a new
-    browser mutation in a later process.
+    browser mutation in a later process. Unresolved discovery identity is retained
+    across scheduler stops/restarts so uncertainty can never be erased by disarm.
     """
 
     def __init__(self, database: V2Database) -> None:
@@ -175,6 +176,25 @@ class AsteroidAutorenewRepository:
             raise V2DatabaseError("Asteroid autorenew singleton state is missing")
         return self._state(row)
 
+    def _unresolved_active_scan_id(self, scan_id: str | None) -> str | None:
+        """Return scan identity only while AUTO-10 still marks it unresolved.
+
+        Autorun disarm must never convert `running`/`ambiguous` discovery evidence
+        into an apparently clean scheduler. Keeping the exact scan ID makes later
+        recovery explicit and prevents a new Start from erasing uncertainty.
+        """
+
+        clean = str(scan_id or "").strip()
+        if not clean:
+            return None
+        row = self.database._require_conn().execute(
+            "SELECT status FROM discovery_scans WHERE scan_id=?",
+            (clean,),
+        ).fetchone()
+        if row is None:
+            return None
+        return clean if str(row[0]) in {"running", "ambiguous"} else None
+
     def record_scan_observations(
         self,
         *,
@@ -209,15 +229,17 @@ class AsteroidAutorenewRepository:
         current = self.read()
         if not current.armed:
             return current
+        unresolved_scan_id = self._unresolved_active_scan_id(current.active_scan_id)
         conn = self.database._require_conn()
+        detail = "Persisted armed state was disarmed on process startup; explicit Start required"
+        if unresolved_scan_id:
+            detail += f"; unresolved discovery scan preserved: {unresolved_scan_id}"
         with conn:
             conn.execute(
                 """UPDATE asteroid_autorenew_state
                    SET armed=0,status='disarmed_restart',next_cycle_at=NULL,
-                       active_scan_id=NULL,
-                       detail='Persisted armed state was disarmed on process startup; explicit Start required',
-                       updated_at=? WHERE singleton_id=1""",
-                (_now(),),
+                       active_scan_id=?, detail=?, updated_at=? WHERE singleton_id=1""",
+                (unresolved_scan_id, detail, _now()),
             )
         return self.read()
 
@@ -242,6 +264,12 @@ class AsteroidAutorenewRepository:
         current = self.read()
         if current.armed:
             raise V2DatabaseError("Asteroid autorenew is already armed")
+        unresolved_scan_id = self._unresolved_active_scan_id(current.active_scan_id)
+        if unresolved_scan_id:
+            raise V2DatabaseError(
+                "Asteroid autorenew blocked by unresolved discovery scan "
+                f"{unresolved_scan_id}; reconcile it before a new Start"
+            )
         conn = self.database._require_conn()
         with conn:
             conn.execute(
@@ -309,10 +337,19 @@ class AsteroidAutorenewRepository:
             "blocked",
         }:
             raise V2DatabaseError(f"Invalid asteroid autorenew stop status: {status}")
+        current = self.read()
+        unresolved_scan_id = self._unresolved_active_scan_id(current.active_scan_id)
+        stop_detail = str(detail or "")
+        if unresolved_scan_id and unresolved_scan_id not in stop_detail:
+            stop_detail = (
+                f"{stop_detail}; unresolved discovery scan preserved: {unresolved_scan_id}"
+                if stop_detail
+                else f"Unresolved discovery scan preserved: {unresolved_scan_id}"
+            )
         return self.transition(
             status=status,
             armed=False,
             next_cycle_at=None,
-            active_scan_id=None,
-            detail=detail,
+            active_scan_id=unresolved_scan_id,
+            detail=stop_detail,
         )
