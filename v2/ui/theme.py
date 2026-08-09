@@ -29,6 +29,7 @@ QPushButton#NavButton {{ min-height:34px; text-align:left; padding:0 12px; borde
 QPushButton#NavButton:hover {{ background:{COLORS['surface_2']}; color:{COLORS['text_primary']}; }}
 QPushButton#NavButton:checked {{ background:{COLORS['surface_3']}; color:{COLORS['text_primary']}; border-left:3px solid {COLORS['accent_blue']}; font-weight:600; }}
 QFrame#Topbar {{ background:{COLORS['bg_base']}; border-bottom:1px solid {COLORS['border_subtle']}; }}
+QFrame#BrowserReadinessBar {{ background:{COLORS['bg_sidebar']}; border-bottom:1px solid {COLORS['border_subtle']}; }}
 QLabel#PageTitle {{ font-size:26px; font-weight:600; }}
 QLabel#PageDescription, QLabel#CardSubtitle, QLabel#PageHint {{ color:{COLORS['text_secondary']}; font-size:12px; }}
 QLabel#StatusBadge, QLabel#StatusPill {{ background:{COLORS['surface_2']}; color:{COLORS['text_secondary']}; border:1px solid {COLORS['border_subtle']}; border-radius:8px; padding:5px 9px; font-size:11px; font-weight:600; }}
