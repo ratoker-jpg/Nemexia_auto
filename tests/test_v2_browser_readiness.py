@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from v2.application.automation_context import DebrisEnabledApplicationContextWithReadiness
 from v2.application.browser_identity import PlanetDomFact, build_browser_identity
 from v2.application.browser_readiness import (
     BrowserReadinessError,
@@ -13,6 +14,7 @@ from v2.application.browser_readiness import (
     ReadinessState,
 )
 from v2.application.navigation import NavigationObservation, NavigationPageState
+from v2.domain.recon import ReportReadState
 from v2.infrastructure.cdp_mutation_sessions import _NoAutoReconnectMixin
 
 
@@ -140,6 +142,20 @@ def test_captcha_is_a_global_stop_state() -> None:
     assert all(item.state is ReadinessState.STOPPED for item in snapshot.items())
 
 
+class _CaptchaReconContext(DebrisEnabledApplicationContextWithReadiness):
+    def __init__(self) -> None:
+        pass
+
+    def ensure_messages_ready(self, *, planet_coord=None):
+        raise BrowserReadinessError("CAPTCHA = STOP: manual intervention required")
+
+
+def test_recon_preserves_captcha_stop_state_from_readiness() -> None:
+    snapshot = _CaptchaReconContext().live_recon()
+    assert snapshot.state is ReportReadState.CAPTCHA
+    assert "CAPTCHA" in snapshot.detail
+
+
 class _Browser:
     def __init__(self) -> None:
         self.connected = True
@@ -163,6 +179,20 @@ class _MutationBackend(_NoAutoReconnectMixin, _BaseBackend):
     pass
 
 
+def test_mutation_session_restores_same_live_browser_after_transient_handle_clear() -> None:
+    backend = _MutationBackend()
+    first = asyncio.run(backend._ensure_browser())
+    assert backend.attach_calls == 1
+
+    # ReadOnlyCdpBackend may clear its working handle after a transient DOM read
+    # failure. This must reuse the exact established Browser object, not reconnect.
+    backend._browser = None
+    restored = asyncio.run(backend._ensure_browser())
+    assert restored is first
+    assert backend._browser is first
+    assert backend.attach_calls == 1
+
+
 def test_mutation_session_initial_attach_is_allowed_but_silent_reconnect_is_not() -> None:
     backend = _MutationBackend()
     first = asyncio.run(backend._ensure_browser())
@@ -170,9 +200,47 @@ def test_mutation_session_initial_attach_is_allowed_but_silent_reconnect_is_not(
     assert backend.attach_calls == 1
 
     first.connected = False
+    backend._browser = None
     with pytest.raises(RuntimeError, match="auto_reconnect=False"):
         asyncio.run(backend._ensure_browser())
     assert backend.attach_calls == 1
+
+
+class _RejectedRaidContext(DebrisEnabledApplicationContextWithReadiness):
+    def __init__(self, row) -> None:
+        self._raid_actions = object()
+        self._v2_database = object()
+        self._v2_queue = object()
+        self._row = row
+        self.readiness_calls = 0
+
+    def plan(self, *, limit: int = 5000):
+        return [self._row]
+
+    def ensure_fleets_ready(self, *, planet_coord=None):
+        self.readiness_calls += 1
+        raise AssertionError("browser readiness must not run for a locally rejected queue command")
+
+
+def test_rejected_queue_command_does_not_mutate_browser_context_first() -> None:
+    row = SimpleNamespace(
+        id=7,
+        coord="3:40:12",
+        state="sent",
+        enabled=True,
+        blacklisted=False,
+    )
+    context = _RejectedRaidContext(row)
+
+    with pytest.raises(RuntimeError, match="Queue row is not queued"):
+        context.dispatch_plan_raid(
+            queue_id=7,
+            target="3:40:12",
+            player="target",
+            ship_count=10,
+            request_id="raid-stale-1",
+        )
+    assert context.readiness_calls == 0
 
 
 def test_auto06_application_layer_contains_no_browser_selectors() -> None:
