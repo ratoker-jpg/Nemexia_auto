@@ -7,6 +7,7 @@ APP_QT = (ROOT / "app_qt.py").read_text(encoding="utf-8")
 SMOKE = (ROOT / "ci" / "release_side_by_side_smoke.py").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 RUN_DEFAULT = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+RUN_LEGACY = (ROOT / "run_legacy.bat").read_text(encoding="utf-8")
 
 
 def test_both_production_entrypoints_have_noninteractive_release_smoke() -> None:
@@ -47,9 +48,10 @@ def test_ci_uses_real_installer_and_installed_venv_for_side_by_side_gate() -> No
     assert r"run: .venv\Scripts\python.exe ci\release_side_by_side_smoke.py" in WORKFLOW
 
 
-def test_rel04_still_does_not_cut_over_default_or_add_navigation() -> None:
-    assert '"%VENV_PY%" app_entry.py' in RUN_DEFAULT
-    assert "app_qt.py" not in RUN_DEFAULT
+def test_authorized_cutover_keeps_same_side_by_side_safety_matrix() -> None:
+    assert '"%VENV_PY%" app_qt.py %*' in RUN_DEFAULT
+    assert "app_entry.py" not in RUN_DEFAULT
+    assert '"%VENV_PY%" app_entry.py %*' in RUN_LEGACY
     for forbidden in (
         "launch_yandex(",
         "change_planet.php",
