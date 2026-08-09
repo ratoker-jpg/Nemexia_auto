@@ -90,7 +90,7 @@ class AsteroidsPage(ManualAsteroidsPage):
         self.autorenew_start_button.clicked.connect(self._start_autorenew)
         self.autorenew_stop_button.clicked.connect(self._stop_autorenew)
 
-        self._autorenew_ui_error = ""
+        self._autorenew_last_error = ""
         self._autorenew_ui_timer_id = self.startTimer(1000)
         self._refresh_autorenew_status()
 
@@ -131,11 +131,10 @@ class AsteroidsPage(ManualAsteroidsPage):
         if scan is None:
             return "—"
         cursor = int(scan.cursor_index)
-        if cursor >= len(DISCOVERY_SEQUENCE):
-            return "завершено"
-        if cursor < 0:
-            return "—"
-        galaxy, solar = DISCOVERY_SEQUENCE[cursor]
+        if cursor <= 0:
+            galaxy, solar = DISCOVERY_SEQUENCE[0]
+            return f"ожидает {galaxy}:{solar}"
+        galaxy, solar = DISCOVERY_SEQUENCE[min(cursor, len(DISCOVERY_SEQUENCE)) - 1]
         return f"{galaxy}:{solar}"
 
     def _typed_autorenew_state(self):
@@ -152,16 +151,53 @@ class AsteroidsPage(ManualAsteroidsPage):
             return None
         return reader(str(scan_id))
 
+    def _manual_controls(self):
+        return (
+            self.read_button,
+            self.prepare_button,
+            self.send_button,
+            self.source_coord,
+            self.recycler_count,
+            self.safety_seconds,
+            self.table,
+        )
+
+    def _sync_control_interlock(self, state, *, state_unknown: bool) -> None:
+        autorenew_armed = bool(state is not None and state.armed)
+        manual_locked = state_unknown or autorenew_armed
+        if not self._series_running:
+            for widget in self._manual_controls():
+                widget.setEnabled(not manual_locked)
+        self.stop_button.setEnabled(bool(self._series_running))
+
+        self.autorenew_start_button.setEnabled(
+            not state_unknown
+            and not self._series_running
+            and self._start_allowed(state)
+        )
+        # A failed typed Stop may leave the authoritative scheduler armed. Keep
+        # Stop available whenever the latest successfully-read state proves that.
+        self.autorenew_stop_button.setEnabled(
+            not state_unknown and autorenew_armed
+        )
+
     def _refresh_autorenew_status(self) -> None:
+        state_error = ""
         try:
             state = self._typed_autorenew_state()
             scan = self._typed_discovery_scan(None if state is None else state.active_scan_id)
         except Exception as exc:
             state = None
             scan = None
-            self._autorenew_ui_error = str(exc) or exc.__class__.__name__
+            state_error = str(exc) or exc.__class__.__name__
+            self._autorenew_last_error = state_error
 
-        progress = int(scan.cursor_index) if scan is not None else 0
+        if scan is not None:
+            progress = int(scan.cursor_index)
+        elif state is not None and str(state.status) == "waiting_return":
+            progress = len(DISCOVERY_SEQUENCE)
+        else:
+            progress = 0
         self._autorenew_values["AutorenewProgress"].setText(f"{progress}/120")
         self._autorenew_values["AutorenewCurrentSystem"].setText(self._current_system(scan))
         self._autorenew_values["AutorenewNextCycle"].setText(
@@ -171,17 +207,17 @@ class AsteroidsPage(ManualAsteroidsPage):
             self._display_time(None if state is None else state.last_return_at)
         )
 
-        if self._autorenew_ui_error:
+        if state_error:
             self.autorenew_banner.set_state(
                 "ERROR",
-                "Typed autorenew state/action завершился ошибкой; UI не выполняет blind retry.",
+                "Typed autorenew state недоступен; manual/auto controls fail closed до подтверждённого state read.",
                 "danger",
             )
-            self.autorenew_start_button.setEnabled(self._start_allowed(state))
-            self.autorenew_stop_button.setEnabled(bool(state is not None and state.armed))
-            self.autorenew_result_value.setText(self._autorenew_ui_error)
+            self._sync_control_interlock(state, state_unknown=True)
+            self.autorenew_result_value.setText(self._autorenew_last_error)
             return
 
+        self._sync_control_interlock(state, state_unknown=False)
         title, tone = self._presentation_state(state)
         if state is None:
             self.autorenew_banner.set_state(
@@ -189,29 +225,36 @@ class AsteroidsPage(ManualAsteroidsPage):
                 "AUTO-11 typed context недоступен в этом runtime.",
                 tone,
             )
-            self.autorenew_start_button.setEnabled(False)
-            self.autorenew_stop_button.setEnabled(False)
             detail = "Typed autorenew service unavailable"
+        elif self._autorenew_last_error:
+            # Preserve the latest operator-visible failure, but reconcile controls
+            # against the fresh authoritative typed state so Stop is never locked out.
+            self.autorenew_banner.set_state(
+                "ERROR",
+                f"Последняя операция завершилась ошибкой; authoritative state: {state.status}.",
+                "danger",
+            )
+            detail = self._autorenew_last_error
         else:
             self.autorenew_banner.set_state(
                 title,
                 f"{state.status} · session={state.session_id or '—'} · source={state.source_coord or '—'}",
                 tone,
             )
-            self.autorenew_start_button.setEnabled(self._start_allowed(state))
-            self.autorenew_stop_button.setEnabled(bool(state.armed))
             detail = state.detail or "—"
         self.autorenew_result_value.setText(detail)
 
     def _start_autorenew(self) -> None:
+        if self._series_running:
+            return
         start = getattr(self.context, "start_asteroid_autorenew", None)
         if not callable(start):
-            self._autorenew_ui_error = "V2 asteroid autorenew typed Start service is unavailable"
+            self._autorenew_last_error = "V2 asteroid autorenew typed Start service is unavailable"
             self._refresh_autorenew_status()
             return
         source = self.source_coord.text().strip()
         try:
-            buffer_minutes = int(self.context.v2_setting("farm_return_buffer_minutes", 5) or 5)
+            buffer_minutes = int(self.context.v2_setting("farm_return_buffer_minutes", 5))
             start(
                 source=source,
                 recycler_count=int(self.recycler_count.value()),
@@ -221,26 +264,31 @@ class AsteroidsPage(ManualAsteroidsPage):
                 start_immediately=True,
             )
         except Exception as exc:
-            self._autorenew_ui_error = str(exc) or exc.__class__.__name__
+            self._autorenew_last_error = str(exc) or exc.__class__.__name__
             self._refresh_autorenew_status()
             return
-        self._autorenew_ui_error = ""
+        self._autorenew_last_error = ""
         self._refresh_autorenew_status()
 
     def _stop_autorenew(self) -> None:
         stop = getattr(self.context, "stop_asteroid_autorenew", None)
         if not callable(stop):
-            self._autorenew_ui_error = "V2 asteroid autorenew typed Stop service is unavailable"
+            self._autorenew_last_error = "V2 asteroid autorenew typed Stop service is unavailable"
             self._refresh_autorenew_status()
             return
         try:
             stop(detail="Stopped by operator from Asteroids UI")
         except Exception as exc:
-            self._autorenew_ui_error = str(exc) or exc.__class__.__name__
+            self._autorenew_last_error = str(exc) or exc.__class__.__name__
             self._refresh_autorenew_status()
             return
-        self._autorenew_ui_error = ""
+        self._autorenew_last_error = ""
         self._refresh_autorenew_status()
+
+    def _set_series_controls(self, running: bool) -> None:
+        super()._set_series_controls(running)
+        if hasattr(self, "autorenew_start_button"):
+            self._refresh_autorenew_status()
 
     def reload_view(self) -> None:
         super().reload_view()
