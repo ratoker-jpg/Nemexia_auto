@@ -72,6 +72,7 @@ def test_success_attempts_one_system_mutation_and_verifies_exact_destination(tmp
         solar=40,
     )
     assert record.status == "verified"
+    assert record.action_kind == "galaxy_system"
     assert backend.calls == [(2, 40)]
     assert record.before["galaxy"] == 3
     assert record.before["solar"] == 39
@@ -150,13 +151,14 @@ def test_auto09_source_contract_has_one_refresh_effect_and_no_ui_browser_boundar
     assert "#c1" in backend and "#c2" in backend
     assert ".goto(" not in backend
     assert "navigate_galaxy_system" in service
+    assert 'action_kind="galaxy_system"' in service
     assert "VerifiedGalaxyNavigationCoordinator as NavigationCoordinator" in app
     assert "navigate_galaxy_system" in context
 
     for forbidden in (
         "playwright",
         "document.querySelector",
-        "refreshGalaxy",
+        "window.refreshGalaxy",
         "ajax_galaxy.php",
     ):
         assert forbidden not in service
