@@ -116,7 +116,8 @@ def test_existing_farm_surface_acquires_and_releases_shared_authority() -> None:
     wrapper = (ROOT / "v2" / "ui" / "pages" / "farm_authority.py").read_text(encoding="utf-8")
     main_window = (ROOT / "v2" / "ui" / "main_window.py").read_text(encoding="utf-8")
 
-    assert "class AuthorityFarmPage(FarmPage)" in wrapper
+    assert "class FarmPage(BaseFarmPage)" in wrapper
+    assert "AuthorityFarmPage = FarmPage" in wrapper
     assert "ensure_automation_cycle_available" in wrapper
     assert "acquire_automation_cycle" in wrapper
     assert "release_automation_cycle" in wrapper
