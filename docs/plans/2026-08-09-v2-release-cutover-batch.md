@@ -1,192 +1,122 @@
 # Nemexia Raid Manager V2 — release / cutover batch
 
-Date: 2026-08-09
-Starting baseline: `074834d60b2647f18f32c43c4b6810ba91033b79`
-Parity audit: `docs/audits/2026-08-09-v2-release-cutover-parity-audit.md`
+Date: 2026-08-09  
+Starting baseline: `074834d60b2647f18f32c43c4b6810ba91033b79`  
+Status: **REL-01→REL-10 COMPLETE after final post-merge handoff**  
+Release: **V2 2.0.0 / PySide6 Qt default**
 
-## Goal
+Parity audit: `docs/audits/2026-08-09-v2-release-cutover-parity-audit.md`  
+Legacy cleanup audit: `docs/audits/2026-08-09-v2-legacy-reachability-audit.md`  
+Rollback retention: `docs/audits/2026-08-09-v2-rel09-rollback-retention.md`  
+Release handoff: `docs/releases/2026-08-09-v2-2.0.0-qt-cutover.md`
 
-Make PySide6 the production default only after startup/storage, Windows install/package, side-by-side upgrade and rollback gates prove that cutover is recoverable and does not weaken the V2 safety model.
+## Final result
 
-## Hard boundaries
+The release goal is achieved: PySide6 became production default **only after** backup/restart, Windows install/package, clean/existing-user side-by-side and explicit rollback gates were green.
 
-- No new browser navigation capability during release work.
-- V2-67 `NO NAVIGATION BOUNDARY` remains authoritative.
-- No automatic browser launch/tab creation/system or planet traversal.
-- No automatic 3×40 scan or Rest Mode navigation loop.
-- CAPTCHA remains detect → STOP.
-- No weakening of raid/spy/asteroid/debris journals, idempotency, exactly-one mutation attempt or ambiguity handling.
-- Legacy SQLite remains read-only to V2.
-- Keep rollback refs untouched.
-- Keep a tested legacy fallback through the first Qt-default release.
-- Do not remove Tkinter runtime/patch code before REL-08 reachability audit.
+```text
+DEFAULT:  run_app.bat    -> app_qt.py    -> PySide6 V2
+ROLLBACK: run_legacy.bat -> app_entry.py -> legacy Tkinter
+```
 
-## REL-01 — user-visible parity audit
+V2 SQLite schema remains **9** and legacy SQLite remains read-only from V2.
 
-Docs/research only.
+## Completed stages
 
-Deliver:
+| Stage | Result | Exact squash / gate |
+|---|---|---|
+| REL-01 | Tkinter→Qt user-visible parity audit; cutover blockers frozen | PR #116 / `3dd579ae589a56f402fbb2707498b4fe341c8821` |
+| REL-02 | production startup/shutdown backup + restart recovery | PR #117 / `eea834cbff8511c813ff440c74249b516ee2130a` |
+| REL-03 | Windows shared Qt+legacy install/package preparation | PR #118 / `a53fcc9882ad79810c6d5e5e5bf8b10b1b46b0cf` |
+| REL-04 | real clean-install + existing-user upgrade matrix | PR #119 / `5a824f31a2bf903e028aa391405f4447a58d63b5` |
+| REL-05 | independent tested Tk fallback | PR #120 / `11d470d8d1e8d5024e49cfaebd7bf6056167b12e` |
+| REL-06 | authorized Qt default launcher/package cutover | PR #121 / `54ca45eeffea2da8f4fbebdcbcbe28d8b8dc30c5`; exact push-CI #276 green |
+| REL-07 | post-cutover default Qt black-box regression | PR #122 / `fd0992bb8eba2d236ffb867e4a034c2aa15b1153`; exact push-CI #278 green |
+| REL-08 | legacy reachability audit; `D. PROVEN DEAD = ∅` | PR #123 / `925d28a8a56436135ea9d134e6a9a52bf2236294`; exact push-CI #281 green |
+| REL-09 | intentional NO-OP/HARDENING; zero production deletions | PR #124 / `2a21fbc9d97de39fabb2bf658f700b3d57851980`; exact push-CI #285 green |
+| REL-10 | final release/version/install/upgrade/rollback/current-state docs | exact squash and push-CI recorded by post-merge handoff |
 
-- exhaustive Tkinter → PySide6 user-visible feature matrix;
-- classify parity, safer replacement, intentional safety exclusion and fallback-only/deferred conveniences;
-- identify cutover blockers;
-- freeze release/cutover sequencing.
+## Hard boundaries retained through release
 
-Decision at audit baseline: **CUTOVER BLOCKED** until REL-02→REL-05 are green.
+Release work did **not** add new gameplay/navigation capability.
 
-## REL-02 — production startup/shutdown + backup/restart recovery
+Authoritative constraints:
 
-Expected implementation:
+- V2-67 **`NO NAVIGATION BOUNDARY`**;
+- no automatic browser launch/tab creation;
+- no automatic 3×40 traversal;
+- no background browser navigation;
+- no Rest Mode navigation loops;
+- no automatic `refreshGalaxy`;
+- no V2 `change_planet.php`;
+- no arbitrary V2 `page.goto`;
+- CAPTCHA detect → STOP; no solve/click/bypass;
+- no automatic message deletion;
+- no automatic retry after ambiguous remote side effect;
+- no new espionage route when no exact processable spy fleet exists;
+- no unattended asteroid/debris scheduler;
+- legacy SQLite read-only to V2;
+- exactly-one mutation/idempotency journals remain authoritative.
 
-- production lifecycle helper around V2 startup;
-- create a consistent V2 backup at the accepted startup boundary before normal user operation proceeds;
-- clear failure reporting without deleting/corrupting live DB;
-- deterministic context/database close;
-- restart recovery tests across all V2-owned state/journals;
-- clean-first-start test without legacy/V2 DB;
-- backup integrity/restore test from the production lifecycle path.
+These are deliberately deferred feature contracts and do not block release 2.0.0.
 
-Must not change launcher default.
+## REL-08 / REL-09 cleanup decision
 
-## REL-03 — Windows Qt launcher/installer/package preparation
+REL-08 audited reachability from:
 
-Prepare, do not cut over.
+- `run_legacy.bat` and `run_console.bat`;
+- `app_entry.py` and all ordered monkey-patch/install calls;
+- legacy `app/browser/storage/models/reports/asteroids` transitives;
+- `NemexiaRaidManagerLegacy.spec` / `build_legacy_exe.bat`;
+- shared installer/dependencies;
+- legacy self-test and release fallback smoke;
+- tests/evidence fixtures.
 
-Expected implementation:
+Result:
 
-- `install.bat` installs the shared side-by-side dependency set including PySide6;
-- source launcher support for an explicit Qt launch path while legacy remains default;
-- independent legacy fallback launcher;
-- Qt-capable PyInstaller spec/build path;
-- Windows source-contract tests for commands/dependencies/entrypoints;
-- compile/smoke both entrypoints.
+```text
+D. PROVEN DEAD = ∅
+```
 
-`run_app.bat` must still default to `app_entry.py` after REL-03.
+Therefore REL-09 correctly deleted **nothing**. It retained the tested fallback and added a machine-readable retention manifest/regression contract. `UNKNOWN != DEAD` remains the cleanup rule.
 
-## REL-04 — clean-install + existing-user side-by-side gate
+## Required release validation
 
-Windows CI gate with isolated temporary `%LOCALAPPDATA%` roots.
+Every final release/handoff main must pass all four jobs:
 
-Scenario A — clean install:
+1. **Windows Python 3.10**
+   - compileall;
+   - full pytest;
+   - legacy self-test.
+2. **Windows Python 3.11**
+   - compileall;
+   - full pytest;
+   - legacy self-test.
+3. **PySide6 / Python 3.11**
+   - real `QApplication` / `MainWindow`;
+   - all 11 routes;
+   - 1180×720;
+   - 1440×900.
+4. **Windows release black-box**
+   - real `install.bat`;
+   - clean/existing-user side-by-side smoke;
+   - `run_app.bat --release-smoke` = Qt/V2;
+   - `run_legacy.bat --release-smoke` = Tk/legacy;
+   - legacy DB unchanged by V2 import where required;
+   - V2 restart;
+   - database unlocked after shutdown.
 
-- no legacy DB and no V2 DB;
-- legacy and Qt startup smokes can both run;
-- storage roots remain isolated;
-- Qt never launches/navigates browser.
+No red CI or unresolved substantive P1/P2 is acceptable.
 
-Scenario B — existing-user upgrade:
+## Rollback refs
 
-- seed representative legacy DB/settings/queue/recon facts;
-- run Qt bootstrap/import;
-- assert legacy DB bytes unchanged;
-- assert accepted migration facts appear in V2-owned DB;
-- restart Qt and preserve V2 state;
-- assert legacy startup remains usable against original DB.
+Must remain unchanged:
 
-No default-launcher switch yet.
+```text
+stable/tkinter-v1 -> 4e01bfda752c6383e48c0f6eb8be64d68676da67
+archive/pre-pyside6-4e01bfda -> 4e01bfda752c6383e48c0f6eb8be64d68676da67
+```
 
-## REL-05 — explicit rollback/fallback gate
+## Stop condition
 
-Prove:
-
-- stable `run_legacy.bat` fallback command;
-- fallback uses legacy entrypoint/storage;
-- Qt failure leaves fallback intact;
-- rollback refs remain documented and untouched;
-- release smoke can invoke the fallback independently.
-
-No default-launcher switch yet.
-
-## REL-06 — default Qt launcher cutover
-
-Authorized only after exact post-merge push-CI for REL-02, REL-03, REL-04 and REL-05 is green.
-
-Scope must stay small:
-
-- switch `run_app.bat` default command to `app_qt.py`;
-- make Qt the default PyInstaller entrypoint if packaging gate is green;
-- preserve explicit legacy fallback;
-- update launcher messages/tests only as required.
-
-No feature/browser/mutation/cleanup work.
-
-## REL-07 — post-cutover smoke/regression gate
-
-Prove on exact Qt-default main:
-
-- default launcher contract points only to Qt;
-- legacy fallback still points only to Tk;
-- clean/eexisting-user lifecycle matrix still passes;
-- two-size Qt UI gate remains green;
-- all Python 3.10/3.11 tests + legacy self-test remain green;
-- V2 SQLite integrity/backups/restart recovery green;
-- no browser navigation primitives were introduced.
-
-## REL-08 — legacy cleanup audit
-
-Docs/research only.
-
-Inventory every legacy Tk/patch/runtime module by reachability from:
-
-- `run_legacy.bat` / legacy entrypoint;
-- retained legacy package/spec, if any;
-- legacy self-test and parity tests;
-- recovery/support tooling;
-- docs/evidence fixtures.
-
-Classify:
-
-- required fallback runtime;
-- required tests/support;
-- archive-only evidence;
-- proven dead/unreachable.
-
-No deletion in REL-08.
-
-## REL-09 — remove/archive proven-dead legacy code
-
-Delete or archive only files classified proven dead by REL-08.
-
-Rules:
-
-- retained fallback must remain executable;
-- no speculative cleanup;
-- no deletion just because a file is old or patch-shaped;
-- source-contract tests must prove removed modules have no remaining imports/references;
-- if nothing is safely removable, REL-09 is a documented no-op rather than forced deletion.
-
-## REL-10 — final release docs/version/handoff
-
-Finalize:
-
-- release version/changelog;
-- default Qt startup and explicit legacy fallback instructions;
-- clean install and existing-user upgrade notes;
-- V2 data/backup locations;
-- rollback procedure;
-- intentional legacy parity exclusions;
-- exact final squash SHA and post-merge CI run;
-- current safety/browser/mutation boundaries.
-
-## Per-stage discipline
-
-Every stage:
-
-1. verify exact current `main`;
-2. start a fresh branch only after prior exact post-merge push-CI is green;
-3. reread affected runtime/tests/docs;
-4. make the smallest stage-scoped change;
-5. run full CI;
-6. inspect review threads/findings;
-7. fix substantive findings without weakening release/safety assertions;
-8. squash merge;
-9. record exact squash SHA;
-10. verify exact push-CI on new `main` before the next branch.
-
-## Required CI baseline
-
-- Windows Python 3.10: compileall + full pytest + legacy self-test;
-- Windows Python 3.11: compileall + full pytest + legacy self-test;
-- Python 3.11 + PySide6: offscreen Qt smoke at 1180×720 and 1440×900.
-
-Release stages may add Windows lifecycle/package/cutover checks; they must not replace existing gates.
+After REL-10 exact post-merge CI and, if required, the tiny exact-SHA docs handoff are green, this batch is closed. Do **not** automatically start V2-68/V2-69/V2-70, Rest Mode, browser navigation or any new gameplay feature.
