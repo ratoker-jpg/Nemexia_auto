@@ -62,7 +62,7 @@ The Tkinter stack is intentionally retained as a tested rollback surface. REL-08
 - **REL-05** — independent tested Tk fallback.
 - **REL-06** — authorized default launcher/package cutover to Qt.
 - **REL-07** — post-cutover black-box regression gate.
-- **REL-08** — complete legacy reachability audit; `D. PROVEN DEAD = ∅`.
+- **REL-08** — complete legacy reachability audit; result `D. PROVEN DEAD = ∅`.
 - **REL-09** — intentional NO-OP/HARDENING; zero production deletions.
 - **REL-10** — V2 2.0.0 release docs/version/install/upgrade/rollback/final handoff.
 
@@ -127,6 +127,14 @@ The final UI action baseline remains `8d9c3c548ed74f6b2b55533489b9834126a65908`.
 Decision remains **`NO NAVIGATION BOUNDARY`**.
 
 V2 remains attach-only and does not silently acquire browser/account/planet ownership through navigation.
+
+Live operations therefore require the relevant Nemexia surface to be already open/rendered before the user triggers the V2 action:
+
+- `fleets.php` — fleet/capacity facts and raid/spy/asteroid/debris-send preparation/verification;
+- `options.php` with already-rendered **System** messages — spy-report verification/ingestion;
+- `galaxy.php` on the intended current system — explicit current-system asteroid/debris observation.
+
+V2 does not automatically switch between these pages to satisfy a missing prerequisite.
 
 Current release deliberately does **not** implement:
 
