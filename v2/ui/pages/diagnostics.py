@@ -5,10 +5,30 @@ import sys
 
 from PySide6 import __version__ as pyside_version
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from v2.application.context import V2ApplicationContext
 from v2.runtime_paths import RuntimePaths
+from v2.ui.components import SectionCard, StateBanner, scrollable_page
+from v2.ui.theme import SPACING
+
+
+def _add_fact_rows(card: SectionCard, rows: tuple[tuple[str, object], ...], *, mono_values: bool = False) -> None:
+    grid = QGridLayout()
+    grid.setHorizontalSpacing(SPACING["xl"])
+    grid.setVerticalSpacing(SPACING["sm"])
+    for row, (label, value) in enumerate(rows):
+        key = QLabel(label, card)
+        key.setObjectName("MetricLabel")
+        val = QLabel(str(value), card)
+        if mono_values:
+            val.setObjectName("Mono")
+        val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        val.setWordWrap(True)
+        grid.addWidget(key, row, 0)
+        grid.addWidget(val, row, 1)
+    grid.setColumnStretch(1, 1)
+    card.content_layout.addLayout(grid)
 
 
 class DiagnosticsPage(QWidget):
@@ -20,85 +40,94 @@ class DiagnosticsPage(QWidget):
         self.runtime_paths = runtime_paths
         status = context.status()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        scroll, _content, layout = scrollable_page(self)
+        outer.addWidget(scroll)
 
-        source = QFrame(self)
-        source.setObjectName("InfoCard")
-        source_layout = QGridLayout(source)
-        source_layout.setContentsMargins(18, 16, 18, 16)
-        source_layout.setHorizontalSpacing(20)
-        source_layout.setVerticalSpacing(10)
-        title = QLabel("Источники данных", source)
-        title.setObjectName("SectionTitle")
-        source_layout.addWidget(title, 0, 0, 1, 2)
-        rows = (
-            ("Legacy SQLite доступна", "Да" if status.available else "Нет"),
-            ("Legacy SQLite режим", status.mode),
-            ("Legacy SQLite", str(status.path)),
-            ("Legacy SQLite проверка", status.detail),
+        boundary = StateBanner(
+            "No-probe diagnostics",
+            "Этот экран показывает только локальные/runtime факты и последний уже выполненный live-read. "
+            "Чтобы проверить CDP, используй явное read-only обновление на экране «Активные».",
+            tone="info",
+            parent=self,
         )
-        for row, (label, value) in enumerate(rows, start=1):
-            key = QLabel(label, source); key.setObjectName("Muted")
-            val = QLabel(value, source); val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); val.setWordWrap(True)
-            source_layout.addWidget(key, row, 0); source_layout.addWidget(val, row, 1)
+        layout.addWidget(boundary)
 
-        live_key = QLabel("Live-полёты", source); live_key.setObjectName("Muted")
+        source = SectionCard(
+            "Источники данных",
+            "Legacy SQLite остаётся read-only; live browser status здесь не инициируется.",
+            object_name="DefinitionCard",
+            parent=self,
+        )
+        _add_fact_rows(
+            source,
+            (
+                ("Legacy SQLite доступна", "Да" if status.available else "Нет"),
+                ("Legacy SQLite режим", status.mode),
+                ("Legacy SQLite", status.path),
+                ("Legacy SQLite проверка", status.detail),
+            ),
+            mono_values=True,
+        )
+        live_grid = QGridLayout()
+        live_grid.setHorizontalSpacing(SPACING["xl"])
+        live_grid.setVerticalSpacing(SPACING["sm"])
+        live_key = QLabel("Live-полёты", source)
+        live_key.setObjectName("MetricLabel")
         self.live_status_value = QLabel("Не проверены", source)
         self.live_status_value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        source_layout.addWidget(live_key, 5, 0); source_layout.addWidget(self.live_status_value, 5, 1)
-        live_detail_key = QLabel("Live источник", source); live_detail_key.setObjectName("Muted")
+        live_detail_key = QLabel("Live источник", source)
+        live_detail_key.setObjectName("MetricLabel")
         self.live_detail_value = QLabel("Открой экран «Активные» для read-only проверки CDP.", source)
         self.live_detail_value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.live_detail_value.setWordWrap(True)
-        source_layout.addWidget(live_detail_key, 6, 0); source_layout.addWidget(self.live_detail_value, 6, 1)
-        source_layout.setColumnStretch(1, 1)
+        live_grid.addWidget(live_key, 0, 0)
+        live_grid.addWidget(self.live_status_value, 0, 1)
+        live_grid.addWidget(live_detail_key, 1, 0)
+        live_grid.addWidget(self.live_detail_value, 1, 1)
+        live_grid.setColumnStretch(1, 1)
+        source.content_layout.addLayout(live_grid)
         layout.addWidget(source)
 
-        isolation = QFrame(self)
-        isolation.setObjectName("InfoCard")
-        isolation_layout = QGridLayout(isolation)
-        isolation_layout.setContentsMargins(18, 16, 18, 16)
-        isolation_layout.setHorizontalSpacing(20)
-        isolation_layout.setVerticalSpacing(10)
-        isolation_title = QLabel("Изолированное хранилище V2", isolation)
-        isolation_title.setObjectName("SectionTitle")
-        isolation_layout.addWidget(isolation_title, 0, 0, 1, 2)
-        v2_rows = (
-            ("Корень", runtime_paths.root),
-            ("V2 SQLite", runtime_paths.database),
-            ("V2 SQLite существует", "Да" if runtime_paths.database.is_file() else "Нет"),
-            ("V2 settings", "Доступны" if context.v2_settings_available() else "Недоступны"),
-            ("Browser profile", runtime_paths.browser_profile),
-            ("Логи", runtime_paths.logs),
-            ("Скриншоты", runtime_paths.screenshots),
-            ("Бэкапы", runtime_paths.backups),
+        isolation = SectionCard(
+            "Изолированное хранилище V2",
+            "Локальные пути показаны для диагностики и доступны для выделения; этот экран ничего не создаёт и не захватывает.",
+            object_name="DefinitionCard",
+            parent=self,
         )
-        for row, (label, value) in enumerate(v2_rows, start=1):
-            key = QLabel(label, isolation); key.setObjectName("Muted")
-            val = QLabel(str(value), isolation); val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); val.setWordWrap(True)
-            isolation_layout.addWidget(key, row, 0); isolation_layout.addWidget(val, row, 1)
-        isolation_layout.setColumnStretch(1, 1)
+        _add_fact_rows(
+            isolation,
+            (
+                ("Корень", runtime_paths.root),
+                ("V2 SQLite", runtime_paths.database),
+                ("V2 SQLite существует", "Да" if runtime_paths.database.is_file() else "Нет"),
+                ("V2 settings", "Доступны" if context.v2_settings_available() else "Недоступны"),
+                ("Browser profile", runtime_paths.browser_profile),
+                ("Логи", runtime_paths.logs),
+                ("Скриншоты", runtime_paths.screenshots),
+                ("Бэкапы", runtime_paths.backups),
+            ),
+            mono_values=True,
+        )
         layout.addWidget(isolation)
 
-        runtime = QFrame(self)
-        runtime.setObjectName("InfoCard")
-        runtime_layout = QGridLayout(runtime)
-        runtime_layout.setContentsMargins(18, 16, 18, 16)
-        runtime_layout.setHorizontalSpacing(20); runtime_layout.setVerticalSpacing(10)
-        runtime_title = QLabel("Runtime", runtime); runtime_title.setObjectName("SectionTitle")
-        runtime_layout.addWidget(runtime_title, 0, 0, 1, 2)
-        runtime_rows = (
-            ("Python", sys.version.split()[0]),
-            ("PySide6", pyside_version),
-            ("ОС", platform.platform()),
-            ("UI режим", "V2 isolated writes + legacy/browser read-only"),
+        runtime = SectionCard(
+            "Runtime",
+            "Фактическое локальное окружение текущего opt-in Qt процесса.",
+            object_name="DefinitionCard",
+            parent=self,
         )
-        for row, (label, value) in enumerate(runtime_rows, start=1):
-            key = QLabel(label, runtime); key.setObjectName("Muted")
-            runtime_layout.addWidget(key, row, 0); runtime_layout.addWidget(QLabel(str(value), runtime), row, 1)
-        runtime_layout.setColumnStretch(1, 1)
+        _add_fact_rows(
+            runtime,
+            (
+                ("Python", sys.version.split()[0]),
+                ("PySide6", pyside_version),
+                ("ОС", platform.platform()),
+                ("UI режим", "V2 isolated writes + legacy/browser read-only"),
+            ),
+        )
         layout.addWidget(runtime)
         layout.addStretch(1)
         self.reload_view()
