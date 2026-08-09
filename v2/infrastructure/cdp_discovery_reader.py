@@ -95,12 +95,15 @@ class OwnedDiscoveryReadMixin:
                     let visibleAsteroids=0;
                     let unparseableAsteroids=0;
                     if(holder) {
-                        holder.querySelectorAll('a').forEach(a => {
-                            const asteroid=Array.from(a.querySelectorAll('img')).some(img =>
-                                (img.getAttribute('src')||'').toLowerCase().includes('asteroid')
-                            );
+                        holder.querySelectorAll('img').forEach(img => {
+                            const asteroid=(img.getAttribute('src')||'').toLowerCase().includes('asteroid');
                             if(!asteroid) return;
                             visibleAsteroids += 1;
+                            const a=img.closest('a');
+                            if(!a) {
+                                unparseableAsteroids += 1;
+                                return;
+                            }
                             let c1=0,c2=0,c3=0;
                             try {
                                 const href=new URL(a.getAttribute('href')||'', location.href);
