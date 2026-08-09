@@ -61,9 +61,21 @@ def test_production_shares_one_backend_between_navigation_and_auto_recon() -> No
     assert "AutomaticReconJournalRepository(database)" in APP
 
 
-def test_automation_pr_keeps_existing_manual_recon_ui_for_separate_ui_followup() -> None:
-    # AUTO-07 business logic must not smuggle selectors/CDP into Qt. The current
-    # manual fleet-id widget remains until a separate UI-only follow-up removes it.
-    assert "self.fleet_id = QLineEdit" in UI
+def test_normal_recon_ui_uses_auto07_and_has_no_manual_fleet_id_or_browser_logic() -> None:
+    assert 'getattr(self.context, "run_automatic_recon", None)' in UI
+    assert 'getattr(self.context, "run_automatic_recon_refill", None)' in UI
+    assert "self.fleet_id" not in UI
+    assert "QLineEdit" not in UI
+    assert "SpyFleetId" not in UI
+    assert "run_controlled_recon_refill" not in UI
+    for forbidden in (
+        "playwright",
+        "connect_over_cdp",
+        "#spy1Link-",
+        "#spy1Time-",
+        "document.querySelector",
+        "window.processSpy",
+    ):
+        assert forbidden not in UI
     assert "PySide6" not in SERVICE
     assert "PySide6" not in BACKEND
