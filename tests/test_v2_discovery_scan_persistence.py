@@ -86,3 +86,23 @@ def test_stopped_scan_can_resume_but_ambiguous_scan_cannot_auto_resume(tmp_path:
     with pytest.raises(DiscoveryScanConflictError, match="Only stopped/failed_safe"):
         repo.resume("stopped")
     database.close()
+
+
+def test_resume_rejects_competing_running_scan_and_preserves_single_active_scan(tmp_path: Path) -> None:
+    database = V2Database(tmp_path / "v2.sqlite3")
+    repo = DiscoveryScanRepository(database)
+
+    begin(repo, "scan-A")
+    repo.finish_safe("scan-A", status="stopped", detail="operator")
+    begin(repo, "scan-B")
+
+    with pytest.raises(DiscoveryScanConflictError, match="scan-B \(running\)"):
+        repo.resume("scan-A")
+
+    scan_a = repo.read("scan-A")
+    scan_b = repo.read("scan-B")
+    assert scan_a is not None and scan_a.status == "stopped"
+    assert scan_b is not None and scan_b.status == "running"
+    unresolved = repo.unresolved()
+    assert [(row.scan_id, row.status) for row in unresolved] == [("scan-B", "running")]
+    database.close()
