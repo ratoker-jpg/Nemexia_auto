@@ -92,8 +92,38 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
         raise
 
 
+def _lifecycle_failure(exc: ReleaseLifecycleError) -> int:
+    print(f"V2 production lifecycle stopped: {exc}", file=sys.stderr)
+    return 3
+
+
+def release_smoke(paths: RuntimePaths) -> int:
+    """Exercise the real Qt production context/lifecycle without creating a window."""
+    try:
+        import PySide6  # noqa: F401 - release smoke proves the installed Qt runtime exists
+    except ImportError:
+        print(
+            "PySide6 is not installed. Install V2 dependencies with: "
+            "python -m pip install -r requirements-v2.txt",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        with V2ProductionSession(paths, build_context) as context:
+            database = context._v2_database
+            if database is None or database.integrity_check() != "ok":
+                raise ReleaseLifecycleError("V2 database integrity check failed in release smoke")
+        return 0
+    except ReleaseLifecycleError as exc:
+        return _lifecycle_failure(exc)
+
+
 def main() -> int:
     """Launch the PySide6 V2 application; mutating actions remain opt-in."""
+    paths = ensure_runtime_paths(build_runtime_paths())
+    if "--release-smoke" in sys.argv:
+        return release_smoke(paths)
+
     try:
         from v2.ui.main_window import run_qt_app
     except ImportError as exc:
@@ -106,13 +136,11 @@ def main() -> int:
             return 2
         raise
 
-    paths = ensure_runtime_paths(build_runtime_paths())
     try:
         with V2ProductionSession(paths, build_context) as context:
             return int(run_qt_app(paths, context))
     except ReleaseLifecycleError as exc:
-        print(f"V2 production lifecycle stopped: {exc}", file=sys.stderr)
-        return 3
+        return _lifecycle_failure(exc)
 
 
 if __name__ == "__main__":
