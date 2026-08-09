@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 
-V2_SCHEMA_VERSION = 8
+V2_SCHEMA_VERSION = 9
 
 
 class V2DatabaseError(RuntimeError):
@@ -707,3 +707,10 @@ class V2Database:
 
         install_asteroid_candidate_schema(self._require_conn())
         self._record_migration(8)
+
+    def _migrate_to_9(self) -> None:
+        """Version immutable V2-owned debris evidence storage."""
+        from v2.persistence.debris_candidates import install_debris_candidate_schema
+
+        install_debris_candidate_schema(self._require_conn())
+        self._record_migration(9)
