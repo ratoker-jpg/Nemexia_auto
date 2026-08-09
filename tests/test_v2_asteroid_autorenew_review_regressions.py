@@ -4,13 +4,16 @@ import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 from v2.application.asteroid_autorenew_context import AsteroidAutorenewApplicationContext
 from v2.application.asteroid_repository import V2AsteroidRepository
 from v2.application.automation_context import DebrisEnabledApplicationContextWithReadiness
 from v2.infrastructure.qt_autorenew_driver import QtAsteroidAutorenewDriver
 from v2.persistence.asteroid_autorenew import AsteroidAutorenewRepository
 from v2.persistence.asteroid_candidates import AsteroidObservationRepository
-from v2.persistence.database import V2Database
+from v2.persistence.database import V2Database, V2DatabaseError
+from v2.persistence.discovery_scan import DiscoveryScanRepository
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +51,19 @@ def _install_fake_qt(monkeypatch) -> None:
     pyside.QtCore = qtcore
     monkeypatch.setitem(sys.modules, "PySide6", pyside)
     monkeypatch.setitem(sys.modules, "PySide6.QtCore", qtcore)
+
+
+def _arm_repository(repo: AsteroidAutorenewRepository, *, session_id: str) -> None:
+    repo.arm(
+        session_id=session_id,
+        source_planet_id="101",
+        source_coord="3:39:8",
+        account_fingerprint="acct",
+        recycler_count=5,
+        max_flights=15,
+        safety_seconds=10,
+        buffer_minutes=5,
+    )
 
 
 def test_qt_driver_ticks_only_armed_scheduler_and_is_wired_to_main_window(monkeypatch) -> None:
@@ -180,3 +196,70 @@ def test_scan_provenance_excludes_parallel_manual_observation(tmp_path: Path) ->
     assert (facts[0].galaxy, facts[0].system, facts[0].position) == (1, 40, 3)
     assert observation_ids[1] not in scoped_ids
     database.close()
+
+
+def test_internal_stop_preserves_ambiguous_discovery_identity_and_blocks_new_start(tmp_path: Path) -> None:
+    database = V2Database(tmp_path / "v2.sqlite3")
+    autorenew = AsteroidAutorenewRepository(database)
+    discovery = DiscoveryScanRepository(database)
+    _arm_repository(autorenew, session_id="session-ambiguous")
+    scan = discovery.begin(
+        scan_id="scan-ambiguous",
+        account_fingerprint="acct",
+        planet_id="101",
+        planet_coord="3:39:8",
+    )
+    autorenew.transition(
+        status="running_discovery",
+        armed=True,
+        active_scan_id=scan.scan_id,
+        detail="running",
+    )
+    discovery.finish_safe(
+        scan.scan_id,
+        status="ambiguous",
+        detail="navigation effect unresolved",
+    )
+
+    stopped = autorenew.stop(status="stopped_ambiguous", detail="navigation ambiguous")
+    assert stopped.armed is False
+    assert stopped.active_scan_id == scan.scan_id
+    assert "unresolved discovery scan preserved" in stopped.detail
+
+    with pytest.raises(V2DatabaseError, match="scan-ambiguous"):
+        _arm_repository(autorenew, session_id="session-must-not-start")
+    assert autorenew.read().active_scan_id == scan.scan_id
+    assert discovery.read(scan.scan_id).status == "ambiguous"
+    database.close()
+
+
+def test_restart_disarm_retains_running_discovery_recovery_identity(tmp_path: Path) -> None:
+    path = tmp_path / "v2.sqlite3"
+    database = V2Database(path)
+    autorenew = AsteroidAutorenewRepository(database)
+    discovery = DiscoveryScanRepository(database)
+    _arm_repository(autorenew, session_id="session-crash")
+    scan = discovery.begin(
+        scan_id="scan-crash",
+        account_fingerprint="acct",
+        planet_id="101",
+        planet_coord="3:39:8",
+    )
+    autorenew.transition(
+        status="running_discovery",
+        armed=True,
+        active_scan_id=scan.scan_id,
+        detail="running before crash",
+    )
+    database.close()
+
+    reopened = V2Database(path)
+    recovered_repo = AsteroidAutorenewRepository(reopened)
+    recovered = recovered_repo.disarm_on_startup()
+    assert recovered.armed is False
+    assert recovered.status == "disarmed_restart"
+    assert recovered.active_scan_id == scan.scan_id
+    assert "unresolved discovery scan preserved" in recovered.detail
+    with pytest.raises(V2DatabaseError, match="scan-crash"):
+        _arm_repository(recovered_repo, session_id="session-after-crash")
+    reopened.close()
