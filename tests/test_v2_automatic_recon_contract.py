@@ -40,6 +40,20 @@ def test_application_layer_has_no_browser_selectors_or_cdp_calls() -> None:
         assert forbidden not in SERVICE
 
 
+def test_verification_polls_reads_without_opening_a_second_mutation_window() -> None:
+    assert "verification_timeout_seconds: float = 10.0" in SERVICE
+    assert "verification_poll_seconds: float = 0.4" in SERVICE
+    assert "deadline = time.monotonic() + self.verification_timeout_seconds" in SERVICE
+    assert "while True:" in SERVICE
+    assert SERVICE.count("self.browser.process_spy_once(") == 1
+
+
+def test_manual_spy_interlock_queries_any_unresolved_row_without_history_limit() -> None:
+    assert "WHERE status IN ('pending','ambiguous')" in SERVICE
+    assert "ORDER BY id DESC LIMIT 1" in SERVICE
+    assert "list_spy_actions(limit=500)" not in SERVICE
+
+
 def test_production_shares_one_backend_between_navigation_and_auto_recon() -> None:
     assert "navigation_backend = V2AutomaticReconCdpBackendNoAutoReconnect(endpoint.endpoint)" in APP
     assert "NavigationCoordinator(\n            navigation_backend," in APP
