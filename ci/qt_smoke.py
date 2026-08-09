@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QScrollArea
 
 from v2.application.flight_source import ActiveFlightSnapshot, FleetCapacitySnapshot, FlightSourceStatus
 from v2.application.legacy_settings_import import LegacySettingsImporter
@@ -50,6 +50,21 @@ CREATE TABLE spy_reports (
 );
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
+
+GEOMETRIES = ((1180, 720), (1440, 900))
+EXPECTED_PAGES = {
+    "overview": "OverviewPage",
+    "plan": "PlanPage",
+    "active": "ActivePage",
+    "farm": "FarmPage",
+    "asteroids": "AsteroidsPage",
+    "debris": "DebrisPage",
+    "recon": "ReconPage",
+    "targets": "TargetsPage",
+    "history": "HistoryPage",
+    "settings": "SettingsPage",
+    "diagnostics": "DiagnosticsPage",
+}
 
 
 class FakeLiveFlightSource:
@@ -105,6 +120,25 @@ def create_fixture(path: Path) -> None:
         conn.executemany("INSERT INTO settings(key,value) VALUES(?,?)", (("port","9333"),("home_g","3"),("home_s","39"),("home_p","11"),("farm_return_buffer_minutes","7")))
 
 
+def _assert_full_page_geometry(window: MainWindow, app: QApplication) -> None:
+    """Exercise every existing page at both supported sizes without calling reload_view."""
+    for width, height in GEOMETRIES:
+        window.resize(width, height)
+        window.show()
+        app.processEvents()
+        assert window.width() == width, (width, window.width())
+        assert window.height() == height, (height, window.height())
+        for key, class_name in EXPECTED_PAGES.items():
+            index = window._page_index[key]
+            window.stack.setCurrentIndex(index)
+            app.processEvents()
+            page = window.stack.widget(index)
+            assert page.__class__.__name__ == class_name, (key, page.__class__.__name__)
+            hint = page.minimumSizeHint()
+            assert hint.width() <= window.stack.width(), (key, width, hint.width(), window.stack.width())
+            assert hint.height() <= window.stack.height(), (key, height, hint.height(), window.stack.height())
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="nemexia_qt_smoke_", ignore_cleanup_errors=True) as temp:
         root = Path(temp)
@@ -149,21 +183,8 @@ def main() -> int:
         window = MainWindow(paths, context)
         try:
             assert window.minimumWidth() == 1180 and window.minimumHeight() == 720
-            assert window.stack.count() == 11
-            expected = {
-                "overview":"OverviewPage",
-                "plan":"PlanPage",
-                "active":"ActivePage",
-                "farm":"FarmPage",
-                "recon":"ReconPage",
-                "targets":"TargetsPage",
-                "history":"HistoryPage",
-                "settings":"SettingsPage",
-                "diagnostics":"DiagnosticsPage",
-            }
-            for key, class_name in expected.items():
-                page = window.stack.widget(window._page_index[key])
-                assert page.__class__.__name__ == class_name, (key, page.__class__.__name__)
+            assert window.stack.count() == len(EXPECTED_PAGES) == 11
+            assert set(window._page_index) == set(EXPECTED_PAGES)
 
             recon_page = window.stack.widget(window._page_index["recon"])
             targets_page = window.stack.widget(window._page_index["targets"])
@@ -176,8 +197,15 @@ def main() -> int:
             diagnostics = window.stack.widget(window._page_index["diagnostics"])
             assert farm._armed is False
             assert farm._timer.isActive() is False
+            assert settings_page.findChildren(QScrollArea), "Settings must scroll instead of forcing the main window larger"
+            assert diagnostics.findChildren(QScrollArea), "Diagnostics must scroll instead of forcing the main window larger"
             assert live_source.status_reads == 0 and live_source.refreshes == 0
 
+            _assert_full_page_geometry(window, app)
+            assert live_source.status_reads == 0 and live_source.refreshes == 0
+            assert farm._armed is False and farm._timer.isActive() is False
+
+            # Keep the existing explicit Active refresh behavior as a separate functional smoke.
             window._show_page("active", "Активные", "Текущие полёты и возвраты")
             app.processEvents()
             assert live_source.refreshes == 1 and live_source.status_reads == 1
@@ -193,7 +221,6 @@ def main() -> int:
             app.processEvents()
             assert live_source.status_reads == 1
             assert diagnostics.live_status_value.text() == "Доступны"
-            window.show(); app.processEvents()
         finally:
             window.close(); app.processEvents(); context.close()
 
@@ -206,7 +233,7 @@ def main() -> int:
             assert V2SettingsRepository(check).get("farm_return_buffer_minutes") == 9
             assert len(V2ReconRepository(check).list_recon()) == 1
 
-    print("OK: PySide6 V2 scheduler-disarmed V2-recon settings/runtime smoke")
+    print("OK: PySide6 V2 1180x720 + 1440x900 full-page consistency smoke")
     return 0
 
 
