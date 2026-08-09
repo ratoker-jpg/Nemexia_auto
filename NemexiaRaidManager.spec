@@ -3,18 +3,16 @@ from PyInstaller.utils.hooks import collect_all
 
 playwright_datas, playwright_binaries, playwright_hidden = collect_all('playwright')
 bs4_datas, bs4_binaries, bs4_hidden = collect_all('bs4')
-pystray_datas, pystray_binaries, pystray_hidden = collect_all('pystray')
 
 analysis = Analysis(
-    ['app_entry.py'],
+    ['app_qt.py'],
     pathex=[],
-    binaries=playwright_binaries + bs4_binaries + pystray_binaries,
-    datas=playwright_datas + bs4_datas + pystray_datas + [
-        ('targets_seed.json', '.'),
+    binaries=playwright_binaries + bs4_binaries,
+    datas=playwright_datas + bs4_datas + [
         ('assets/nemexia.ico', 'assets'),
     ],
-    hiddenimports=playwright_hidden + bs4_hidden + pystray_hidden + [
-        'PIL._tkinter_finder', 'PIL.Image', 'PIL.ImageTk', 'soupsieve',
+    hiddenimports=playwright_hidden + bs4_hidden + [
+        'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets', 'soupsieve',
     ],
     hookspath=[],
     hooksconfig={},
