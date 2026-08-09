@@ -121,13 +121,22 @@ def create_fixture(path: Path) -> None:
 
 
 def _assert_full_page_geometry(window: MainWindow, app: QApplication) -> None:
-    """Exercise every existing page at both supported sizes without calling reload_view."""
+    """Exercise every page at both sizes; Active is explicitly reloaded with fixture live facts."""
     for width, height in GEOMETRIES:
         window.resize(width, height)
         window.show()
         app.processEvents()
         assert window.width() == width, (width, window.width())
         assert window.height() == height, (height, window.height())
+
+        active_index = window._page_index["active"]
+        window.stack.setCurrentIndex(active_index)
+        active = window.stack.widget(active_index)
+        active.reload_view()
+        app.processEvents()
+        assert active.model.rowCount() == 2
+        assert active.capacity is not None and active.capacity.free == 2
+
         for key, class_name in EXPECTED_PAGES.items():
             index = window._page_index[key]
             window.stack.setCurrentIndex(index)
@@ -193,7 +202,6 @@ def main() -> int:
             assert recon_page.model.rowCount() == 1
             assert targets_page.model.rowCount() == 1
 
-            active = window.stack.widget(window._page_index["active"])
             farm = window.stack.widget(window._page_index["farm"])
             settings_page = window.stack.widget(window._page_index["settings"])
             diagnostics = window.stack.widget(window._page_index["diagnostics"])
@@ -205,15 +213,9 @@ def main() -> int:
             assert live_source.status_reads == 0 and live_source.refreshes == 0
 
             _assert_full_page_geometry(window, app)
-            assert live_source.status_reads == 0 and live_source.refreshes == 0
+            assert live_source.refreshes == len(GEOMETRIES)
+            assert live_source.status_reads == len(GEOMETRIES)
             assert farm._armed is False and farm._timer.isActive() is False
-
-            # Keep the existing explicit Active refresh behavior as a separate functional smoke.
-            window._show_page("active", "Активные", "Текущие полёты и возвраты")
-            app.processEvents()
-            assert live_source.refreshes == 1 and live_source.status_reads == 1
-            assert active.model.rowCount() == 2
-            assert active.capacity is not None and active.capacity.free == 2
 
             window._show_page("settings", "Настройки", "Параметры приложения")
             settings_page.return_buffer.setValue(9)
@@ -222,7 +224,7 @@ def main() -> int:
 
             window._show_page("diagnostics", "Диагностика", "Логи и техническое состояние")
             app.processEvents()
-            assert live_source.status_reads == 1
+            assert live_source.status_reads == len(GEOMETRIES)
             assert diagnostics.live_status_value.text() == "Доступны"
         finally:
             window.close(); app.processEvents(); context.close()
