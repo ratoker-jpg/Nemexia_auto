@@ -71,6 +71,44 @@ def test_ui_timer_is_presentation_polling_not_a_second_scheduler() -> None:
     assert "sleep(" not in PAGE
 
 
+def test_manual_and_autorenew_controls_are_interlocked_in_ui() -> None:
+    assert "def _manual_controls(self):" in PAGE
+    assert "def _sync_control_interlock(self, state, *, state_unknown: bool)" in PAGE
+    assert "manual_locked = state_unknown or autorenew_armed" in PAGE
+    assert "and not self._series_running" in PAGE
+    assert "if self._series_running:" in PAGE
+    assert "def _set_series_controls(self, running: bool)" in PAGE
+    for widget in (
+        "self.read_button",
+        "self.prepare_button",
+        "self.send_button",
+        "self.source_coord",
+        "self.recycler_count",
+        "self.safety_seconds",
+        "self.table",
+    ):
+        assert widget in PAGE
+
+
+def test_transient_typed_failure_keeps_last_error_but_reconciles_controls() -> None:
+    assert 'self._autorenew_last_error = ""' in PAGE
+    assert "self._autorenew_last_error = state_error" in PAGE
+    assert "self._sync_control_interlock(state, state_unknown=False)" in PAGE
+    assert "latest successfully-read state" in PAGE
+    assert "authoritative state:" in PAGE
+
+
+def test_zero_minute_return_buffer_is_not_replaced_by_default() -> None:
+    assert 'int(self.context.v2_setting("farm_return_buffer_minutes", 5))' in PAGE
+    assert 'v2_setting("farm_return_buffer_minutes", 5) or 5' not in PAGE
+
+
+def test_current_system_tracks_last_completed_discovery_system() -> None:
+    assert "DISCOVERY_SEQUENCE[min(cursor, len(DISCOVERY_SEQUENCE)) - 1]" in PAGE
+    assert 'return f"ожидает {galaxy}:{solar}"' in PAGE
+    assert 'str(state.status) == "waiting_return"' in PAGE
+
+
 def test_manual_asteroid_contract_remains_separate_and_unchanged_in_role() -> None:
     for token in (
         "ReadAsteroidsButton",
