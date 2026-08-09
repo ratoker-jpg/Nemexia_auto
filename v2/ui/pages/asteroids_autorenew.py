@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel
+
+from v2.application.discovery_scan import DISCOVERY_SEQUENCE
+from v2.ui.components import SectionCard, StateBanner, command_button
+from v2.ui.pages.asteroids import AsteroidsPage as ManualAsteroidsPage
+from v2.ui.theme import SPACING
+
+
+class AsteroidsPage(ManualAsteroidsPage):
+    """AUTO-11 operator surface layered over the existing bounded manual asteroid page.
+
+    This class is presentation-only. It reads/writes autorenew state exclusively via
+    typed application-context methods and never owns browser, scheduler, persistence,
+    selector or SendFleet behavior.
+    """
+
+    _BLOCKED_STATUSES = frozenset({"blocked"})
+    _AMBIGUOUS_STATUSES = frozenset({"stopped_ambiguous"})
+
+    def __init__(self, context, parent=None) -> None:
+        super().__init__(context, parent)
+
+        card = SectionCard(
+            "Asteroid autorenew",
+            "AUTO-11 · explicit Start/Stop · verified 3×40 discovery · persistent safety state.",
+            object_name="AutorenewCard",
+            parent=self,
+        )
+        card.setObjectName("AsteroidAutorenewCard")
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(SPACING["sm"])
+        self.autorenew_start_button = command_button("Запустить autorenew", tone="primary", parent=card)
+        self.autorenew_start_button.setObjectName("StartAsteroidAutorenewButton")
+        self.autorenew_stop_button = command_button("Остановить autorenew", tone="danger", parent=card)
+        self.autorenew_stop_button.setObjectName("StopAsteroidAutorenewButton")
+        self.autorenew_stop_button.setProperty("tone", "danger")
+        action_row.addWidget(self.autorenew_start_button)
+        action_row.addWidget(self.autorenew_stop_button)
+        action_row.addStretch(1)
+        card.content_layout.addLayout(action_row)
+
+        self.autorenew_banner = StateBanner(
+            "STOPPED",
+            "Autorenew запускается только явной кнопкой Start и после рестарта остаётся disarmed.",
+            tone="info",
+            parent=card,
+        )
+        self.autorenew_banner.setObjectName("AsteroidAutorenewState")
+        card.content_layout.addWidget(self.autorenew_banner)
+
+        metrics = QGridLayout()
+        metrics.setHorizontalSpacing(SPACING["lg"])
+        metrics.setVerticalSpacing(SPACING["xs"])
+        labels = (
+            ("PROGRESS", "AutorenewProgress"),
+            ("CURRENT G:S", "AutorenewCurrentSystem"),
+            ("NEXT CYCLE", "AutorenewNextCycle"),
+            ("LAST VERIFIED RETURN", "AutorenewLastReturn"),
+            ("LAST RESULT / ERROR", "AutorenewLastResult"),
+        )
+        self._autorenew_values: dict[str, QLabel] = {}
+        for column, (title, object_name) in enumerate(labels[:4]):
+            heading = QLabel(title, card)
+            heading.setObjectName("MetricLabel")
+            value = QLabel("—", card)
+            value.setObjectName(object_name)
+            value.setTextInteractionFlags(value.textInteractionFlags())
+            metrics.addWidget(heading, 0, column)
+            metrics.addWidget(value, 1, column)
+            self._autorenew_values[object_name] = value
+
+        result_heading = QLabel(labels[4][0], card)
+        result_heading.setObjectName("MetricLabel")
+        self.autorenew_result_value = QLabel("—", card)
+        self.autorenew_result_value.setObjectName(labels[4][1])
+        self.autorenew_result_value.setWordWrap(True)
+        metrics.addWidget(result_heading, 2, 0, 1, 4)
+        metrics.addWidget(self.autorenew_result_value, 3, 0, 1, 4)
+        metrics.setColumnStretch(4, 1)
+        card.content_layout.addLayout(metrics)
+
+        layout = self.layout()
+        if layout is not None:
+            layout.insertWidget(0, card)
+
+        self.autorenew_start_button.clicked.connect(self._start_autorenew)
+        self.autorenew_stop_button.clicked.connect(self._stop_autorenew)
+
+        self._autorenew_ui_error = ""
+        self._autorenew_ui_timer_id = self.startTimer(1000)
+        self._refresh_autorenew_status()
+
+    @staticmethod
+    def _display_time(raw: str | None) -> str:
+        if not raw:
+            return "—"
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.astimezone(timezone.utc)
+            return parsed.strftime("%Y-%m-%d %H:%M:%S UTC")
+        except ValueError:
+            return str(raw)
+
+    @classmethod
+    def _presentation_state(cls, state) -> tuple[str, str]:
+        if state is None:
+            return "BLOCKED", "warning"
+        status = str(state.status)
+        if status in cls._AMBIGUOUS_STATUSES:
+            return "AMBIGUOUS", "danger"
+        if status in cls._BLOCKED_STATUSES:
+            return "BLOCKED", "warning"
+        if bool(state.armed):
+            return "ARMED", "success"
+        return "STOPPED", "info"
+
+    @staticmethod
+    def _current_system(scan) -> str:
+        if scan is None:
+            return "—"
+        cursor = int(scan.cursor_index)
+        if cursor >= len(DISCOVERY_SEQUENCE):
+            return "завершено"
+        if cursor < 0:
+            return "—"
+        galaxy, solar = DISCOVERY_SEQUENCE[cursor]
+        return f"{galaxy}:{solar}"
+
+    def _typed_autorenew_state(self):
+        reader = getattr(self.context, "asteroid_autorenew_state", None)
+        if not callable(reader):
+            return None
+        return reader()
+
+    def _typed_discovery_scan(self, scan_id: str | None):
+        if not scan_id:
+            return None
+        reader = getattr(self.context, "discovery_scan", None)
+        if not callable(reader):
+            return None
+        return reader(str(scan_id))
+
+    def _refresh_autorenew_status(self) -> None:
+        try:
+            state = self._typed_autorenew_state()
+            scan = self._typed_discovery_scan(None if state is None else state.active_scan_id)
+            self._autorenew_ui_error = ""
+        except Exception as exc:
+            state = None
+            scan = None
+            self._autorenew_ui_error = str(exc) or exc.__class__.__name__
+
+        if self._autorenew_ui_error:
+            self.autorenew_banner.title.setText("ERROR")
+            self.autorenew_banner.detail.setText("Typed autorenew state недоступен; remote actions из UI не выполнялись.")
+            self.autorenew_banner.setProperty("tone", "danger")
+            self.autorenew_start_button.setEnabled(False)
+            self.autorenew_stop_button.setEnabled(False)
+            self._autorenew_values["AutorenewProgress"].setText("—/120")
+            self._autorenew_values["AutorenewCurrentSystem"].setText("—")
+            self._autorenew_values["AutorenewNextCycle"].setText("—")
+            self._autorenew_values["AutorenewLastReturn"].setText("—")
+            self.autorenew_result_value.setText(self._autorenew_ui_error)
+            return
+
+        title, tone = self._presentation_state(state)
+        self.autorenew_banner.title.setText(title)
+        self.autorenew_banner.setProperty("tone", tone)
+        if state is None:
+            self.autorenew_banner.detail.setText("AUTO-11 typed context недоступен в этом runtime.")
+            self.autorenew_start_button.setEnabled(False)
+            self.autorenew_stop_button.setEnabled(False)
+            detail = "Typed autorenew service unavailable"
+        else:
+            self.autorenew_banner.detail.setText(
+                f"{state.status} · session={state.session_id or '—'} · source={state.source_coord or '—'}"
+            )
+            blocked = str(state.status) in (self._BLOCKED_STATUSES | self._AMBIGUOUS_STATUSES)
+            self.autorenew_start_button.setEnabled(not bool(state.armed) and not blocked)
+            self.autorenew_stop_button.setEnabled(bool(state.armed))
+            detail = state.detail or "—"
+
+        progress = int(scan.cursor_index) if scan is not None else 0
+        self._autorenew_values["AutorenewProgress"].setText(f"{progress}/120")
+        self._autorenew_values["AutorenewCurrentSystem"].setText(self._current_system(scan))
+        self._autorenew_values["AutorenewNextCycle"].setText(
+            self._display_time(None if state is None else state.next_cycle_at)
+        )
+        self._autorenew_values["AutorenewLastReturn"].setText(
+            self._display_time(None if state is None else state.last_return_at)
+        )
+        self.autorenew_result_value.setText(detail)
+
+    def _start_autorenew(self) -> None:
+        start = getattr(self.context, "start_asteroid_autorenew", None)
+        if not callable(start):
+            self._autorenew_ui_error = "V2 asteroid autorenew typed Start service is unavailable"
+            self._refresh_autorenew_status()
+            return
+        source = self.source_coord.text().strip()
+        try:
+            buffer_minutes = int(self.context.v2_setting("farm_return_buffer_minutes", 5) or 5)
+            start(
+                source=source,
+                recycler_count=int(self.recycler_count.value()),
+                max_flights=15,
+                safety_seconds=int(self.safety_seconds.value()),
+                buffer_minutes=max(0, buffer_minutes),
+                start_immediately=True,
+            )
+        except Exception as exc:
+            self._autorenew_ui_error = str(exc) or exc.__class__.__name__
+            self.autorenew_banner.title.setText("ERROR")
+            self.autorenew_banner.detail.setText("Start остановлен через typed AUTO-11 boundary.")
+            self.autorenew_result_value.setText(self._autorenew_ui_error)
+            self.autorenew_start_button.setEnabled(True)
+            self.autorenew_stop_button.setEnabled(False)
+            return
+        self._refresh_autorenew_status()
+
+    def _stop_autorenew(self) -> None:
+        stop = getattr(self.context, "stop_asteroid_autorenew", None)
+        if not callable(stop):
+            self._autorenew_ui_error = "V2 asteroid autorenew typed Stop service is unavailable"
+            self._refresh_autorenew_status()
+            return
+        try:
+            stop(detail="Stopped by operator from Asteroids UI")
+        except Exception as exc:
+            self._autorenew_ui_error = str(exc) or exc.__class__.__name__
+            self.autorenew_banner.title.setText("ERROR")
+            self.autorenew_banner.detail.setText("Stop завершился ошибкой typed AUTO-11 boundary.")
+            self.autorenew_result_value.setText(self._autorenew_ui_error)
+            return
+        self._refresh_autorenew_status()
+
+    def reload_view(self) -> None:
+        super().reload_view()
+        if hasattr(self, "autorenew_banner"):
+            self._refresh_autorenew_status()
+
+    def timerEvent(self, event) -> None:
+        if event.timerId() == getattr(self, "_autorenew_ui_timer_id", -1):
+            self._refresh_autorenew_status()
+            return
+        super().timerEvent(event)
