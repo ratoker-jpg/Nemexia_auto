@@ -75,3 +75,26 @@ jobs:
 
       - name: Run Qt runtime smoke
         run: python ci/qt_smoke.py
+
+  release-side-by-side:
+    name: Windows clean install + existing-user upgrade
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: "offscreen"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run real installer
+        shell: cmd
+        run: install.bat
+
+      - name: Run side-by-side release smoke from installed venv
+        shell: cmd
+        run: .venv\Scripts\python.exe ci\release_side_by_side_smoke.py
