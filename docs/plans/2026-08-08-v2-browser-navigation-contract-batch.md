@@ -2,19 +2,39 @@
 
 Date: 2026-08-08
 
+## Execution status — stopped at V2-67
+
+V2-67 completed as research/audit only:
+
+- PR #104
+- squash `6cbd7f88d41a8c065980de47a38e2a27063d31a2`
+- exact post-merge push-CI #216 — green
+- audit: [`../audits/2026-08-09-v2-browser-navigation-contract-audit.md`](../audits/2026-08-09-v2-browser-navigation-contract-audit.md)
+- decision: **`NO NAVIGATION BOUNDARY`**
+
+The audit proved that the effective legacy galaxy path can switch selected planet through the real `change_planet.php?id=<planet-id>` surface, while current legacy/V2 page ownership does not prove stable account identity or selected-planet identity. Repository evidence also does not prove that `refreshGalaxy() -> POST ajax_galaxy.php` is neutral to server-side account/planet session context.
+
+Per the original gate below, this stops the batch. **V2-68, V2-69 and V2-70 are not started and are not authorized.** Automatic 3×40 traversal, Rest Mode loops and background navigation remain forbidden. A future batch may reopen this plan only after new evidence proves the missing account/planet/tab ownership semantics listed in the V2-67 audit.
+
 Completed action baseline before this plan:
 
 - `1077125a59a96274017ad09c9814431bdaeb614e`
 - PR #101 / V2-66 — debris/recycling parity gate
 - push-CI run #206 — green on the exact squash SHA
 
+Storage maintenance completed before V2-67:
+
+- `70cbc13ccde6e0545083341f6c7a5ebbbe70628a`
+- PR #103 — V2 SQLite schema 9 / versioned `debris_observations`
+- push-CI run #214 — green on the exact squash SHA
+
 The debris batch intentionally stopped short of the legacy automatic 3×40 scan because V2 is attach-only and has no approved browser-navigation ownership contract.
 
-This next batch exists to answer that architectural gap before Rest Mode, full debris traversal or any other feature can navigate the account.
+This batch was created to answer that architectural gap before Rest Mode, full debris traversal or any other feature can navigate the account.
 
 ## Why this batch is required
 
-Two accepted legacy/product concepts currently depend on navigation that V2 explicitly forbids:
+Two accepted legacy/product concepts depend on navigation that V2 explicitly forbids:
 
 1. legacy debris discovery changes galaxy/system while scanning galaxies 1–3, systems 40→1;
 2. the existing Rest Mode / attack-watch concept assumes opening or refreshing the Flights page.
@@ -66,6 +86,8 @@ Deliverables:
 
 If destination/ownership/ambiguity semantics cannot be proved, stop the batch here. Do not guess.
 
+**Result:** completed with `NO NAVIGATION BOUNDARY`; batch stopped here.
+
 # V2-68 — typed bound-tab ownership + navigation intent
 
 Only if V2-67 proves enough evidence.
@@ -83,6 +105,8 @@ Add a typed application/domain contract that represents:
 This stage remains **dry-run/read-only planning**. It must not call `goto`, click links, create tabs or loop over systems.
 
 Changing tabs/pages manually must invalidate stale prepared navigation intent rather than silently retargeting another page.
+
+**Status:** blocked by V2-67; not started.
 
 # V2-69 — explicit single-step navigation gate, conditional
 
@@ -114,6 +138,8 @@ Still forbidden:
 
 If a safe single-step primitive cannot be proven, V2-69 must be a documented stop/gate rather than an implementation.
 
+**Status:** blocked by V2-67; not started.
+
 # V2-70 — navigation ownership recovery/parity gate + handoff
 
 Cover at minimum:
@@ -135,7 +161,9 @@ Cover at minimum:
 
 Final gate must state whether a later batch may build a controlled multi-step traversal on top of the proven primitive. It must not implement that traversal itself.
 
-## Explicitly deferred beyond V2-70
+**Status:** blocked by V2-67; not started.
+
+## Explicitly deferred
 
 - automatic 3×40 debris traversal;
 - background/unattended galaxy scanning;
