@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_QT = (ROOT / "app_qt.py").read_text(encoding="utf-8")
 LIFECYCLE = (ROOT / "v2" / "release_lifecycle.py").read_text(encoding="utf-8")
 RUN_APP = (ROOT / "run_app.bat").read_text(encoding="utf-8")
+RUN_LEGACY = (ROOT / "run_legacy.bat").read_text(encoding="utf-8")
 
 
 def test_qt_entrypoint_uses_mandatory_production_session() -> None:
@@ -25,9 +26,10 @@ def test_production_session_backs_up_before_returning_context_and_before_close()
     assert "finally:\n            context.close()" in LIFECYCLE
 
 
-def test_rel02_does_not_cut_over_default_launcher_or_add_navigation() -> None:
-    assert '"%VENV_PY%" app_entry.py' in RUN_APP
-    assert "app_qt.py" not in RUN_APP
+def test_authorized_default_qt_still_uses_release_lifecycle_without_navigation() -> None:
+    assert '"%VENV_PY%" app_qt.py %*' in RUN_APP
+    assert "app_entry.py" not in RUN_APP
+    assert '"%VENV_PY%" app_entry.py %*' in RUN_LEGACY
     for forbidden in (
         "launch_yandex(",
         ".goto(",
