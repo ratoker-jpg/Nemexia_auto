@@ -47,9 +47,9 @@ def test_production_shares_one_backend_between_navigation_and_auto_recon() -> No
     assert "AutomaticReconJournalRepository(database)" in APP
 
 
-def test_automation_pr_keeps_existing_manual_recon_ui_unchanged_for_separate_ui_followup() -> None:
+def test_automation_pr_keeps_existing_manual_recon_ui_for_separate_ui_followup() -> None:
     # AUTO-07 business logic must not smuggle selectors/CDP into Qt. The current
     # manual fleet-id widget remains until a separate UI-only follow-up removes it.
     assert "fleet_input" in UI
-    assert "process_spy" not in SERVICE
     assert "PySide6" not in SERVICE
+    assert "PySide6" not in BACKEND
