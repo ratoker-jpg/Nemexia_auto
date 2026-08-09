@@ -11,8 +11,8 @@ if errorlevel 1 goto :missing_venv
 call :message build_requirements
 "%VENV_PY%" -m pip install -r requirements-build.txt
 if errorlevel 1 goto :build_requirements_error
-rmdir /s /q build 2>nul
-rmdir /s /q dist 2>nul
+rmdir /s /q build\NemexiaRaidManager 2>nul
+del /q dist\NemexiaRaidManager.exe 2>nul
 "%VENV_PY%" -m PyInstaller NemexiaRaidManager.spec --noconfirm
 if errorlevel 1 goto :pyinstaller_error
 call :message build_success
@@ -27,6 +27,7 @@ set "ERROR_KEY=build_requirements_error"
 goto :error
 :pyinstaller_error
 set "ERROR_KEY=pyinstaller_error"
+goto :error
 :error
 set "EXIT_CODE=%ERRORLEVEL%"
 if "%EXIT_CODE%"=="0" set "EXIT_CODE=1"
