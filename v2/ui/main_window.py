@@ -15,7 +15,7 @@ from v2.runtime_paths import RuntimePaths
 from v2.ui.browser_readiness_panel import BrowserReadinessPanel
 from v2.ui.components import StatusPill
 from v2.ui.pages.active import ActivePage
-from v2.ui.pages.asteroids import AsteroidsPage
+from v2.ui.pages.asteroids_autorenew import AsteroidsPage
 from v2.ui.pages.debris import DebrisPage
 from v2.ui.pages.diagnostics import DiagnosticsPage
 from v2.ui.pages.farm_authority import AuthorityFarmPage
@@ -254,7 +254,7 @@ def run_qt_app(runtime_paths: RuntimePaths, context: V2ApplicationContext) -> in
 
     # AUTO-11 scheduler state stays in the typed application layer; this thin
     # event-loop pump merely supplies deterministic ticks from the SQLite-owning
-    # Qt thread. Visible Start/Stop controls remain a separate UI-only PR.
+    # Qt thread. AsteroidsPage exposes only typed Start/Stop/state controls.
     autorenew_driver = QtAsteroidAutorenewDriver(context, parent=window)
     window._asteroid_autorenew_driver = autorenew_driver
     app.aboutToQuit.connect(autorenew_driver.stop)
