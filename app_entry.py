@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 import tkinter as tk
 from tkinter import messagebox
 
@@ -148,10 +149,26 @@ class RaidManagerApp(BaseRaidManagerApp):
         self.run_task(operation(), "Сохранение текущей страницы…", success, error)
 
 
-def main() -> None:
+def release_smoke() -> int:
+    """Exercise the legacy production storage lifecycle without creating a Tk window."""
+    from config import BACKUP_DIR, DB_PATH, SEED_PATH
+    from storage import Database
+
+    database = Database(DB_PATH, SEED_PATH)
+    try:
+        database.backup(BACKUP_DIR)
+    finally:
+        database.close()
+    return 0
+
+
+def main() -> int:
+    if "--release-smoke" in sys.argv:
+        return release_smoke()
     app = RaidManagerApp()
     app.mainloop()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
