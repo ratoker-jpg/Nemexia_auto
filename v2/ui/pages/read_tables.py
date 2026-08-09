@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from v2.application.context import V2ApplicationContext
+from v2.ui.components import EmptyState, StateBanner
 from v2.ui.theme import SIZES, SPACING
 
 
@@ -78,11 +79,26 @@ class ReadOnlyRowsModel(QAbstractTableModel):
 
 
 class FilterableReadOnlyTable(QWidget):
-    def __init__(self, headers: Sequence[str], rows: Sequence[Sequence[object]], *, placeholder: str, parent=None) -> None:
+    def __init__(
+        self,
+        headers: Sequence[str],
+        rows: Sequence[Sequence[object]],
+        *,
+        placeholder: str,
+        intro_title: str = "",
+        intro_detail: str = "",
+        empty_title: str = "Нет данных",
+        empty_detail: str = "Нет строк для отображения в текущем V2-owned источнике.",
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACING["xl"], SPACING["xl"], SPACING["xl"], SPACING["xl"])
         layout.setSpacing(SPACING["md"])
+
+        if intro_title:
+            intro = StateBanner(intro_title, intro_detail, tone="info", parent=self)
+            layout.addWidget(intro)
 
         search = QLineEdit(self)
         search.setObjectName("TableSearch")
@@ -120,7 +136,18 @@ class FilterableReadOnlyTable(QWidget):
         table.horizontalHeader().setMinimumSectionSize(76)
         card_layout.addWidget(table)
         layout.addWidget(card, 1)
+
+        self.empty_state = EmptyState(empty_title, empty_detail, self)
+        layout.addWidget(self.empty_state)
+        self.table_card = card
         self.table = table
+        self.model.modelReset.connect(self._sync_empty_state)
+        self._sync_empty_state()
+
+    def _sync_empty_state(self) -> None:
+        empty = self.model.rowCount() == 0
+        self.empty_state.setVisible(empty)
+        self.table_card.setVisible(not empty)
 
 
 class TargetsPage(FilterableReadOnlyTable):
@@ -147,6 +174,10 @@ class TargetsPage(FilterableReadOnlyTable):
             ),
             rows,
             placeholder="Поиск по V2-целям, ресурсам или состоянию…",
+            intro_title="V2-owned цели",
+            intro_detail="Read-only рабочий список в этом UI batch: поиск и сортировка не изменяют target state.",
+            empty_title="Цели пока отсутствуют",
+            empty_detail="V2-owned targets не содержат строк. CRUD и browser discovery в этом visual batch не добавляются.",
             parent=parent,
         )
 
@@ -171,5 +202,9 @@ class HistoryPage(FilterableReadOnlyTable):
             ("Отправлен", "Откуда", "Цель", "Игрок", "Кораблей", "Возврат", "Статус", "Ошибка"),
             rows,
             placeholder="Поиск по истории отправок…",
+            intro_title="История подтверждённых и остановленных операций",
+            intro_detail="Сохранённые факты V2/legacy read boundary. Экран не запускает действий и не исправляет историю автоматически.",
+            empty_title="История пока пуста",
+            empty_detail="Нет сохранённых строк отправок для отображения.",
             parent=parent,
         )

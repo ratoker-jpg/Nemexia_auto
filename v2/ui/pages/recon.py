@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import uuid
 
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QMessageBox
 
 from v2.application.context import V2ApplicationContext
 from v2.application.recon_refill import ReconRefillState
+from v2.ui.components import SectionCard, StateBanner, command_button
 from v2.ui.pages.read_tables import FilterableReadOnlyTable
+from v2.ui.theme import SPACING
 
 
 class ReconPage(FilterableReadOnlyTable):
@@ -18,36 +20,59 @@ class ReconPage(FilterableReadOnlyTable):
             ("Отчёт", "Report ID", "Координаты", "Энергия", "Металл", "Минералы", "Газ", "Источник", "Принят V2"),
             self._rows(),
             placeholder="Поиск по V2-разведке…",
+            empty_title="Свежая разведка ещё не сохранена",
+            empty_detail="Прими уже открытые свежие отчёты или обработай exact Spy fleet ID через контролируемый action boundary.",
             parent=parent,
         )
 
-        action = QWidget(self)
-        action.setObjectName("ReconSpyAction")
-        row = QHBoxLayout(action)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
-        label = QLabel("Spy fleet ID", action)
+        action = SectionCard(
+            "Recon command",
+            "Live ingestion читает уже доступные отчёты. processSpy и controlled refill — подтверждаемые удалённые действия по exact fleet ID.",
+            object_name="CommandCard",
+            parent=self,
+        )
+        fleet_row = QHBoxLayout()
+        fleet_row.setSpacing(SPACING["sm"])
+        label = QLabel("EXACT SPY FLEET ID", action)
+        label.setObjectName("MetricLabel")
         self.fleet_id = QLineEdit(action)
         self.fleet_id.setObjectName("SpyFleetId")
         self.fleet_id.setPlaceholderText("Например: 152272")
-        self.fleet_id.setMaximumWidth(180)
-        self.process_button = QPushButton("Проверить и обработать", action)
+        self.fleet_id.setMaximumWidth(220)
+        fleet_row.addWidget(label)
+        fleet_row.addWidget(self.fleet_id)
+
+        self.process_button = command_button("Проверить и обработать", tone="warning", parent=action)
         self.process_button.setObjectName("ProcessSpyButton")
-        self.refill_button = QPushButton("Разведка → AutoFarm refill", action)
+        self.process_button.setProperty("tone", "warning")
+        fleet_row.addWidget(self.process_button)
+        self.refill_button = command_button("Разведка → AutoFarm refill", tone="warning", parent=action)
         self.refill_button.setObjectName("ReconRefillButton")
-        self.ingest_button = QPushButton("Принять свежие отчёты", action)
+        self.refill_button.setProperty("tone", "warning")
+        fleet_row.addWidget(self.refill_button)
+        fleet_row.addStretch(1)
+        action.content_layout.addLayout(fleet_row)
+
+        read_row = QHBoxLayout()
+        read_row.setSpacing(SPACING["sm"])
+        self.ingest_button = command_button("Принять свежие отчёты", tone="primary", compact=True, parent=action)
         self.ingest_button.setObjectName("IngestReconButton")
-        self.status_label = QLabel(
-            "V2 хранит только свежие отчёты с точным report ID, целью и временем",
-            action,
+        read_row.addWidget(self.ingest_button)
+        read_hint = QLabel("V2 хранит только свежие отчёты с точным report ID, целью и временем", action)
+        read_hint.setObjectName("Muted")
+        read_hint.setWordWrap(True)
+        read_row.addWidget(read_hint, 1)
+        action.content_layout.addLayout(read_row)
+
+        self.status_banner = StateBanner(
+            "Recon evidence",
+            "Ожидание явного ingest/process action.",
+            tone="info",
+            parent=action,
         )
-        self.status_label.setWordWrap(True)
-        row.addWidget(label)
-        row.addWidget(self.fleet_id)
-        row.addWidget(self.process_button)
-        row.addWidget(self.refill_button)
-        row.addWidget(self.ingest_button)
-        row.addWidget(self.status_label, 1)
+        self.status_label = self.status_banner.detail
+        action.content_layout.addWidget(self.status_banner)
+
         layout = self.layout()
         if layout is not None:
             layout.insertWidget(0, action)
