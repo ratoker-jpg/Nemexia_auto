@@ -177,23 +177,35 @@ class AsteroidAutorenewRepository:
         return self._state(row)
 
     def _unresolved_active_scan_id(self, scan_id: str | None) -> str | None:
-        """Return scan identity only while AUTO-10 still marks it unresolved.
+        """Return the exact unresolved AUTO-11 discovery identity, including crash orphans.
 
-        Autorun disarm must never convert `running`/`ambiguous` discovery evidence
-        into an apparently clean scheduler. Keeping the exact scan ID makes later
-        recovery explicit and prevents a new Start from erasing uncertainty.
+        Normal execution records `active_scan_id` immediately after creating the
+        AUTO-10 row. A process can still die in that tiny gap. Because AUTO-10 permits
+        at most one globally unresolved scan, an unresolved `autorenew-scan:*` row is
+        a deterministic recovery identity and must be adopted rather than ignored.
         """
 
+        conn = self.database._require_conn()
         clean = str(scan_id or "").strip()
-        if not clean:
-            return None
-        row = self.database._require_conn().execute(
-            "SELECT status FROM discovery_scans WHERE scan_id=?",
-            (clean,),
-        ).fetchone()
-        if row is None:
-            return None
-        return clean if str(row[0]) in {"running", "ambiguous"} else None
+        if clean:
+            row = conn.execute(
+                "SELECT status FROM discovery_scans WHERE scan_id=?",
+                (clean,),
+            ).fetchone()
+            if row is not None and str(row[0]) in {"running", "ambiguous"}:
+                return clean
+
+        rows = conn.execute(
+            """SELECT scan_id FROM discovery_scans
+               WHERE status IN ('running','ambiguous')
+                 AND scan_id LIKE 'autorenew-scan:%'
+               ORDER BY id DESC LIMIT 2"""
+        ).fetchall()
+        if len(rows) > 1:
+            raise V2DatabaseError(
+                "Multiple unresolved asteroid autorenew discovery scans require manual reconciliation"
+            )
+        return str(rows[0][0]) if rows else None
 
     def record_scan_observations(
         self,
