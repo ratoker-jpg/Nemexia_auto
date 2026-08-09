@@ -113,6 +113,21 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
             raise RuntimeError("V2 controlled discovery scan is unavailable")
         return self._discovery_scan
 
+    def _require_discovery_navigation_clear(self) -> None:
+        """Block discovery entrypoints before readiness can mutate browser context."""
+
+        navigation = self._navigation_coordinator
+        unresolved_reader = getattr(navigation, "unresolved", None)
+        unresolved = tuple(unresolved_reader()) if callable(unresolved_reader) else ()
+        if unresolved:
+            first = unresolved[0]
+            request_id = str(getattr(first, "request_id", "unknown"))
+            status = str(getattr(first, "status", "unresolved"))
+            raise RuntimeError(
+                f"Discovery blocked by unresolved navigation {request_id} ({status}); "
+                "zero new browser mutations attempted"
+            )
+
     def discovery_scan(self, scan_id: str) -> DiscoveryScanRecord | None:
         return self._require_discovery_scan().repository.read(str(scan_id))
 
@@ -125,16 +140,19 @@ class DebrisEnabledApplicationContextWithReadiness(DebrisEnabledApplicationConte
         scan_id: str,
         planet_coord: str | None = None,
     ) -> DiscoveryScanRecord:
-        """Prepare owned planet + galaxy page, then persist a fresh 3×40 cursor."""
+        """Gate unresolved navigation before any owned-planet/page preparation."""
 
+        service = self._require_discovery_scan()
+        self._require_discovery_navigation_clear()
         self.ensure_galaxy_ready(planet_coord=planet_coord)
-        return self._require_discovery_scan().start(
+        return service.start(
             scan_id=str(scan_id),
             planet_coord=planet_coord,
         )
 
     def resume_discovery_scan(self, scan_id: str) -> DiscoveryScanRecord:
         service = self._require_discovery_scan()
+        self._require_discovery_navigation_clear()
         scan = service.repository.read(str(scan_id))
         if scan is None:
             raise RuntimeError(f"Discovery scan not found: {scan_id}")
