@@ -98,3 +98,7 @@ jobs:
       - name: Run side-by-side release smoke from installed venv
         shell: cmd
         run: .venv\Scripts\python.exe ci\release_side_by_side_smoke.py
+
+      - name: Run explicit legacy fallback smoke
+        shell: cmd
+        run: .venv\Scripts\python.exe ci\release_fallback_smoke.py
