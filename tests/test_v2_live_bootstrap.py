@@ -73,11 +73,11 @@ def test_qt_bootstrap_wires_isolated_settings_spy_recon_asteroid_and_debris_cont
     assert "V2SettingsRepository(database)" in source
     assert "LegacySettingsImporter" in source
     assert 'preferred_port=settings.get("cdp_port")' in source
-    assert "V2SpyCdpBackend" in source
+    assert "V2SpyCdpBackendNoAutoReconnect" in source
     assert "SpyActionService" in source
     assert "V2ReconRepository(database)" in source
     assert "recon.import_legacy_targets(legacy)" in source
-    assert "DebrisEnabledApplicationContext(" in source
+    assert "DebrisEnabledApplicationContextWithReadiness(" in source
     assert "class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext)" in debris_context
     assert "class AsteroidEnabledApplicationContext(ReconOwnedApplicationContext)" in asteroid_context
     assert "V2BrowserFlightSource" in source and "V2BrowserReportSource" in source
