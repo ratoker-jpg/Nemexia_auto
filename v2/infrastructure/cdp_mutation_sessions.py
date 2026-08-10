@@ -6,6 +6,7 @@ from v2.infrastructure.cdp_discovery_reader import OwnedDiscoveryReadMixin
 from v2.infrastructure.cdp_galaxy_navigation import VerifiedGalaxyNavigationMixin
 from v2.infrastructure.cdp_navigation_backend import V2NavigationCdpBackend
 from v2.infrastructure.cdp_raid_backend import V2RaidCdpBackend
+from v2.infrastructure.cdp_rest_mode_reader import OwnedRestModeReadMixin
 from v2.infrastructure.cdp_spy_backend import V2SpyCdpBackend
 
 
@@ -50,10 +51,11 @@ class V2NavigationCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2NavigationC
 class V2AutomaticReconCdpBackendNoAutoReconnect(
     _NoAutoReconnectMixin,
     OwnedDiscoveryReadMixin,
+    OwnedRestModeReadMixin,
     VerifiedGalaxyNavigationMixin,
     V2AutomaticReconCdpBackend,
 ):
-    """Shared AUTO-07/AUTO-09/AUTO-10 single-page backend with auto_reconnect=False."""
+    """Shared AUTO-07/AUTO-09/AUTO-10/AUTO-12 page owner with auto_reconnect=False."""
 
 
 class V2RaidCdpBackendNoAutoReconnect(_NoAutoReconnectMixin, V2RaidCdpBackend):
