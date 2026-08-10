@@ -62,7 +62,18 @@ class RestModeApplicationContext(AsteroidAutorenewApplicationContext):
             )
             return RestModeCycleResult(blocked)
 
-        result = service.tick(now=now, force=force)
+        try:
+            result = service.tick(now=now, force=force)
+        except Exception:
+            # The service cycle lock has unwound before the exception reaches this
+            # boundary, so it is safe to disarm/release without racing page work.
+            try:
+                service.stop(
+                    detail="Unexpected Rest Mode tick failure; explicit Start required"
+                )
+            finally:
+                self.release_automation_cycle(REST_MODE_OWNER)
+            raise
         if not result.state.armed:
             # tick() returned only after its cycle lock was released, so releasing
             # the process-level owner here cannot race with more Rest Mode page work.
