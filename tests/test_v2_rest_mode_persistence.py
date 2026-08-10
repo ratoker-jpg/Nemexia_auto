@@ -51,8 +51,15 @@ def test_rest_mode_component_schema_is_versioned_and_startup_is_disarmed(tmp_pat
     assert state.last_activity_minutes == 20
     assert state.attack_watch_state == REST_MODE_ATTACK_UNVERIFIED
     assert "explicit Start required" in state.detail
-    assert "rest_mode_schema_migrations" in reopened.table_names()
-    assert "rest_mode_state" in reopened.table_names()
+
+    tables = {
+        str(row[0])
+        for row in reopened._require_conn().execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert "rest_mode_schema_migrations" in tables
+    assert "rest_mode_state" in tables
     reopened.close()
 
 
