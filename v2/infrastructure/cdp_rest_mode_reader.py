@@ -4,7 +4,11 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from v2.application.rest_mode import RestModeObservation, RestModeReadError
+from v2.application.rest_mode import (
+    RestModeIdentityError,
+    RestModeObservation,
+    RestModeReadError,
+)
 from v2.infrastructure.cdp_read_backend import CdpReadError
 
 
@@ -29,15 +33,15 @@ class OwnedRestModeReadMixin:
         identity = await self._read_browser_identity()
         current = identity.current_planet
         if identity.session.server_host != str(expected_server_host):
-            raise RestModeReadError("Rest Mode server host changed before read")
+            raise RestModeIdentityError("Rest Mode server host changed before read")
         if identity.account.ownership_fingerprint != str(expected_account_fingerprint):
-            raise RestModeReadError("Rest Mode account fingerprint changed before read")
+            raise RestModeIdentityError("Rest Mode account fingerprint changed before read")
         if (
             current is None
             or current.planet_id != str(expected_planet_id)
             or current.coord != str(expected_coord)
         ):
-            raise RestModeReadError("Rest Mode PlanetIdentity changed before read")
+            raise RestModeIdentityError("Rest Mode PlanetIdentity changed before read")
 
         path = (urlsplit(str(page.url)).path or "").casefold()
         if not path.endswith("/fleets.php"):
@@ -104,7 +108,11 @@ class OwnedRestModeReadMixin:
         try:
             final_identity = await self._read_browser_identity()
         except CdpReadError as exc:
-            raise RestModeReadError(str(exc)) from exc
+            detail = str(exc) or exc.__class__.__name__
+            folded = detail.casefold()
+            if "captcha" in folded or "защита от автоматических действий" in folded:
+                raise RestModeReadError(f"CAPTCHA = STOP: {detail}") from exc
+            raise RestModeReadError(detail) from exc
         final = final_identity.current_planet
         if (
             final_identity.session.server_host != str(expected_server_host)
@@ -113,7 +121,7 @@ class OwnedRestModeReadMixin:
             or final.planet_id != str(expected_planet_id)
             or final.coord != str(expected_coord)
         ):
-            raise RestModeReadError("Rest Mode identity changed during read")
+            raise RestModeIdentityError("Rest Mode identity changed during read")
 
         return RestModeObservation(
             observed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
