@@ -140,6 +140,28 @@ class RestModeService:
                 "AccountContext / PlanetIdentity changed while Rest Mode was active; explicit Start required"
             )
 
+    @staticmethod
+    def _looks_like_browser_loss(detail: str) -> bool:
+        folded = str(detail).casefold()
+        return any(
+            token in folded
+            for token in (
+                "browser",
+                "cdp",
+                "session was lost",
+                "session loss",
+                "tab closed",
+                "bound tab",
+                "bound nemexia",
+                "привязанная nemexia-вкладка потеряна",
+                "привязанная вкладка",
+                "вкладку закры",
+                "авторизованную nemexia-вкладку",
+                "login",
+                "logged out",
+            )
+        )
+
     def _block_for_exception(self, exc: Exception) -> RestModeState:
         detail = str(exc) or exc.__class__.__name__
         unresolved = self._unresolved_navigation()
@@ -151,11 +173,17 @@ class RestModeService:
                 blocking_navigation_request_id=str(getattr(first, "request_id", "unknown")),
             )
         folded = detail.casefold()
-        if "captcha" in folded or "botcheck" in folded or "humans only" in folded:
+        if (
+            "captcha" in folded
+            or "botcheck" in folded
+            or "humans only" in folded
+            or "защита от автоматических действий" in folded
+            or "я не робот" in folded
+        ):
             return self.repository.block(status="CAPTCHA_REQUIRED", detail=detail)
         if isinstance(exc, RestModeIdentityError):
             return self.repository.block(status="BLOCKED_IDENTITY", detail=detail)
-        if isinstance(exc, BrowserReadinessError):
+        if isinstance(exc, BrowserReadinessError) or self._looks_like_browser_loss(detail):
             return self.repository.block(status="BLOCKED_BROWSER", detail=detail)
         if isinstance(exc, RestModeReadError):
             return self.repository.block(status="ERROR", detail=detail)
