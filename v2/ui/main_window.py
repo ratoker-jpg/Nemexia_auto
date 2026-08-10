@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from v2.application.context import V2ApplicationContext
 from v2.infrastructure.qt_autorenew_driver import QtAsteroidAutorenewDriver
+from v2.infrastructure.qt_rest_mode_driver import QtRestModeDriver
 from v2.runtime_paths import RuntimePaths
 from v2.ui.browser_readiness_panel import BrowserReadinessPanel
 from v2.ui.components import StatusPill
@@ -259,6 +260,14 @@ def run_qt_app(runtime_paths: RuntimePaths, context: V2ApplicationContext) -> in
     window._asteroid_autorenew_driver = autorenew_driver
     app.aboutToQuit.connect(autorenew_driver.stop)
     autorenew_driver.start()
+
+    # AUTO-12 is also disarmed at process startup. This runtime-only driver can
+    # tick an explicitly armed typed Rest Mode session but exposes no UI controls;
+    # visible Start/Stop/status belong to the separate AUTO-12B UI-only PR.
+    rest_mode_driver = QtRestModeDriver(context, parent=window)
+    window._rest_mode_driver = rest_mode_driver
+    app.aboutToQuit.connect(rest_mode_driver.stop)
+    rest_mode_driver.start()
 
     window.show()
     return app.exec()
