@@ -2,6 +2,10 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from v2.application.rest_mode import RestModeReadError
+from v2.infrastructure.cdp_read_backend import CdpReadError
 from v2.infrastructure.cdp_rest_mode_reader import (
     _ACTIVITY_RE,
     _evaluation_failure_detail,
@@ -87,3 +91,32 @@ def test_evaluation_failure_retains_and_tags_browser_context_loss() -> None:
     parser_bug = _evaluation_failure_detail(RuntimeError("ReferenceError: timerProbe is not defined"))
     assert parser_bug.startswith("Rest Mode observation evaluation failed")
     assert "Browser/session loss" not in parser_bug
+
+
+def test_wrapped_identity_read_preserves_closed_page_browser_loss_cause() -> None:
+    class Reader(OwnedRestModeReadMixin):
+        async def _existing_bound_page(self):
+            return SimpleNamespace(url="https://game.ares.nemexia.com/fleets.php")
+
+        async def _read_browser_identity(self):
+            try:
+                raise RuntimeError("Target page, context or browser has been closed")
+            except RuntimeError as cause:
+                raise CdpReadError(
+                    "Не удалось прочитать BrowserSession/AccountContext/PlanetIdentity"
+                ) from cause
+
+    with pytest.raises(RestModeReadError) as exc_info:
+        asyncio.run(
+            Reader()._read_rest_mode_observation(
+                expected_server_host="game.ares.nemexia.com",
+                expected_account_fingerprint="account-a",
+                expected_planet_id="17",
+                expected_coord="3:39:11",
+            )
+        )
+
+    detail = str(exc_info.value)
+    assert detail.startswith("Browser/session loss during Rest Mode identity read")
+    assert "Target page, context or browser has been closed" in detail
+    assert "Не удалось прочитать BrowserSession/AccountContext/PlanetIdentity" in detail
