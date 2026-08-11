@@ -63,7 +63,7 @@ def test_rest_mode_component_schema_is_versioned_and_startup_is_disarmed(tmp_pat
     reopened.close()
 
 
-def test_same_identity_preserves_warning_dedupe_but_new_identity_resets_it(tmp_path) -> None:
+def test_same_identity_preserves_observation_dedupe_but_new_identity_clears_it(tmp_path) -> None:
     db = V2Database(tmp_path / "v2.sqlite3")
     repo = RestModeRepository(db)
     repo.begin_start(
@@ -95,6 +95,8 @@ def test_same_identity_preserves_warning_dedupe_but_new_identity_resets_it(tmp_p
     )
     assert same.activity_epoch == 4
     assert same.activity_warning_sent is True
+    assert same.last_success_at == _iso()
+    assert same.last_activity_minutes == 15
 
     changed = repo.begin_start(
         session_id="third",
@@ -106,4 +108,15 @@ def test_same_identity_preserves_warning_dedupe_but_new_identity_resets_it(tmp_p
     )
     assert changed.activity_epoch == 0
     assert changed.activity_warning_sent is False
+    assert changed.last_success_at is None
+    assert changed.last_activity_minutes is None
+
+    failed_new_identity = repo.block(
+        status="BLOCKED_BROWSER",
+        detail="New planet readiness failed",
+    )
+    assert failed_new_identity.planet_id == "18"
+    assert failed_new_identity.planet_coord == "3:39:12"
+    assert failed_new_identity.last_success_at is None
+    assert failed_new_identity.last_activity_minutes is None
     db.close()
