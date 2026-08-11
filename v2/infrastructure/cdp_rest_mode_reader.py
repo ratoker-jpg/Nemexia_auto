@@ -18,6 +18,12 @@ _ACTIVITY_RE = re.compile(
 )
 
 
+def _is_bot_check_url(url: str) -> bool:
+    """Recognize the proven game protection route without requiring page DOM."""
+
+    return (urlsplit(str(url)).path or "").casefold().endswith("/bot_check.php")
+
+
 class OwnedRestModeReadMixin:
     """Read activity/CAPTCHA facts only from NavigationCoordinator's bound page."""
 
@@ -30,6 +36,19 @@ class OwnedRestModeReadMixin:
         expected_coord: str,
     ) -> RestModeObservation:
         page = await self._existing_bound_page()
+        page_url = str(page.url)
+
+        # The approved AUTO-12 contract recognizes bot_check.php as affirmative
+        # CAPTCHA/protection evidence. Check it before identity or fleets DOM reads:
+        # the protection page may intentionally have no planet selector to prove.
+        if _is_bot_check_url(page_url):
+            return RestModeObservation(
+                observed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                activity_minutes=0,
+                captcha_required=True,
+                detail="CAPTCHA / bot-check detected from coordinator-owned bot_check.php URL",
+            )
+
         identity = await self._read_browser_identity()
         current = identity.current_planet
         if identity.session.server_host != str(expected_server_host):
@@ -43,7 +62,7 @@ class OwnedRestModeReadMixin:
         ):
             raise RestModeIdentityError("Rest Mode PlanetIdentity changed before read")
 
-        path = (urlsplit(str(page.url)).path or "").casefold()
+        path = (urlsplit(page_url).path or "").casefold()
         if not path.endswith("/fleets.php"):
             raise RestModeReadError("Rest Mode reader requires verified fleets.php")
 
@@ -94,7 +113,10 @@ class OwnedRestModeReadMixin:
                 }"""
             )
         except Exception as exc:
-            raise RestModeReadError("Не удалось прочитать Rest Mode observation") from exc
+            # Preserve the underlying Playwright/CDP diagnostic. RestModeService
+            # needs it to distinguish tab/session/context loss from a parser error.
+            detail = str(exc) or exc.__class__.__name__
+            raise RestModeReadError(f"Rest Mode observation evaluation failed: {detail}") from exc
 
         if bool(raw.get("captcha_present")):
             return RestModeObservation(
