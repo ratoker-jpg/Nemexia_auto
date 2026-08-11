@@ -171,11 +171,17 @@ class RestModeService:
     @staticmethod
     def _looks_like_captcha(detail: str) -> bool:
         folded = str(detail).casefold()
+        # Only affirmative protection evidence may become CAPTCHA_REQUIRED.
+        # Incidental diagnostic mentions such as "raw BOT_CHECK units ignored"
+        # are parser evidence and must remain ERROR rather than a false CAPTCHA.
         return any(
             token in folded
             for token in (
-                "captcha",
-                "botcheck",
+                "captcha = stop",
+                "captcha / bot-check detected",
+                "captcha detected",
+                "captcha обнаружена",
+                "bot-check detected",
                 "humans only",
                 "защита от автоматических действий",
                 "я не робот",
