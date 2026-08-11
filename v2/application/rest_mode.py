@@ -291,6 +291,13 @@ class RestModeService:
             expected_planet_id=expected.planet_id,
             expected_coord=expected.planet_coord,
         )
+        # CAPTCHA/protection pages can intentionally remove the selected-planet DOM.
+        # Once the coordinator-owned reader has positively identified CAPTCHA, persist
+        # that STOP signal immediately instead of letting a final identity read mask it
+        # as BLOCKED_IDENTITY. Normal successful observations still require the final
+        # identity proof below before they can update the countdown/warning state.
+        if observation.captcha_required:
+            return self._apply_observation(observation, now=now)
         final = self.navigation.observe()
         self._require_same_identity(final, expected)
         return self._apply_observation(observation, now=now)
