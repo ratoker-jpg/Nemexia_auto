@@ -41,6 +41,17 @@ class QtRestModeDriver:
         self._last_driver_notice_key = ""
 
     def start(self) -> None:
+        # RestModeService construction has already forced persisted armed state to
+        # DISARMED on process startup while preserving warning dedupe evidence. Seed
+        # the in-memory notification key before the first poll so an already-notified
+        # same-identity epoch is not re-announced merely because the process restarted.
+        state_reader = getattr(self.context, "rest_mode_state", None)
+        if callable(state_reader):
+            try:
+                self._prime_activity_notice_dedupe(state_reader())
+            except Exception:
+                # Notification dedupe startup must never change browser safety state.
+                pass
         self.timer.start()
 
     def stop(self) -> None:
@@ -92,6 +103,23 @@ class QtRestModeDriver:
             )
         )
 
+    @classmethod
+    def _activity_notice_key(cls, state: Any) -> str:
+        return (
+            f"activity:{cls._identity_notice_key(state)}:"
+            f"{int(getattr(state, 'activity_epoch', 0))}"
+        )
+
+    def _prime_activity_notice_dedupe(self, state: Any) -> None:
+        """Recover persisted warning dedupe without emitting a startup notification."""
+
+        if state is None or not bool(getattr(state, "activity_warning_sent", False)):
+            return
+        identity_key = self._identity_notice_key(state)
+        if not identity_key.strip(":"):
+            return
+        self._last_activity_notice_key = self._activity_notice_key(state)
+
     def _notify_state(self, state: Any) -> None:
         """Surface persisted Start/tick outcomes even when this driver did not create them."""
 
@@ -110,7 +138,7 @@ class QtRestModeDriver:
         ):
             self._notify_once(
                 "activity",
-                f"activity:{identity_key}:{int(getattr(state, 'activity_epoch', 0))}",
+                self._activity_notice_key(state),
                 "Nemexia · проверка активности",
                 f"До автоматической проверки активности осталось "
                 f"{int(state.last_activity_minutes)} мин.",
