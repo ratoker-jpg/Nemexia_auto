@@ -12,13 +12,17 @@ DEBRIS_CONTEXT = (ROOT / "v2" / "application" / "debris_context.py").read_text(e
 AUTORENEW_CONTEXT = (
     ROOT / "v2" / "application" / "asteroid_autorenew_context.py"
 ).read_text(encoding="utf-8")
+REST_CONTEXT = (
+    ROOT / "v2" / "application" / "rest_mode_context.py"
+).read_text(encoding="utf-8")
 
 
 def test_qt_preview_bootstraps_through_isolated_v2_and_readonly_legacy_context() -> None:
     assert "with V2ProductionSession(paths, build_context) as context:" in APP_QT
     assert "V2Database(paths.database)" in APP_QT
     assert "LegacySettingsImporter" in APP_QT
-    assert "AsteroidAutorenewApplicationContext(" in APP_QT
+    assert "RestModeApplicationContext(" in APP_QT
+    assert "class RestModeApplicationContext(AsteroidAutorenewApplicationContext)" in REST_CONTEXT
     assert "class AsteroidAutorenewApplicationContext(DebrisEnabledApplicationContextWithReadiness)" in AUTORENEW_CONTEXT
     assert "class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext)" in DEBRIS_CONTEXT
     assert "class AsteroidEnabledApplicationContext(ReconOwnedApplicationContext)" in ASTEROID_CONTEXT

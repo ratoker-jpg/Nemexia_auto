@@ -4,11 +4,11 @@ import sys
 
 from v2.application.asteroid_actions import AsteroidActionService
 from v2.application.asteroid_autorenew import AsteroidAutorenewService
-from v2.application.asteroid_autorenew_context import AsteroidAutorenewApplicationContext
 from v2.application.asteroid_repository import V2AsteroidRepository
 from v2.application.asteroid_source import V2AsteroidSource
 from v2.application.automatic_recon import AutomaticReconService
 from v2.application.browser_read_service import V2BrowserFlightSource
+from v2.application.browser_readiness import BrowserReadinessManager
 from v2.application.context import V2ApplicationContext
 from v2.application.debris_repository import V2DebrisRepository
 from v2.application.debris_source import V2DebrisSource
@@ -20,6 +20,8 @@ from v2.application.raid_actions import RaidActionService
 from v2.application.read_store import ReadOnlyStore, ReadStoreUnavailable
 from v2.application.recon_repository import V2ReconRepository
 from v2.application.report_source import V2BrowserReportSource
+from v2.application.rest_mode import RestModeService
+from v2.application.rest_mode_context import RestModeApplicationContext
 from v2.application.spy_actions import SpyActionService
 from v2.application.v2_queue import V2QueueRepository
 from v2.application.v2_settings import V2SettingsRepository
@@ -37,6 +39,7 @@ from v2.persistence.automatic_recon_journal import AutomaticReconJournalReposito
 from v2.persistence.database import V2Database
 from v2.persistence.discovery_scan import DiscoveryScanRepository
 from v2.persistence.navigation_journal import NavigationJournalRepository
+from v2.persistence.rest_mode import RestModeRepository
 from v2.release_lifecycle import ReleaseLifecycleError, V2ProductionSession
 from v2.runtime_paths import RuntimePaths, build_runtime_paths, ensure_runtime_paths
 
@@ -108,7 +111,13 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             asteroid_actions=asteroid_actions,
             captcha_probe=asteroid_backend,
         )
-        return AsteroidAutorenewApplicationContext(
+        rest_mode = RestModeService(
+            repository=RestModeRepository(database),
+            navigation=navigation,
+            readiness=BrowserReadinessManager(navigation),
+            browser=navigation_backend,
+        )
+        return RestModeApplicationContext(
             source_path,
             flight_source=flight_source,
             report_source=report_source,
@@ -125,6 +134,7 @@ def build_context(paths: RuntimePaths) -> V2ApplicationContext:
             automatic_recon=automatic_recon,
             discovery_scan=discovery_scan,
             asteroid_autorenew=asteroid_autorenew,
+            rest_mode=rest_mode,
         )
     except Exception:
         if navigation is not None:

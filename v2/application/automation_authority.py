@@ -5,6 +5,7 @@ import threading
 
 AUTOFARM_OWNER = "autofarm"
 ASTEROID_AUTORENEW_OWNER = "asteroid_autorenew"
+REST_MODE_OWNER = "rest_mode"
 
 
 class AutomationAuthorityError(RuntimeError):
@@ -12,12 +13,12 @@ class AutomationAuthorityError(RuntimeError):
 
 
 class AutomationAuthority:
-    """Single-process owner token for mutually exclusive automatic mutation loops.
+    """Single-process owner token for mutually exclusive automatic browser loops.
 
-    The token is intentionally not persisted: both AutoFarm and asteroid autorenew
-    start disarmed after process restart. Persistent action/navigation journals remain
-    the authority for uncertain remote effects; this object only prevents two live
-    schedulers from competing for the same browser/fleet capacity in one process.
+    The token is intentionally not persisted: AutoFarm, asteroid autorenew and
+    Rest Mode start disarmed after process restart. Persistent action/navigation
+    journals remain the authority for uncertain remote effects; this object only
+    prevents live workflows from competing for the same coordinator-owned page.
     """
 
     def __init__(self) -> None:
@@ -35,7 +36,7 @@ class AutomationAuthority:
         with self._lock:
             if self._owner not in {None, requested}:
                 raise AutomationAuthorityError(
-                    f"Automatic mutation authority is owned by {self._owner}; "
+                    f"Automatic browser authority is owned by {self._owner}; "
                     f"{requested} cannot arm concurrently"
                 )
 
