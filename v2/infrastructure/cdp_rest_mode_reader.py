@@ -61,21 +61,35 @@ class OwnedRestModeReadMixin:
                         'are you human', 'защита от автоматических действий',
                         'humans only', 'я не робот'
                     ].some(value => lower.includes(value));
-                    const rendered=[];
-                    const push=value => {
-                        const text=String(value||'').replace(/\s+/g,' ').trim();
-                        if(text && !rendered.includes(text)) rendered.push(text);
-                    };
-                    push(bodyText);
-                    for(const node of Array.from(document.querySelectorAll('[title],[aria-label],[data-original-title]'))){
-                        push(node.getAttribute('title'));
-                        push(node.getAttribute('aria-label'));
-                        push(node.getAttribute('data-original-title'));
+
+                    // Saved real fleets.php proves this exact visible surface:
+                    // #serverTimeDisplay onmouseover="Tip(getServerTimeTooltip());".
+                    // Do not scan arbitrary tooltip/title attributes: only the
+                    // rendered game-owned server-time anchor can authorize a timer.
+                    const timer=document.querySelector('#serverTimeDisplay');
+                    const style=timer ? window.getComputedStyle(timer) : null;
+                    const rect=timer ? timer.getBoundingClientRect() : null;
+                    const timerVisible=!!timer && !!style && !!rect
+                        && style.display !== 'none'
+                        && style.visibility !== 'hidden'
+                        && Number(style.opacity || '1') > 0
+                        && rect.width > 0 && rect.height > 0;
+                    const timerHook=(timer?.getAttribute('onmouseover')||'').includes('getServerTimeTooltip');
+                    let activityTooltip='';
+                    if(timerVisible && timerHook && typeof window.getServerTimeTooltip === 'function'){
+                        try {
+                            activityTooltip=String(window.getServerTimeTooltip()||'')
+                                .replace(/\s+/g,' ').trim();
+                        } catch (_) {
+                            activityTooltip='';
+                        }
                     }
                     return {
                         page_url:location.href,
                         captcha_present:captcha,
-                        rendered_texts:rendered
+                        timer_visible:timerVisible,
+                        timer_hook:timerHook,
+                        activity_tooltip:activityTooltip
                     };
                 }"""
             )
@@ -90,20 +104,21 @@ class OwnedRestModeReadMixin:
                 detail="CAPTCHA / bot-check detected on coordinator-owned page",
             )
 
-        activity_minutes: int | None = None
-        evidence = ""
-        for text in raw.get("rendered_texts") or ():
-            match = _ACTIVITY_RE.search(str(text))
-            if match is None:
-                continue
-            activity_minutes = int(match.group(1))
-            evidence = match.group(0)
-            break
-        if activity_minutes is None:
+        if not bool(raw.get("timer_visible")) or not bool(raw.get("timer_hook")):
             raise RestModeReadError(
-                "Activity timer is not proven by rendered 'Автоматический режим проверки через N мин.' evidence; "
+                "Activity timer surface #serverTimeDisplay is missing, hidden, or no longer bound to "
+                "getServerTimeTooltip(); fail-closed"
+            )
+        tooltip = str(raw.get("activity_tooltip") or "")
+        match = _ACTIVITY_RE.search(tooltip)
+        if match is None:
+            raise RestModeReadError(
+                "Activity timer is not proven by visible #serverTimeDisplay / getServerTimeTooltip() "
+                "human-readable 'Автоматический режим проверки через N мин.' evidence; "
                 "raw BOT_CHECK units are intentionally ignored"
             )
+        activity_minutes = int(match.group(1))
+        evidence = match.group(0)
 
         try:
             final_identity = await self._read_browser_identity()
