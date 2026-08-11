@@ -197,8 +197,8 @@ class RestModeRepository:
             conn.execute(
                 """UPDATE rest_mode_state SET
                     armed=0,status='STARTING',session_id=?,server_host=?,account_fingerprint=?,
-                    planet_id=?,planet_coord=?,started_at=?,next_check_at=NULL,
-                    activity_epoch=?,activity_warning_sent=?,attack_watch_state=?,
+                    planet_id=?,planet_coord=?,started_at=?,last_success_at=?,next_check_at=NULL,
+                    last_activity_minutes=?,activity_epoch=?,activity_warning_sent=?,attack_watch_state=?,
                     last_error='',blocking_navigation_request_id='',detail='',updated_at=?
                    WHERE singleton_id=1""",
                 (
@@ -208,6 +208,8 @@ class RestModeRepository:
                     str(planet_id),
                     str(planet_coord),
                     str(started_at),
+                    previous.last_success_at if same_identity else None,
+                    previous.last_activity_minutes if same_identity else None,
                     previous.activity_epoch if same_identity else 0,
                     1 if (same_identity and previous.activity_warning_sent) else 0,
                     REST_MODE_ATTACK_UNVERIFIED,
