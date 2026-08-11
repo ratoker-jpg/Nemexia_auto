@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 import pytest
 
 from v2.application.automation_authority import (
+    ASTEROID_AUTORENEW_OWNER,
     AUTOFARM_OWNER,
     REST_MODE_OWNER,
     AutomationAuthority,
+    AutomationAuthorityError,
 )
-from v2.application.rest_mode import RestModeCycleResult
+from v2.application.rest_mode import RestModeCycleResult, RestModeError
 from v2.application.rest_mode_context import RestModeApplicationContext
 from v2.persistence.rest_mode import REST_MODE_ATTACK_UNVERIFIED, RestModeState
 
@@ -42,16 +44,18 @@ def _state(*, armed: bool, status: str) -> RestModeState:
 
 class FakeRestMode:
     def __init__(self, start_state=None, tick_state=None) -> None:
-        self.current = start_state or _state(armed=False, status="DISARMED")
+        self.current = _state(armed=False, status="DISARMED")
         self.start_state = start_state or _state(armed=True, status="WATCHING")
         self.tick_state = tick_state or self.start_state
         self.context = None
         self.stop_owner_during_call = None
+        self.start_calls = 0
 
     def state(self):
         return self.current
 
     def start(self, **_kwargs):
+        self.start_calls += 1
         self.current = self.start_state
         return RestModeCycleResult(self.current)
 
@@ -90,7 +94,28 @@ def test_start_holds_rest_mode_authority_only_while_armed() -> None:
     assert context.automation_cycle_owner() is None
 
 
-def test_failed_or_blocked_start_releases_any_acquired_rest_authority() -> None:
+def test_duplicate_start_fails_without_releasing_existing_rest_authority() -> None:
+    service = FakeRestMode(start_state=_state(armed=True, status="WATCHING"))
+    context = _context(service)
+
+    first = context.start_rest_mode()
+    assert first.state.armed is True
+    assert service.start_calls == 1
+    assert context.automation_cycle_owner() == REST_MODE_OWNER
+
+    with pytest.raises(RestModeError, match="already armed"):
+        context.start_rest_mode()
+
+    assert service.start_calls == 1
+    assert context.automation_cycle_owner() == REST_MODE_OWNER
+    with pytest.raises(AutomationAuthorityError):
+        context.acquire_automation_cycle(AUTOFARM_OWNER)
+    with pytest.raises(AutomationAuthorityError):
+        context.acquire_automation_cycle(ASTEROID_AUTORENEW_OWNER)
+    assert context.automation_cycle_owner() == REST_MODE_OWNER
+
+
+def test_failed_or_blocked_start_releases_any_authority_acquired_by_that_call() -> None:
     service = FakeRestMode(start_state=_state(armed=False, status="CAPTCHA_REQUIRED"))
     context = _context(service)
     result = context.start_rest_mode()
