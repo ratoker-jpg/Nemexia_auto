@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -13,7 +14,11 @@ from v2.application.browser_identity import (
 from v2.application.navigation import NavigationObservation, NavigationPageState
 from v2.application.rest_mode import RestModeObservation, RestModeService
 from v2.persistence.database import V2Database
-from v2.persistence.rest_mode import RestModeRepository
+from v2.persistence.rest_mode import (
+    REST_MODE_ATTACK_UNVERIFIED,
+    RestModeRepository,
+    RestModeState,
+)
 
 
 NOW = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
@@ -102,6 +107,140 @@ class FakeBrowser:
         if isinstance(value, RestModeObservation):
             return value
         return RestModeObservation(NOW.isoformat(), int(value), detail=f"{value} min")
+
+
+class ThreadSafeRestModeRepositoryDouble:
+    """Concurrency-only state double; deliberately not a SQLite owner.
+
+    Real RestModeRepository/V2Database tests stay on the creating test thread.
+    This double lets lock/stop ordering be exercised with actual RestModeService
+    without transferring a sqlite3.Connection across worker threads.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self.current = RestModeState(
+            armed=False,
+            status="DISARMED",
+            session_id="",
+            server_host="",
+            account_fingerprint="",
+            planet_id="",
+            planet_coord="",
+            started_at=None,
+            last_success_at=None,
+            next_check_at=None,
+            last_activity_minutes=None,
+            activity_epoch=0,
+            activity_warning_sent=False,
+            attack_watch_state=REST_MODE_ATTACK_UNVERIFIED,
+            last_error="",
+            blocking_navigation_request_id="",
+            detail="",
+            updated_at=NOW.isoformat(),
+        )
+
+    def _set(self, **changes) -> RestModeState:
+        self.current = replace(self.current, updated_at=NOW.isoformat(), **changes)
+        return self.current
+
+    def read(self) -> RestModeState:
+        with self._lock:
+            return self.current
+
+    def disarm_on_startup(self) -> RestModeState:
+        with self._lock:
+            if not self.current.armed and self.current.status == "DISARMED":
+                return self.current
+            return self._set(armed=False, status="DISARMED", next_check_at=None)
+
+    def begin_start(
+        self,
+        *,
+        session_id: str,
+        server_host: str,
+        account_fingerprint: str,
+        planet_id: str,
+        planet_coord: str,
+        started_at: str,
+    ) -> RestModeState:
+        with self._lock:
+            same_identity = (
+                self.current.server_host == server_host
+                and self.current.account_fingerprint == account_fingerprint
+                and self.current.planet_id == planet_id
+                and self.current.planet_coord == planet_coord
+            )
+            return self._set(
+                armed=False,
+                status="STARTING",
+                session_id=session_id,
+                server_host=server_host,
+                account_fingerprint=account_fingerprint,
+                planet_id=planet_id,
+                planet_coord=planet_coord,
+                started_at=started_at,
+                next_check_at=None,
+                activity_epoch=self.current.activity_epoch if same_identity else 0,
+                activity_warning_sent=(self.current.activity_warning_sent if same_identity else False),
+                attack_watch_state=REST_MODE_ATTACK_UNVERIFIED,
+                last_error="",
+                blocking_navigation_request_id="",
+                detail="",
+            )
+
+    def save_observation(
+        self,
+        *,
+        status: str,
+        armed: bool,
+        activity_minutes: int,
+        activity_epoch: int,
+        warning_sent: bool,
+        observed_at: str,
+        next_check_at: str | None,
+        detail: str = "",
+    ) -> RestModeState:
+        with self._lock:
+            return self._set(
+                armed=armed,
+                status=status,
+                last_success_at=observed_at,
+                next_check_at=next_check_at,
+                last_activity_minutes=activity_minutes,
+                activity_epoch=activity_epoch,
+                activity_warning_sent=warning_sent,
+                attack_watch_state=REST_MODE_ATTACK_UNVERIFIED,
+                last_error="",
+                blocking_navigation_request_id="",
+                detail=detail,
+            )
+
+    def block(
+        self,
+        *,
+        status: str,
+        detail: str,
+        blocking_navigation_request_id: str = "",
+    ) -> RestModeState:
+        with self._lock:
+            return self._set(
+                armed=False,
+                status=status,
+                next_check_at=None,
+                last_error=detail,
+                blocking_navigation_request_id=blocking_navigation_request_id,
+                detail=detail,
+            )
+
+    def stop(self, *, detail: str = "Stopped by operator") -> RestModeState:
+        with self._lock:
+            return self._set(
+                armed=False,
+                status="DISARMED",
+                next_check_at=None,
+                detail=detail,
+            )
 
 
 def _service(tmp_path, *, navigation=None, readiness=None, browser=None):
@@ -212,42 +351,68 @@ def test_bound_browser_loss_is_blocked_browser(tmp_path) -> None:
     db.close()
 
 
-def test_stop_waits_until_inflight_tick_is_quiescent(tmp_path) -> None:
+def test_stop_intent_blocks_queued_tick_and_drains_active_cycle_without_sqlite_cross_thread() -> None:
     entered = threading.Event()
     release = threading.Event()
+    tick_b_started = threading.Event()
 
     class BlockingBrowser(FakeBrowser):
         def __init__(self):
             super().__init__((60,))
             self.block_next = False
 
-        def read_rest_mode_observation(self, **kwargs):
+        def read_rest_mode_observation(self, **_kwargs):
+            self.calls += 1
             if self.block_next:
                 entered.set()
                 assert release.wait(timeout=3)
                 return RestModeObservation(NOW.isoformat(), 55, detail="55 min")
-            return super().read_rest_mode_observation(**kwargs)
+            value = self.values.pop(0) if self.values else 60
+            return RestModeObservation(NOW.isoformat(), int(value), detail=f"{value} min")
 
     browser = BlockingBrowser()
-    db, service = _service(tmp_path, browser=browser)
+    repository = ThreadSafeRestModeRepositoryDouble()
+    service = RestModeService(
+        repository=repository,
+        navigation=FakeNavigation(),
+        readiness=FakeReadiness(),
+        browser=browser,
+    )
     assert service.start(now=NOW).state.armed is True
+    assert browser.calls == 1
     browser.block_next = True
 
-    tick_thread = threading.Thread(target=lambda: service.tick(now=NOW, force=True))
-    tick_thread.start()
+    tick_results = []
+    tick_a = threading.Thread(
+        target=lambda: tick_results.append(("A", service.tick(now=NOW, force=True)))
+    )
+    tick_a.start()
     assert entered.wait(timeout=2)
+
+    def run_tick_b() -> None:
+        tick_b_started.set()
+        tick_results.append(("B", service.tick(now=NOW, force=True)))
+
+    tick_b = threading.Thread(target=run_tick_b)
+    tick_b.start()
+    assert tick_b_started.wait(timeout=2)
 
     stopped = []
     stop_thread = threading.Thread(target=lambda: stopped.append(service.stop()))
     stop_thread.start()
-    stop_thread.join(timeout=0.1)
-    assert stop_thread.is_alive(), "Stop must wait for the in-flight cycle lock"
+    assert service._stop_requested.wait(timeout=2)
+    assert stop_thread.is_alive(), "Stop must wait for active tick A to drain"
 
     release.set()
-    tick_thread.join(timeout=3)
+    tick_a.join(timeout=3)
+    tick_b.join(timeout=3)
     stop_thread.join(timeout=3)
-    assert not tick_thread.is_alive()
+
+    assert not tick_a.is_alive()
+    assert not tick_b.is_alive()
     assert not stop_thread.is_alive()
+    assert browser.calls == 2, "queued tick B must perform zero browser work after Stop intent"
     assert stopped and stopped[0].armed is False
     assert stopped[0].status == "DISARMED"
-    db.close()
+    assert repository.read().armed is False
+    assert repository.read().status == "DISARMED"
