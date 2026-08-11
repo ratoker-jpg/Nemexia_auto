@@ -24,6 +24,26 @@ def _is_bot_check_url(url: str) -> bool:
     return (urlsplit(str(url)).path or "").casefold().endswith("/bot_check.php")
 
 
+def _evaluation_failure_detail(exc: Exception) -> str:
+    """Retain raw page error while tagging proven browser/context-loss shapes."""
+
+    detail = str(exc) or exc.__class__.__name__
+    folded = detail.casefold()
+    browser_loss = any(
+        token in folded
+        for token in (
+            "execution context was destroyed",
+            "target page, context or browser has been closed",
+            "target page has been closed",
+            "page has been closed",
+            "browser has been closed",
+        )
+    )
+    if browser_loss:
+        return f"Browser/session loss during Rest Mode observation: {detail}"
+    return f"Rest Mode observation evaluation failed: {detail}"
+
+
 class OwnedRestModeReadMixin:
     """Read activity/CAPTCHA facts only from NavigationCoordinator's bound page."""
 
@@ -113,10 +133,9 @@ class OwnedRestModeReadMixin:
                 }"""
             )
         except Exception as exc:
-            # Preserve the underlying Playwright/CDP diagnostic. RestModeService
-            # needs it to distinguish tab/session/context loss from a parser error.
-            detail = str(exc) or exc.__class__.__name__
-            raise RestModeReadError(f"Rest Mode observation evaluation failed: {detail}") from exc
+            # Preserve the underlying Playwright/CDP diagnostic and translate only
+            # known tab/context-loss shapes so the application persists BLOCKED_BROWSER.
+            raise RestModeReadError(_evaluation_failure_detail(exc)) from exc
 
         if bool(raw.get("captcha_present")):
             return RestModeObservation(
