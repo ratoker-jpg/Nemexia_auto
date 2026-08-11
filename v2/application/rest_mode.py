@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from threading import RLock
+from threading import Event, RLock
 from typing import Protocol
 from uuid import uuid4
 
@@ -62,7 +62,12 @@ class _IdentityAnchor:
 
 
 class RestModeService:
-    """Observation-only AUTO-12 service serialized around one coordinator-owned page."""
+    """Observation-only AUTO-12 service serialized around one coordinator-owned page.
+
+    Production calls are made by the Qt/application thread that owns the V2 SQLite
+    connection. The cycle lock/stop intent protect browser-cycle ordering only; they
+    deliberately do not make SQLite transferable across threads.
+    """
 
     def __init__(
         self,
@@ -81,6 +86,7 @@ class RestModeService:
         self.interval_minutes = max(1, int(interval_minutes))
         self.warning_minutes = max(1, int(warning_minutes))
         self._cycle_lock = RLock()
+        self._stop_requested = Event()
         # Persisted armed state is diagnostic evidence only. Construction never
         # resumes browser work without a fresh explicit Start from the operator.
         self.repository.disarm_on_startup()
@@ -163,6 +169,10 @@ class RestModeService:
         )
 
     def _block_for_exception(self, exc: Exception) -> RestModeState:
+        # Any terminal block disarms the current epoch and prevents a queued tick
+        # from starting fresh browser work before the application boundary releases
+        # Rest Mode authority.
+        self._stop_requested.set()
         detail = str(exc) or exc.__class__.__name__
         unresolved = self._unresolved_navigation()
         if unresolved:
@@ -196,6 +206,7 @@ class RestModeService:
         now: datetime,
     ) -> RestModeCycleResult:
         if observation.captcha_required:
+            self._stop_requested.set()
             state = self.repository.block(
                 status="CAPTCHA_REQUIRED",
                 detail=observation.detail or "CAPTCHA = STOP",
@@ -262,6 +273,10 @@ class RestModeService:
             current = self.repository.read()
             if current.armed:
                 raise RestModeError("Rest Mode is already armed")
+            # A completed explicit Stop leaves the intent set so queued ticks remain
+            # harmless. A later explicit Start is the only operation allowed to
+            # begin a fresh Rest Mode epoch and therefore clears that intent here.
+            self._stop_requested.clear()
             moment = self._utc_now(now)
             try:
                 self._require_navigation_clear()
@@ -285,9 +300,14 @@ class RestModeService:
         now: datetime | None = None,
         force: bool = False,
     ) -> RestModeCycleResult:
+        # This pre-lock check rejects ticks submitted after Stop intent is visible.
+        # The second check inside the lock handles a tick that queued before Stop but
+        # only acquired the cycle boundary after Stop was requested.
+        if self._stop_requested.is_set():
+            return RestModeCycleResult(self.repository.read())
         with self._cycle_lock:
             state = self.repository.read()
-            if not state.armed:
+            if not state.armed or self._stop_requested.is_set():
                 return RestModeCycleResult(state)
             moment = self._utc_now(now)
             if not force and state.due_at is not None and moment < state.due_at:
@@ -304,11 +324,16 @@ class RestModeService:
                 return RestModeCycleResult(self._block_for_exception(exc))
 
     def block_busy(self, detail: str) -> RestModeState:
+        self._stop_requested.set()
         with self._cycle_lock:
             return self.repository.block(status="BLOCKED_BUSY", detail=str(detail))
 
     def stop(self, *, detail: str = "Stopped by operator") -> RestModeState:
-        # The lock is the quiesce boundary: a concurrent tick must fully leave
-        # coordinator/page work before Stop can persist disarm and return.
+        # Stop intent is visible before waiting for the critical cycle. An already
+        # active tick may safely drain, but queued/new ticks see the intent and must
+        # perform zero new browser work. Persistence remains on the caller's owning
+        # application thread in production; the lock is not a SQLite thread-safety
+        # mechanism.
+        self._stop_requested.set()
         with self._cycle_lock:
             return self.repository.stop(detail=detail)
