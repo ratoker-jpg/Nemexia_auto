@@ -184,3 +184,62 @@ def test_terminal_notice_does_not_erase_activity_epoch_dedupe() -> None:
     assert len(notices) == 2
     assert notices[0][0] == "Nemexia · проверка активности"
     assert notices[1][0] == "Nemexia · Rest Mode остановлен"
+
+
+def test_driver_start_recovers_persisted_warning_dedupe_before_first_poll() -> None:
+    persisted = _state(
+        status="DISARMED",
+        armed=False,
+        account="account-a",
+        planet_id="17",
+        coord="3:39:11",
+        epoch=4,
+        minutes=18,
+        warning_sent=True,
+        detail="explicit Start required after restart",
+    )
+    same_epoch_after_restart = _state(
+        status="ACTIVITY_WARNING",
+        armed=True,
+        account="account-a",
+        planet_id="17",
+        coord="3:39:11",
+        epoch=4,
+        minutes=15,
+        warning_sent=True,
+    )
+    different_identity_same_epoch = _state(
+        status="ACTIVITY_WARNING",
+        armed=True,
+        account="account-b",
+        planet_id="44",
+        coord="2:10:4",
+        epoch=4,
+        minutes=20,
+        warning_sent=True,
+    )
+
+    class Context:
+        def rest_mode_state(self):
+            return persisted
+
+    class Timer:
+        started = 0
+
+        def start(self):
+            self.started += 1
+
+    notices = []
+    driver = _driver(Context(), notices)
+    driver.timer = Timer()
+
+    driver.start()
+    assert driver.timer.started == 1
+    assert driver._last_activity_notice_key == driver._activity_notice_key(persisted)
+
+    driver._notify_state(same_epoch_after_restart)
+    assert notices == []
+
+    driver._notify_state(different_identity_same_epoch)
+    assert len(notices) == 1
+    assert "20 мин." in notices[0][1]
