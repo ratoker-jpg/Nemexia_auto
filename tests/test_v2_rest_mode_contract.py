@@ -7,6 +7,8 @@ CONTEXT = (ROOT / "v2/application/rest_mode_context.py").read_text(encoding="utf
 READER = (ROOT / "v2/infrastructure/cdp_rest_mode_reader.py").read_text(encoding="utf-8")
 SESSIONS = (ROOT / "v2/infrastructure/cdp_mutation_sessions.py").read_text(encoding="utf-8")
 PERSISTENCE = (ROOT / "v2/persistence/rest_mode.py").read_text(encoding="utf-8")
+DATABASE = (ROOT / "v2/persistence/database.py").read_text(encoding="utf-8")
+DRIVER = (ROOT / "v2/infrastructure/qt_rest_mode_driver.py").read_text(encoding="utf-8")
 APP = (ROOT / "app_qt.py").read_text(encoding="utf-8")
 WINDOW = (ROOT / "v2/ui/main_window.py").read_text(encoding="utf-8")
 
@@ -72,13 +74,31 @@ def test_component_schema_does_not_modify_core_v2_schema_version() -> None:
     assert "SCHEMA_VERSION" not in PERSISTENCE.replace("REST_MODE_SCHEMA_VERSION", "")
 
 
+def test_sqlite_stays_on_owning_qt_application_thread() -> None:
+    assert "check_same_thread=False" not in DATABASE
+    assert "check_same_thread = False" not in DATABASE
+    assert "check_same_thread=False" not in PERSISTENCE
+    assert "QTimer" in DRIVER
+    assert "timer.timeout.connect(self._tick)" in DRIVER
+    for forbidden in ("threading", "ThreadPool", "QThread", "concurrent.futures"):
+        assert forbidden not in DRIVER
+
+
 def test_startup_is_disarmed_and_driver_never_arms_rest_mode() -> None:
-    driver = (ROOT / "v2/infrastructure/qt_rest_mode_driver.py").read_text(encoding="utf-8")
     assert "disarm_on_startup()" in SERVICE
-    assert "rest_mode_state" in driver
-    assert "tick_rest_mode" in driver
-    assert "start_rest_mode" not in driver
-    assert "tick_asteroid_autorenew" not in driver
+    assert "rest_mode_state" in DRIVER
+    assert "tick_rest_mode" in DRIVER
+    assert "start_rest_mode" not in DRIVER
+    assert "tick_asteroid_autorenew" not in DRIVER
+
+
+def test_stop_intent_and_duplicate_start_guards_are_source_locked() -> None:
+    assert "self._stop_requested.set()" in SERVICE
+    assert "if self._stop_requested.is_set():" in SERVICE
+    assert SERVICE.count("if self._stop_requested.is_set()") >= 1
+    assert "if current.armed:" in CONTEXT
+    assert 'raise RestModeError("Rest Mode is already armed")' in CONTEXT
+    assert "acquired_here = False" in CONTEXT
 
 
 def test_runtime_pr_adds_no_visible_rest_mode_controls() -> None:
