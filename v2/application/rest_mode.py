@@ -168,6 +168,26 @@ class RestModeService:
             )
         )
 
+    @staticmethod
+    def _looks_like_captcha(detail: str) -> bool:
+        folded = str(detail).casefold()
+        return any(
+            token in folded
+            for token in (
+                "captcha",
+                "botcheck",
+                "humans only",
+                "защита от автоматических действий",
+                "я не робот",
+            )
+        )
+
+    @staticmethod
+    def _blocking_navigation_request_id(unresolved) -> str:
+        if not unresolved:
+            return ""
+        return str(getattr(unresolved[0], "request_id", "unknown"))
+
     def _block_for_exception(self, exc: Exception) -> RestModeState:
         # Any terminal block disarms the current epoch and prevents a queued tick
         # from starting fresh browser work before the application boundary releases
@@ -175,22 +195,23 @@ class RestModeService:
         self._stop_requested.set()
         detail = str(exc) or exc.__class__.__name__
         unresolved = self._unresolved_navigation()
+        blocking_request_id = self._blocking_navigation_request_id(unresolved)
+
+        # CAPTCHA is the stronger operator-recovery signal even when the navigation
+        # that encountered it is unresolved. Keep that request id as additional
+        # recovery evidence, but never downgrade CAPTCHA to generic ambiguity.
+        if self._looks_like_captcha(detail):
+            return self.repository.block(
+                status="CAPTCHA_REQUIRED",
+                detail=detail,
+                blocking_navigation_request_id=blocking_request_id,
+            )
         if unresolved:
-            first = unresolved[0]
             return self.repository.block(
                 status="BLOCKED_AMBIGUOUS",
                 detail=detail,
-                blocking_navigation_request_id=str(getattr(first, "request_id", "unknown")),
+                blocking_navigation_request_id=blocking_request_id,
             )
-        folded = detail.casefold()
-        if (
-            "captcha" in folded
-            or "botcheck" in folded
-            or "humans only" in folded
-            or "защита от автоматических действий" in folded
-            or "я не робот" in folded
-        ):
-            return self.repository.block(status="CAPTCHA_REQUIRED", detail=detail)
         if isinstance(exc, RestModeIdentityError):
             return self.repository.block(status="BLOCKED_IDENTITY", detail=detail)
         if isinstance(exc, BrowserReadinessError) or self._looks_like_browser_loss(detail):
@@ -207,9 +228,11 @@ class RestModeService:
     ) -> RestModeCycleResult:
         if observation.captcha_required:
             self._stop_requested.set()
+            unresolved = self._unresolved_navigation()
             state = self.repository.block(
                 status="CAPTCHA_REQUIRED",
                 detail=observation.detail or "CAPTCHA = STOP",
+                blocking_navigation_request_id=self._blocking_navigation_request_id(unresolved),
             )
             return RestModeCycleResult(state)
 
