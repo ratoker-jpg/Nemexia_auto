@@ -72,6 +72,9 @@ def test_qt_bootstrap_wires_isolated_settings_spy_recon_asteroid_and_debris_cont
     autorenew_context = (
         root / "v2/application/asteroid_autorenew_context.py"
     ).read_text(encoding="utf-8")
+    rest_context = (
+        root / "v2/application/rest_mode_context.py"
+    ).read_text(encoding="utf-8")
     assert "V2Database(paths.database)" in source
     assert "V2SettingsRepository(database)" in source
     assert "LegacySettingsImporter" in source
@@ -80,7 +83,8 @@ def test_qt_bootstrap_wires_isolated_settings_spy_recon_asteroid_and_debris_cont
     assert "SpyActionService" in source
     assert "V2ReconRepository(database)" in source
     assert "recon.import_legacy_targets(legacy)" in source
-    assert "AsteroidAutorenewApplicationContext(" in source
+    assert "RestModeApplicationContext(" in source
+    assert "class RestModeApplicationContext(AsteroidAutorenewApplicationContext)" in rest_context
     assert "class AsteroidAutorenewApplicationContext(DebrisEnabledApplicationContextWithReadiness)" in autorenew_context
     assert "class DebrisEnabledApplicationContext(AsteroidEnabledApplicationContext)" in debris_context
     assert "class AsteroidEnabledApplicationContext(ReconOwnedApplicationContext)" in asteroid_context
