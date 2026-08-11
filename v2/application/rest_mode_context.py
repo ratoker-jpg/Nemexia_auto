@@ -7,7 +7,7 @@ from v2.application.automation_authority import (
     REST_MODE_OWNER,
     AutomationAuthorityError,
 )
-from v2.application.rest_mode import RestModeCycleResult, RestModeService
+from v2.application.rest_mode import RestModeCycleResult, RestModeError, RestModeService
 from v2.persistence.rest_mode import RestModeState
 
 
@@ -29,8 +29,22 @@ class RestModeApplicationContext(AsteroidAutorenewApplicationContext):
 
     def start_rest_mode(self, *, now: datetime | None = None) -> RestModeCycleResult:
         service = self._require_rest_mode()
+        current = service.state()
+        if current.armed:
+            # Reject duplicate Start before touching the idempotent owner token.
+            # Otherwise acquire(REST_MODE_OWNER) would appear to succeed and an
+            # exception path could accidentally release the pre-existing session.
+            raise RestModeError("Rest Mode is already armed")
+        if self.automation_cycle_owner() == REST_MODE_OWNER:
+            raise RestModeError(
+                "Rest Mode authority is already held while persisted state is disarmed; "
+                "explicit recovery is required"
+            )
+
+        acquired_here = False
         try:
             self.acquire_automation_cycle(REST_MODE_OWNER)
+            acquired_here = True
         except AutomationAuthorityError as exc:
             state = service.block_busy(str(exc))
             return RestModeCycleResult(state)
@@ -38,9 +52,10 @@ class RestModeApplicationContext(AsteroidAutorenewApplicationContext):
         try:
             result = service.start(now=now)
         except Exception:
-            self.release_automation_cycle(REST_MODE_OWNER)
+            if acquired_here:
+                self.release_automation_cycle(REST_MODE_OWNER)
             raise
-        if not result.state.armed:
+        if acquired_here and not result.state.armed:
             self.release_automation_cycle(REST_MODE_OWNER)
         return result
 
@@ -83,7 +98,8 @@ class RestModeApplicationContext(AsteroidAutorenewApplicationContext):
     def stop_rest_mode(self, *, detail: str = "Stopped by operator") -> RestModeState:
         service = self._require_rest_mode()
         try:
-            # RestModeService.stop() drains its serialized in-flight cycle first.
+            # RestModeService.stop() publishes stop intent first and then drains its
+            # serialized in-flight cycle before returning the persisted disarm.
             return service.stop(detail=detail)
         finally:
             self.release_automation_cycle(REST_MODE_OWNER)
